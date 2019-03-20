@@ -59,12 +59,21 @@ typedef struct {
     OBJECT_CLASS_CHECK(uc, VirtMachineClass, klass, TYPE_VIRT_MACHINE)
 
 static const char *valid_cpus[] = {
-    ARM_CPU_TYPE_NAME("cortex-a15"),
-    ARM_CPU_TYPE_NAME("cortex-a53"),
-    ARM_CPU_TYPE_NAME("cortex-a57"),
-    ARM_CPU_TYPE_NAME("host"),
+    ARM_CPU_TYPE_NAME("Cortex-M0"),
+    ARM_CPU_TYPE_NAME("Cortex-M3"),
+    ARM_CPU_TYPE_NAME("Cortex-M4"),
+    ARM_CPU_TYPE_NAME("Cortex-M33"),
+    ARM_CPU_TYPE_NAME("Cortex-R5"),
+    ARM_CPU_TYPE_NAME("Cortex-R5f"),
+    ARM_CPU_TYPE_NAME("Cortex-A7"),
+    ARM_CPU_TYPE_NAME("Cortex-A8"),
+    ARM_CPU_TYPE_NAME("Cortex-A9"),
+    ARM_CPU_TYPE_NAME("Cortex-A15"),
+    ARM_CPU_TYPE_NAME("Cortex-A53"),
+    ARM_CPU_TYPE_NAME("Cortex-A57"),
+    ARM_CPU_TYPE_NAME("Cortex-A72"),
     // Unicorn: added to allow enabling all CPU features
-    ARM_CPU_TYPE_NAME("max"),
+    ARM_CPU_TYPE_NAME("Cortex-Max"),
 };
 
 static bool cpu_type_valid(const char *cpu)
@@ -134,11 +143,10 @@ static void virt_class_init(struct uc_struct *uc, ObjectClass *oc, void *data)
     MachineClass *mc = MACHINE_CLASS(uc, oc);
 
     mc->init = machvirt_init;
-    mc->max_cpus = 8;
+    mc->max_cpus = 1;
     mc->is_default = 1;
-    mc->arch = UC_ARCH_ARM64;
-    // Unicorn: Enable all CPU features
-    mc->default_cpu_type = ARM_CPU_TYPE_NAME("max");
+    mc->arch = uc->arch;
+    mc->default_cpu_type = uc->model; //ARM_CPU_TYPE_NAME("cortex-max");
 }
 
 static const TypeInfo machvirt_info = {

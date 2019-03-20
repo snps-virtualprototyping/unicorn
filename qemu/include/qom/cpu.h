@@ -355,6 +355,11 @@ struct CPUState {
        size, especially for hosts without large memory offsets.  */
     volatile sig_atomic_t tcg_exit_req;
     struct uc_struct* uc;
+
+    size_t insn_count; // JHW
+    size_t insn_limit; // JHW
+
+    bool is_idle; // JHW
 };
 
 static inline void cpu_tb_jmp_cache_clear(CPUState *cpu)
@@ -779,7 +784,7 @@ void cpu_single_step(CPUState *cpu, int enabled);
 #define BP_MEM_WRITE          0x02
 #define BP_MEM_ACCESS         (BP_MEM_READ | BP_MEM_WRITE)
 #define BP_STOP_BEFORE_ACCESS 0x04
-/* 0x08 currently unused */
+#define BP_CALL               0x08 /* JHW */
 #define BP_GDB                0x10
 #define BP_CPU                0x20
 #define BP_ANY                (BP_GDB | BP_CPU)

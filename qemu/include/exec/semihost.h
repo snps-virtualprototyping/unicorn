@@ -20,19 +20,20 @@
 #ifndef SEMIHOST_H
 #define SEMIHOST_H
 
+#include "uc_priv.h"
+
 typedef enum SemihostingTarget {
     SEMIHOSTING_TARGET_AUTO = 0,
     SEMIHOSTING_TARGET_NATIVE,
     SEMIHOSTING_TARGET_GDB
 } SemihostingTarget;
 
-#ifdef CONFIG_USER_ONLY
-static inline bool semihosting_enabled(void)
-{
-    // UNICORN: Always return false
-    return false;
-    // return true;
+static inline bool semihosting_enabled(struct uc_struct *uc) {
+    return uc->uc_semihost_func != NULL;
 }
+
+#ifdef CONFIG_USER_ONLY
+
 
 static inline SemihostingTarget semihosting_get_target(void)
 {
@@ -54,7 +55,6 @@ static inline const char *semihosting_get_cmdline(void)
     return NULL;
 }
 #else
-bool semihosting_enabled(void);
 SemihostingTarget semihosting_get_target(void);
 const char *semihosting_get_arg(int i);
 int semihosting_get_argc(void);

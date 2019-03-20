@@ -20,6 +20,8 @@
 #ifndef ARM_CPU_H
 #define ARM_CPU_H
 
+#include "uc_priv.h"
+
 #include "config.h"
 
 #include "kvm-consts.h"
@@ -921,7 +923,18 @@ static inline void aarch64_sve_change_el(CPUARMState *env, int o,
 { }
 #endif
 
-target_ulong do_arm_semihosting(CPUARMState *env);
+static inline target_ulong do_arm_semihosting(CPUARMState *env) {
+    void* opaque = env->uc->uc_semihost_opaque;
+    uc_shfunc_t fn = env->uc->uc_semihost_func;
+    uint32_t call = env->aarch64 ? (uint32_t)env->xregs[0]
+                                 : env->regs[0];
+
+    if (fn != NULL)
+        return fn(opaque, call);
+
+    return -1;
+}
+
 void aarch64_sync_32_to_64(CPUARMState *env);
 void aarch64_sync_64_to_32(CPUARMState *env);
 
@@ -2120,6 +2133,7 @@ static inline uint64_t cpreg_to_kvm_id(uint32_t cpregid)
 #define ARM_CP_FPU               0x1000
 #define ARM_CP_SVE               0x2000
 #define ARM_CP_NO_GDB            0x4000
+
 /* Used only as a terminator for ARMCPRegInfo lists */
 #define ARM_CP_SENTINEL          0xffff
 /* Mask of only the flag bits in a type field */
@@ -2523,7 +2537,7 @@ bool write_cpustate_to_list(ARMCPU *cpu);
 /* The ARM MMU allows 1k pages.  */
 /* ??? Linux doesn't actually use these, and they're deprecated in recent
    architecture revisions.  Maybe a configure option to disable them.  */
-#define TARGET_PAGE_BITS 10
+#define TARGET_PAGE_BITS 12 /* Fix JHW: 10->12 */
 #endif
 
 #if defined(TARGET_AARCH64)
@@ -3492,5 +3506,9 @@ static inline bool isar_feature_aa64_bti(const ARMISARegisters *id)
  */
 #define cpu_isar_feature(name, cpu) \
     ({ ARMCPU *cpu_ = (cpu); isar_feature_##name(&cpu_->isar); })
+
+
+// JHW
+void gicv3_init_cpuif(ARMCPU *cpu);
 
 #endif

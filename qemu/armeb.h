@@ -3326,6 +3326,13 @@
 #define xpsr_write xpsr_write_armeb
 #define xscale_cp_reginfo xscale_cp_reginfo_armeb
 #define xscale_cpar_write xscale_cpar_write_armeb
+#define memory_map_io memory_map_io_armeb
+#define tlb_flush_all_cpus_synced tlb_flush_all_cpus_synced_armeb
+#define tlb_flush_page_all_cpus_synced tlb_flush_page_all_cpus_synced_armeb
+#define tlb_flush_by_mmuidx_all_cpus_synced tlb_flush_by_mmuidx_all_cpus_synced_armeb
+#define tlb_flush_page_by_mmuidx_all_cpus_synced tlb_flush_page_by_mmuidx_all_cpus_synced_armeb
+#define dmi_invalidate dmi_invalidate_armeb
+#define helper_trace_tb_entry helper_trace_tb_entry_armeb
 #define aa64_va_parameters aa64_va_parameters_armeb
 #define aa64_va_parameters_both aa64_va_parameters_both_armeb
 #define aarch64_translator_ops aarch64_translator_ops_armeb
@@ -3370,4 +3377,7 @@
 #define uqadd_op uqadd_op_armeb
 #define uqsub_op uqsub_op_armeb
 #define usra_op usra_op_armeb
+#define helper_sev helper_sev_armeb
+#define helper_sevl helper_sevl_armeb
+#define helper_call_breakpoints helper_call_breakpoints_armeb
 #endif

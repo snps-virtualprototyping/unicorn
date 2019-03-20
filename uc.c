@@ -26,10 +26,72 @@
 #include "qemu/include/hw/boards.h"
 #include "qemu/include/qemu/queue.h"
 
+static void helper_tlb_cluster_flush(CPUState* cpu) {
+    uc_engine *uc = cpu->uc;
+    if (!uc->uc_tlb_cluster_flush) {
+        uc_tlb_flush(uc);
+    } else {
+        uc->uc_tlb_cluster_flush(uc->uc_tlb_cluster_opaque);
+    }
+}
+
+static void helper_tlb_cluster_flush_page(CPUState* cpu, uint64_t addr) {
+    uc_engine *uc = cpu->uc;
+    if (!uc->uc_tlb_cluster_flush_page) {
+        uc_tlb_flush_page(uc, addr);
+    } else {
+        uc->uc_tlb_cluster_flush_page(uc->uc_tlb_cluster_opaque, addr);
+    }
+}
+
+static void helper_tlb_cluster_flush_mmuidx(CPUState* cpu, uint16_t idxmap) {
+    uc_engine *uc = cpu->uc;
+    if (!uc->uc_tlb_cluster_flush_mmuidx) {
+        uc_tlb_flush_mmuidx(uc, idxmap);
+    } else {
+        uc->uc_tlb_cluster_flush_mmuidx(uc->uc_tlb_cluster_opaque, idxmap);
+    }
+}
+
+static void helper_tlb_cluster_flush_page_mmuidx(CPUState* cpu, uint64_t addr, uint16_t idxmap) {
+    uc_engine *uc = cpu->uc;
+     if (!uc->uc_tlb_cluster_flush_page_mmuidx) {
+        uc_tlb_flush_page_mmuidx(uc, addr, idxmap);
+    } else {
+        uc->uc_tlb_cluster_flush_page_mmuidx(uc->uc_tlb_cluster_opaque, addr, idxmap);
+    }
+}
+
+static void free_class_properties(uc_engine *uc, ObjectClass *klass)
+{
+    ObjectProperty *prop;
+    GHashTableIter iter;
+    gpointer key, value;
+    bool released;
+
+    do {
+        released = false;
+        g_hash_table_iter_init(&iter, klass->properties);
+        while (g_hash_table_iter_next(&iter, &key, &value)) {
+            prop = value;
+            if (prop->release) {
+                prop->release(uc, NULL, prop->name, prop->opaque);
+                prop->release = NULL;
+                released = true;
+                break;
+            }
+            g_hash_table_iter_remove(&iter);
+        }
+    } while (released);
+
+    g_hash_table_destroy(klass->properties);
+}
+
 static void free_table(gpointer key, gpointer value, gpointer data)
 {
     TypeInfo *ti = (TypeInfo*) value;
-    g_hash_table_destroy(ti->class->properties);
+    uc_engine *uc = (uc_engine *)data;
+    free_class_properties(uc, ti->class);
     g_free((void *) ti->class);
     g_free((void *) ti->name);
     g_free((void *) ti->parent);
@@ -54,13 +116,10 @@ uc_err uc_errno(uc_engine *uc)
     return uc->errnum;
 }
 
-
 UNICORN_EXPORT
 const char *uc_strerror(uc_err code)
 {
     switch(code) {
-        default:
-            return "Unknown error code";
         case UC_ERR_OK:
             return "OK (UC_ERR_OK)";
         case UC_ERR_NOMEM:
@@ -103,6 +162,16 @@ const char *uc_strerror(uc_err code)
             return "Insufficient resource (UC_ERR_RESOURCE)";
         case UC_ERR_EXCEPTION:
             return "Unhandled CPU exception (UC_ERR_EXCEPTION)";
+        case UC_ERR_BREAKPOINT:
+            return "CPU hit breakpoint (UC_ERR_BREAKPOINT)";
+        case UC_ERR_WATCHPOINT:
+            return "CPU triggered watchpoint (UC_ERR_WATCHPOINT)";
+        case UC_ERR_YIELD:
+            return "CPU wants to yield (UC_ERR_YIELD)";
+        case UC_ERR_INTERNAL:
+            return "Internal error (UC_ERR_INTERNAL)";
+        default:
+            return "Unknown error code";
     }
 }
 
@@ -142,9 +211,50 @@ bool uc_arch_supported(uc_arch arch)
 
 
 UNICORN_EXPORT
-uc_err uc_open(uc_arch arch, uc_mode mode, uc_engine **result)
+uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
+               uc_engine **result)
 {
     struct uc_struct *uc;
+
+    uc_arch arch = UC_ARCH_MAX;
+    uc_mode mode;
+
+#ifdef UNICORN_HAS_ARM
+    if (strcmp(model, "Cortex-M0") == 0 ||
+        strcmp(model, "Cortex-M3") == 0 ||
+        strcmp(model, "Cortex-M4") == 0 ||
+        strcmp(model, "Cortex-M33") == 0) {
+        arch = UC_ARCH_ARM;
+        mode = UC_MODE_THUMB;
+    }
+
+    if (strcmp(model, "Cortex-R5") == 0 ||
+        strcmp(model, "Cortex-R5f") == 0) {
+        arch = UC_ARCH_ARM;
+        mode = UC_MODE_ARM;
+    }
+
+    if (strcmp(model, "Cortex-A7") == 0 ||
+        strcmp(model, "Cortex-A8") == 0 ||
+        strcmp(model, "Cortex-A9") == 0 ||
+        strcmp(model, "Cortex-A15") == 0) {
+        arch = UC_ARCH_ARM;
+        mode = UC_MODE_ARM;
+    }
+#endif
+
+#ifdef UNICORN_HAS_ARM64
+    if (strcmp(model, "Cortex-A53") == 0 ||
+        strcmp(model, "Cortex-A57") == 0 ||
+        strcmp(model, "Cortex-A72") == 0 ||
+        strcmp(model, "Cortex-Max") == 0) {
+        arch = UC_ARCH_ARM64;
+        mode = UC_MODE_ARM;
+    }
+#endif
+
+    if (arch == UC_ARCH_MAX)
+        return UC_ERR_ARCH;
 
     if (arch < UC_ARCH_MAX) {
         uc = calloc(1, sizeof(*uc));
@@ -157,6 +267,11 @@ uc_err uc_open(uc_arch arch, uc_mode mode, uc_engine **result)
         uc->arch = arch;
         uc->mode = mode;
 
+        uc->uc_config_func = cfg_func;
+        uc->uc_config_opaque = cfg_opaque;
+
+        snprintf(uc->model, sizeof(uc->model), "%s-arm-cpu", model);
+
         // uc->ram_list = { .blocks = QLIST_HEAD_INITIALIZER(ram_list.blocks) };
         uc->ram_list.blocks.lh_first = NULL;
 
@@ -167,6 +282,42 @@ uc_err uc_open(uc_arch arch, uc_mode mode, uc_engine **result)
         uc->address_spaces.tqh_last = &uc->address_spaces.tqh_first;
 
         uc->phys_map_node_alloc_hint = 16;
+
+        uc->mmios = NULL;
+
+        uc->timer_initialized = false;
+        uc->timer_timefunc = NULL;
+        uc->timer_irqfunc  = NULL;
+        uc->timer_schedule = NULL;
+
+        uc->uc_tlb_cluster_flush = NULL;
+        uc->uc_tlb_cluster_flush_page = NULL;
+        uc->uc_tlb_cluster_flush_mmuidx = NULL;
+        uc->uc_tlb_cluster_flush_page_mmuidx = NULL;
+        uc->uc_tlb_cluster_opaque = NULL;
+
+        uc->tlb_cluster_flush = helper_tlb_cluster_flush;
+        uc->tlb_cluster_flush_page = helper_tlb_cluster_flush_page;
+        uc->tlb_cluster_flush_mmuidx = helper_tlb_cluster_flush_mmuidx;
+        uc->tlb_cluster_flush_page_mmuidx = helper_tlb_cluster_flush_page_mmuidx;
+
+        uc->uc_breakpoint_func = NULL;
+        uc->uc_breakpoint_opaque = NULL;
+
+        uc->uc_watchpoint_func = NULL;
+        uc->uc_watchpoint_opaque = NULL;
+
+        uc->uc_hint_func = NULL;
+        uc->uc_hint_opaque = NULL;
+
+        uc->uc_semihost_func = NULL;
+        uc->uc_semihost_opaque = NULL;
+
+        uc->uc_trace_bb_func = NULL;
+        uc->uc_trace_bb_opaque = NULL;
+
+        uc->is_debug = false;
+        uc->is_excl = false;
 
         switch(arch) {
             default:
@@ -199,13 +350,14 @@ uc_err uc_open(uc_arch arch, uc_mode mode, uc_engine **result)
                     return UC_ERR_MODE;
                 }
                 if (mode & UC_MODE_BIG_ENDIAN) {
-                    uc->init_arch = armeb_uc_init;
+                    assert(0);
+                    //uc->init_arch = armeb_uc_init;
                 } else {
                     uc->init_arch = arm_uc_init;
                 }
 
-                if (mode & UC_MODE_THUMB)
-                    uc->thumb = 1;
+                //if (mode & UC_MODE_THUMB)
+                //    uc->thumb = 1;
                 break;
 #endif
 #ifdef UNICORN_HAS_ARM64
@@ -215,7 +367,8 @@ uc_err uc_open(uc_arch arch, uc_mode mode, uc_engine **result)
                     return UC_ERR_MODE;
                 }
                 if (mode & UC_MODE_BIG_ENDIAN) {
-                    uc->init_arch = arm64eb_uc_init;
+                    assert(0);
+                    //uc->init_arch = arm64eb_uc_init;
                 } else {
                     uc->init_arch = arm64_uc_init;
                 }
@@ -326,6 +479,26 @@ static void free_hooks(uc_engine *uc)
     }
 }
 
+static void free_mmios(uc_engine *uc)
+{
+    uc_mmio_region_t *p = uc->mmios;
+    while (p != NULL) {
+        uc_mmio_region_t *next = p->next;
+        g_free(p);
+        p = next;
+    }
+}
+
+static void free_breakpoints(uc_engine *uc)
+{
+    CPUBreakpoint *bp, *next;
+
+    QTAILQ_FOREACH_SAFE(bp, &uc->cpu->breakpoints, entry, next) {
+        QTAILQ_REMOVE(&uc->cpu->breakpoints, bp, entry);
+        g_free(bp);
+    }
+}
+
 UNICORN_EXPORT
 uc_err uc_close(uc_engine *uc)
 {
@@ -339,6 +512,8 @@ uc_err uc_close(uc_engine *uc)
     g_free(uc->cpu->thread);
 
     // Cleanup all objects.
+    free_breakpoints(uc);
+
     OBJECT(uc->machine_state->accelerator)->ref = 1;
     OBJECT(uc->machine_state)->ref = 1;
     OBJECT(uc->owner)->ref = 1;
@@ -347,9 +522,13 @@ uc_err uc_close(uc_engine *uc)
     object_unref(uc, OBJECT(uc->machine_state->accelerator));
     object_unref(uc, OBJECT(uc->machine_state));
     object_unref(uc, OBJECT(uc->cpu));
-    object_unref(uc, OBJECT(&uc->io_mem_notdirty));
-    object_unref(uc, OBJECT(&uc->io_mem_unassigned));
-    object_unref(uc, OBJECT(&uc->io_mem_rom));
+
+    // These seem to be auto deleted when uc->root gets deleted, no need to
+    // unref them manually (?)
+    //object_unref(uc, OBJECT(&uc->io_mem_notdirty));
+    //object_unref(uc, OBJECT(&uc->io_mem_unassigned));
+    //object_unref(uc, OBJECT(&uc->io_mem_rom));
+    //object_unref(uc, OBJECT(&uc->io_mem_watch));
     object_unref(uc, OBJECT(uc->root));
 
     // System memory.
@@ -360,8 +539,6 @@ uc_err uc_close(uc_engine *uc)
         g_free(uc->qemu_thread_data);
 
     // Other auxilaries.
-    free(uc->l1_map);
-
     if (uc->bounce.buffer) {
         free(uc->bounce.buffer);
     }
@@ -370,39 +547,34 @@ uc_err uc_close(uc_engine *uc)
     g_hash_table_destroy(uc->type_table);
 
     free_hooks(uc);
+    free_mmios(uc);
     free(uc->mapped_blocks);
 
     // finally, free uc itself.
     memset(uc, 0, sizeof(*uc));
     free(uc);
-    
+
     return UC_ERR_OK;
 }
-
 
 UNICORN_EXPORT
 uc_err uc_reg_read_batch(uc_engine *uc, int *ids, void **vals, int count)
 {
-    if (uc->reg_read)
-        uc->reg_read(uc, (unsigned int *)ids, vals, count);
-    else
-        return -1;  // FIXME: need a proper uc_err
-
-    return UC_ERR_OK;
+    if (uc->reg_read &&
+        uc->reg_read(uc, (unsigned int *)ids, vals, count) == 0)
+        return UC_ERR_OK;
+    return UC_ERR_HANDLE;
 }
 
 
 UNICORN_EXPORT
 uc_err uc_reg_write_batch(uc_engine *uc, int *ids, void *const *vals, int count)
 {
-    if (uc->reg_write)
-        uc->reg_write(uc, (unsigned int *)ids, vals, count);
-    else
-        return -1;  // FIXME: need a proper uc_err
-
-    return UC_ERR_OK;
+    if (uc->reg_write &&
+        uc->reg_write(uc, (unsigned int *)ids, vals, count) == 0)
+        return UC_ERR_OK;
+    return UC_ERR_HANDLE;
 }
-
 
 UNICORN_EXPORT
 uc_err uc_reg_read(uc_engine *uc, int regid, void *value)
@@ -449,6 +621,8 @@ uc_err uc_mem_read(uc_engine *uc, uint64_t address, void *_bytes, size_t size)
     if (!check_mem_area(uc, address, size))
         return UC_ERR_READ_UNMAPPED;
 
+    uc->is_debug = true;
+
     // memory area can overlap adjacent memory blocks
     while(count < size) {
         MemoryRegion *mr = memory_mapping(uc, address);
@@ -462,6 +636,8 @@ uc_err uc_mem_read(uc_engine *uc, uint64_t address, void *_bytes, size_t size)
         } else  // this address is not mapped in yet
             break;
     }
+
+    uc->is_debug = false;
 
     if (count == size)
         return UC_ERR_OK;
@@ -481,6 +657,8 @@ uc_err uc_mem_write(uc_engine *uc, uint64_t address, const void *_bytes, size_t 
 
     if (!check_mem_area(uc, address, size))
         return UC_ERR_WRITE_UNMAPPED;
+
+    uc->is_debug = true;
 
     // memory area can overlap adjacent memory blocks
     while(count < size) {
@@ -505,6 +683,8 @@ uc_err uc_mem_write(uc_engine *uc, uint64_t address, const void *_bytes, size_t 
         } else  // this address is not mapped in yet
             break;
     }
+
+    uc->is_debug = false;
 
     if (count == size)
         return UC_ERR_OK;
@@ -541,23 +721,16 @@ static void enable_emu_timer(uc_engine *uc, uint64_t timeout)
             uc, QEMU_THREAD_JOINABLE);
 }
 
-static void hook_count_cb(struct uc_struct *uc, uint64_t address, uint32_t size, void *user_data)
-{
-    // count this instruction. ah ah ah.
-    uc->emu_counter++;
-
-    if (uc->emu_counter > uc->emu_count)
-        uc_emu_stop(uc);
-}
-
 UNICORN_EXPORT
 uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t timeout, size_t count)
 {
     // reset the counter
     uc->emu_counter = 0;
+    uc->emu_count = count;
     uc->invalid_error = UC_ERR_OK;
     uc->block_full = false;
     uc->emulation_done = false;
+    uc->parallel_cpus = true;
 
     switch(uc->arch) {
         default:
@@ -620,16 +793,18 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
 #endif
     }
 
-    uc->stop_request = false;
-
-    uc->emu_count = count;
+#if 0
     // remove count hook if counting isn't necessary
-    if (count <= 0 && uc->count_hook != 0) {
+    // remove hooks as soon as we are not single stepping anymore
+    //if (count <= 0 && uc->count_hook != 0) {
+    if (count != 1 && uc->count_hook != 0) {
         uc_hook_del(uc, uc->count_hook);
         uc->count_hook = 0;
     }
     // set up count hook to count instructions.
-    if (count > 0 && uc->count_hook == 0) {
+    // JHW: only include hooks if we are single stepping
+    //if (count == 0 && uc->count_hook == 0) {
+    if (count == 1 && uc->count_hook == 0) {
         uc_err err;
         // callback to count instructions must be run before everything else,
         // so instead of appending, we must insert the hook at the begin
@@ -642,8 +817,11 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
             return err;
         }
     }
+#endif
 
+    uc->stop_request = false;
     uc->addr_end = until;
+    uc->cpu->singlestep_enabled = (count == 1);
 
     if (timeout)
         enable_emu_timer(uc, timeout * 1000);   // microseconds -> nanoseconds
@@ -659,6 +837,9 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
         // wait for the timer to finish
         qemu_thread_join(&uc->timer);
     }
+
+    if (uc->invalid_error == UC_ERR_OK && uc->cpu->is_idle)
+        uc->invalid_error = UC_ERR_YIELD;
 
     return uc->invalid_error;
 }
@@ -785,9 +966,9 @@ uc_err uc_mem_map_ptr(uc_engine *uc, uint64_t address, size_t size, uint32_t per
         address = uc->mem_redirect(address);
     }
 
-    res = mem_map_check(uc, address, size, perms);
-    if (res)
-        return res;
+//    res = mem_map_check(uc, address, size, perms);
+//    if (res)
+//        return res;
 
     return mem_map(uc, address, size, UC_PROT_ALL, uc->memory_map_ptr(uc, address, size, perms, ptr));
 }
@@ -1244,10 +1425,10 @@ static size_t cpu_context_size(uc_arch arch, uc_mode mode)
         case UC_ARCH_X86:   return X86_REGS_STORAGE_SIZE;
 #endif
 #ifdef UNICORN_HAS_ARM
-        case UC_ARCH_ARM:   return mode & UC_MODE_BIG_ENDIAN ? ARM_REGS_STORAGE_SIZE_armeb : ARM_REGS_STORAGE_SIZE_arm;
+        case UC_ARCH_ARM:   return /*mode & UC_MODE_BIG_ENDIAN ? ARM_REGS_STORAGE_SIZE_armeb :*/ ARM_REGS_STORAGE_SIZE_arm;
 #endif
 #ifdef UNICORN_HAS_ARM64
-        case UC_ARCH_ARM64: return mode & UC_MODE_BIG_ENDIAN ? ARM64_REGS_STORAGE_SIZE_aarch64eb : ARM64_REGS_STORAGE_SIZE_aarch64;
+        case UC_ARCH_ARM64: return /*mode & UC_MODE_BIG_ENDIAN ? ARM64_REGS_STORAGE_SIZE_aarch64eb :*/ ARM64_REGS_STORAGE_SIZE_aarch64;
 #endif
 #ifdef UNICORN_HAS_MIPS
         case UC_ARCH_MIPS:
@@ -1314,5 +1495,375 @@ uc_err uc_context_restore(uc_engine *uc, uc_context *context)
 {
     struct uc_context *_context = context;
     memcpy(uc->cpu->env_ptr, _context->data, _context->size);
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+size_t uc_instruction_count(uc_engine *uc) {
+    return uc->cpu->insn_count;
+}
+
+UNICORN_EXPORT
+uc_err uc_mem_map_io(uc_engine *uc, uint64_t addr, size_t size,
+                     uc_cb_mmio_t callback, void* opaque)
+{
+
+    uc_err res;
+    uc_mmio_region_t *ops;
+
+    if (callback == NULL)
+        return UC_ERR_ARG;
+
+    if (uc->mem_redirect)
+        addr = uc->mem_redirect(addr);
+
+//    res = mem_map_check(uc, addr, size, UC_PROT_ALL);
+//    if (res)
+//        return res;
+
+    ops = g_new(uc_mmio_region_t, 1);
+    ops->user_data = opaque;
+    ops->callback = callback;
+    ops->region = uc->memory_map_mmio(uc, addr, size, ops);
+
+    ops->next = uc->mmios;
+    ops->prev = NULL;
+
+    if (uc->mmios)
+        uc->mmios->prev = ops;
+    uc->mmios = ops;
+
+    return mem_map(uc, addr, size, UC_PROT_ALL, ops->region);
+}
+
+UNICORN_EXPORT
+uc_err uc_mem_map_portio(uc_engine *uc, uc_cb_mmio_t callback, void *opaque)
+{
+    if (!uc || !callback)
+        return UC_ERR_ARG;
+
+    uc->uc_portio_func = callback;
+    uc->uc_portio_opaque = opaque;
+
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_tb_flush(uc_engine *uc) {
+    if (!uc || !uc->tb_flush)
+        return UC_ERR_ARG;
+    uc->tb_flush(uc->cpu);
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_tlb_flush(uc_engine *uc) {
+    if (!uc || !uc->tlb_flush)
+        return UC_ERR_ARG;
+    uc->tlb_flush(uc->cpu);
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_tlb_flush_page(uc_engine *uc, uint64_t addr) {
+    if (!uc || !uc->tlb_flush_page)
+        return UC_ERR_ARG;
+    uc->tlb_flush_page(uc->cpu, addr);
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_tlb_flush_mmuidx(uc_engine *uc, uint16_t idxmap) {
+    if (!uc || !uc->tlb_flush_mmuidx)
+        return UC_ERR_ARG;
+    uc->tlb_flush_mmuidx(uc->cpu, idxmap);
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_tlb_flush_page_mmuidx(uc_engine *uc, uint64_t addr, uint16_t idxmap) {
+    if (!uc || !uc->tlb_flush_page_mmuidx)
+        return UC_ERR_ARG;
+    uc->tlb_flush_page_mmuidx(uc->cpu, addr, idxmap);
+    return UC_ERR_OK;
+}
+
+uc_err uc_register_tlb_cluster(uc_engine *uc, void *opaque,
+    uc_tlb_cluster_flush_t             tlb_cluster_flush_fn,
+    uc_tlb_cluster_flush_page_t        tlb_cluster_flush_page_fn,
+    uc_tlb_cluster_flush_mmuidx_t      tlb_cluster_flush_mmuidx_fn,
+    uc_tlb_cluster_flush_page_mmuidx_t tlb_cluster_flush_page_mmuidx_fn) {
+    uc->uc_tlb_cluster_flush = tlb_cluster_flush_fn;
+    uc->uc_tlb_cluster_flush_page = tlb_cluster_flush_page_fn;
+    uc->uc_tlb_cluster_flush_mmuidx = tlb_cluster_flush_mmuidx_fn;
+    uc->uc_tlb_cluster_flush_page_mmuidx = tlb_cluster_flush_page_mmuidx_fn;
+    uc->uc_tlb_cluster_opaque = opaque;
+    return UC_ERR_OK;
+}
+
+static uc_err __uc_breakpoint_insert(uc_engine *uc, uint64_t addr, int flags) {
+    if (!uc->breakpoint_insert(uc->cpu, addr, flags, NULL))
+        return UC_ERR_OK;
+    return UC_ERR_ARG;
+}
+
+static uc_err __uc_breakpoint_remove(uc_engine *uc, uint64_t addr, int flags) {
+    if (!uc->breakpoint_remove(uc->cpu, addr, flags))
+        return UC_ERR_OK;
+    return UC_ERR_ARG;
+}
+
+UNICORN_EXPORT
+uc_err uc_breakpoint_insert(uc_engine *uc, uint64_t addr) {
+    uc->is_debug = true;
+    uc_err ret = __uc_breakpoint_insert(uc, addr, BP_GDB);
+    uc->is_debug = false;
+    return ret;
+}
+
+UNICORN_EXPORT
+uc_err uc_breakpoint_remove(uc_engine *uc, uint64_t addr) {
+    uc->is_debug = true;
+    uc_err ret = __uc_breakpoint_remove(uc, addr, BP_GDB);
+    uc->is_debug = false;
+    return ret;
+}
+
+
+UNICORN_EXPORT
+uc_err uc_cbbreakpoint_setup(uc_engine *uc, void *p, uc_breakpoint_hit_t fn) {
+    uc->uc_breakpoint_opaque = p;
+    uc->uc_breakpoint_func = fn;
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_cbbreakpoint_insert(uc_engine *uc, uint64_t addr) {
+    uc->is_debug = true;
+    uc_err ret = __uc_breakpoint_insert(uc, addr, BP_CALL);
+    uc->is_debug = false;
+    return ret;
+}
+
+UNICORN_EXPORT
+uc_err uc_cbbreakpoint_remove(uc_engine *uc, uint64_t addr) {
+    uc->is_debug = true;
+    uc_err ret = __uc_breakpoint_remove(uc, addr, BP_CALL);
+    uc->is_debug = false;
+    return ret;
+}
+
+static uc_err __uc_watchpoint_insert(uc_engine *uc, uint64_t addr, size_t size, int flags) {
+    int qemu_flags = 0;
+    if (flags & UC_WP_READ)
+        qemu_flags |= BP_MEM_READ;
+    if (flags & UC_WP_WRITE)
+        qemu_flags |= BP_MEM_WRITE;
+    if (flags & UC_WP_BEFORE)
+        qemu_flags |= BP_STOP_BEFORE_ACCESS;
+    if (flags & UC_WP_CALL)
+        qemu_flags |= BP_CALL;
+
+    if (!uc->watchpoint_insert(uc->cpu, addr, size, qemu_flags, NULL))
+        return UC_ERR_OK;
+
+    return UC_ERR_ARG;
+}
+
+static uc_err __uc_watchpoint_remove(uc_engine *uc, uint64_t addr, size_t size, int flags) {
+    int qemu_flags = 0;
+    if (flags & UC_WP_READ)
+        qemu_flags |= BP_MEM_READ;
+    if (flags & UC_WP_WRITE)
+        qemu_flags |= BP_MEM_WRITE;
+    if (flags & UC_WP_BEFORE)
+        qemu_flags |= BP_STOP_BEFORE_ACCESS;
+
+    if (!uc->watchpoint_remove(uc->cpu, addr, size, qemu_flags))
+        return UC_ERR_OK;
+
+    return UC_ERR_ARG;
+}
+
+UNICORN_EXPORT
+uc_err uc_watchpoint_insert(uc_engine *uc, uint64_t addr, size_t size, int flags) {
+    uc->is_debug = true;
+    uc_err ret = __uc_watchpoint_insert(uc, addr, size, flags);
+    uc->is_debug = false;
+    return ret;
+}
+
+UNICORN_EXPORT
+uc_err uc_watchpoint_remove(uc_engine *uc, uint64_t addr, size_t size, int flags) {
+    uc->is_debug = true;
+    uc_err ret = __uc_watchpoint_remove(uc, addr, size, flags);
+    uc->is_debug = false;
+    return ret;
+}
+
+UNICORN_EXPORT
+uc_err uc_cbwatchpoint_setup(uc_engine *uc, void *ptr, uc_watchpoint_hit_t f) {
+    uc->uc_watchpoint_opaque = ptr;
+    uc->uc_watchpoint_func = f;
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_cbwatchpoint_insert(uc_engine *uc, uint64_t addr, size_t size, int flags) {
+    return uc_watchpoint_insert(uc, addr, size, flags | UC_WP_CALL);
+}
+
+UNICORN_EXPORT
+uc_err uc_cbwatchpoint_remove(uc_engine *uc, uint64_t addr, size_t size, int flags) {
+    uc->is_debug = true;
+    uc_err ret = __uc_watchpoint_remove(uc, addr, size, flags | UC_WP_CALL);
+    uc->is_debug = false;
+    return ret;
+}
+
+UNICORN_EXPORT
+uc_err uc_interrupt(uc_engine *uc, int irqid, int set) {
+    if (set)
+        uc->cpu->interrupt_request |= irqid;
+    else
+        uc->cpu->interrupt_request &= ~irqid;
+    atomic_set(&uc->cpu->tcg_exit_req, 1);
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_va2pa(uc_engine *uc, uint64_t va, uint64_t *pa) {
+    if (pa == NULL)
+        return UC_ERR_ARG;
+
+    CPUClass *cc = CPU_GET_CLASS(uc, uc->cpu);
+    MemTxAttrs attrs = { 0 };
+
+    // Translating virtual addresses might cause QEMU to perform memory
+    // accesses, which are routed through the regular memory API and can
+    // invoke our transaction callback. There is currently no way to
+    // annotate debugger accesses in this API, so we mark this via our
+    // unicorn global state struct.
+    uc->is_debug = true;
+
+    // This debug call just causes potential faults to be ignored, but does
+    // not annotate its nature to the memory API that it uses.
+    uint64_t addr = cc->get_phys_page_attrs_debug(uc->cpu, va, &attrs);
+
+    uc->is_debug = false;
+
+    if (addr == ~0)
+        return UC_ERR_NOMEM;
+
+    *pa = addr;
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_setup_timer(uc_engine *uc, void *opaque, uc_timer_timefunc_t timefn,
+                      uc_timer_irqfunc_t irqfn, uc_timer_schedule_t schedfn) {
+    if (timefn == NULL || irqfn == NULL || schedfn == NULL)
+        return UC_ERR_ARG;
+
+    uc->timer_timefunc = timefn;
+    uc->timer_irqfunc = irqfn;
+    uc->timer_schedule = schedfn;
+    uc->timer_opaque = opaque;
+    uc->timer_initialized = true;
+
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_update_timer(uc_engine *uc, int timeridx) {
+    if (!uc->timer_recalc)
+        return UC_ERR_ARG;
+    uc->timer_recalc(uc->cpu, timeridx);
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+bool uc_is_idle(uc_engine *uc) {
+    if (!uc)
+        return false;
+    return uc->cpu->is_idle;
+}
+
+UNICORN_EXPORT
+bool uc_is_debug(uc_engine *uc) {
+    if (!uc)
+        return false;
+    return uc->is_debug;
+}
+
+UNICORN_EXPORT
+bool uc_is_excl(uc_engine *uc) {
+    if (!uc)
+        return false;
+    return uc->is_excl;
+}
+
+UNICORN_EXPORT
+uc_err uc_clear_excl(uc_engine *uc) {
+    if (!uc || !uc->is_excl)
+        return UC_ERR_RESOURCE;
+    uc->is_excl = false;
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_setup_dmi(uc_engine *uc, void *opaque, uc_cb_dmiptr_t dmifn) {
+    if (uc == NULL || dmifn == NULL)
+        return UC_ERR_ARG;
+
+    uc->get_dmi_ptr = dmifn;
+    uc->dmi_opaque = opaque;
+
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_dmi_invalidate(uc_engine *uc, uint64_t start, uint64_t end) {
+    if (uc == NULL)
+        return UC_ERR_ARG;
+
+    if (uc->inv_dmi_ptr == NULL)
+        return UC_ERR_INTERNAL;
+
+    uc->inv_dmi_ptr(uc->cpu, start, end);
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_setup_hint(uc_engine *uc, void *opaque, uc_hintfunc_t fn) {
+    if (uc == NULL)
+        return UC_ERR_ARG;
+
+    uc->uc_hint_opaque = opaque;
+    uc->uc_hint_func = fn;
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_setup_semihosting(uc_engine *uc, void* opaque, uc_shfunc_t fn) {
+    if (uc == NULL)
+        return UC_ERR_ARG;
+
+    uc->uc_semihost_opaque = opaque;
+    uc->uc_semihost_func = fn;
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+uc_err uc_setup_basic_block_trace(uc_engine *uc, void *opaque,
+                                  uc_trace_basic_block_t fn) {
+    if (uc == NULL)
+        return UC_ERR_ARG;
+
+    if (uc->uc_trace_bb_func != fn)
+        uc_tb_flush(uc);
+
+    uc->uc_trace_bb_opaque = opaque;
+    uc->uc_trace_bb_func = fn;
     return UC_ERR_OK;
 }

@@ -147,10 +147,17 @@ static bool tcg_exec_all(struct uc_struct* uc)
 {
     int r;
     bool finish = false;
-    while (!uc->cpu->exit_request) {
-        CPUState *cpu = uc->cpu;
-        CPUArchState *env = cpu->env_ptr;
 
+    CPUState *cpu = uc->cpu;
+    CPUArchState *env = cpu->env_ptr;
+
+    cpu->insn_count = 0;
+    cpu->insn_limit = uc->emu_count;
+
+    cpu->is_idle = false;
+
+    atomic_set(&cpu->exit_request, 0);
+    while (!uc->cpu->exit_request) {
         //qemu_clock_enable(QEMU_CLOCK_VIRTUAL,
         //                  (cpu->singlestep_enabled & SSTEP_NOTIMER) == 0);
         if (cpu_can_run(cpu)) {
@@ -176,6 +183,7 @@ static bool tcg_exec_all(struct uc_struct* uc)
 
             if (r == EXCP_DEBUG) {
                 cpu_handle_guest_debug(cpu);
+                finish = true;
                 break;
             }
             if (r == EXCP_HLT) {
@@ -184,8 +192,8 @@ static bool tcg_exec_all(struct uc_struct* uc)
             } else if (r == EXCP_ATOMIC) {
                 cpu_exec_step_atomic(uc, cpu);
             }
-        } else if (cpu->stop) {
-            printf(">>> got stopped!!!\n");
+        } else if (cpu->stop || cpu->stopped) {
+            finish = true;
             break;
         }
     }

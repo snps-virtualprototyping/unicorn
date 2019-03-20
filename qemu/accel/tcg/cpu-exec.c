@@ -46,6 +46,7 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
     //qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
     //                       "Trace %p [" TARGET_FMT_lx "] %s\n",
     //                       itb->tc.ptr, itb->pc, lookup_symbol(itb->pc));
+
     ret = tcg_qemu_tb_exec(env, tb_ptr);
     last_tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     tb_exit = ret & TB_EXIT_MASK;
@@ -77,17 +78,21 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
             }
         }
     }
+
     if (tb_exit == TB_EXIT_REQUESTED) {
         /* We were asked to stop executing TBs (probably a pending
          * interrupt. We've now stopped, so clear the flag.
          */
         atomic_set(&cpu->tcg_exit_req, 0);
     }
+
     return ret;
 }
 
  /* Execute the code without caching the generated code. An interpreter
     could be used if available. */
+// JHW: removed to silence unused static function warning
+#ifdef JHW
 static void cpu_exec_nocache(CPUState *cpu, int max_cycles,
                              TranslationBlock *orig_tb, bool ignore_icount)
 {
@@ -110,6 +115,7 @@ static void cpu_exec_nocache(CPUState *cpu, int max_cycles,
     tb_phys_invalidate(env->uc, tb, -1);
     tb_free(env->uc, tb);
 }
+#endif
 
 TranslationBlock *tb_htable_lookup(CPUState *cpu, target_ulong pc,
                                    target_ulong cs_base, uint32_t flags)
@@ -122,6 +128,9 @@ TranslationBlock *tb_htable_lookup(CPUState *cpu, target_ulong pc,
 
     /* find translated block using physical mappings */
     phys_pc = get_page_addr_code(env, pc);
+    if (phys_pc == -1)
+        return NULL;
+
     phys_page1 = phys_pc & TARGET_PAGE_MASK;
     h = tb_hash_func(phys_pc, pc, flags);
 
@@ -185,11 +194,13 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
          * outside of the lock; nothing to do in this case */
         return;
     }
-    qemu_log_mask_and_addr(CPU_LOG_EXEC, tb->pc,
-                           "Linking TBs %p [" TARGET_FMT_lx
+    /*qemu_log_mask_and_addr(CPU_LOG_EXEC, tb->pc,*/
+#ifdef JHW
+                           printf("Linking TBs %p [" TARGET_FMT_lx
                            "] index %d -> %p [" TARGET_FMT_lx "]\n",
                            tb->tc.ptr, tb->pc, n,
                            tb_next->tc.ptr, tb_next->pc);
+#endif
 
     /* patch the native jump address */
     tb_set_jmp_target(tb, n, (uintptr_t)tb_next->tc.ptr);
@@ -242,6 +253,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
     }
 #endif
     /* See if we can patch the calling TB. */
+#ifndef JHW // disabled tb chaining
     if (last_tb) {
         if (!acquired_tb_lock) {
             // Unicorn: commented out
@@ -255,6 +267,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
             tb_add_jump(last_tb, tb_exit, tb);
         }
     }
+#endif
     if (acquired_tb_lock) {
         // Unicorn: commented out
         //tb_unlock();
@@ -287,6 +300,9 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
     }
 
     cc->debug_excp_handler(cpu);
+
+    if (cpu->watchpoint_hit)
+        cpu->uc->invalid_error = UC_ERR_WATCHPOINT;
 }
 
 static inline bool cpu_handle_exception(struct uc_struct *uc, CPUState *cpu, int *ret)
@@ -295,6 +311,7 @@ static inline bool cpu_handle_exception(struct uc_struct *uc, CPUState *cpu, int
 
     if (cpu->exception_index >= 0) {
         if (uc->stop_interrupt && uc->stop_interrupt(cpu->exception_index)) {
+            assert(false); // should not reach this point, no stop_interrupt!
             cpu->halted = 1;
             uc->invalid_error = UC_ERR_INSN_INVALID;
             *ret = EXCP_HLT;
@@ -322,20 +339,10 @@ static inline bool cpu_handle_exception(struct uc_struct *uc, CPUState *cpu, int
             cpu->exception_index = -1;
             return true;
 #else
-            bool catched = false;
-            // Unicorn: call registered interrupt callbacks
-            HOOK_FOREACH_VAR_DECLARE;
-            HOOK_FOREACH(uc, hook, UC_HOOK_INTR) {
-                ((uc_cb_hookintr_t)hook->callback)(uc, cpu->exception_index, hook->user_data);
-                catched = true;
-            }
-            // Unicorn: If un-catched interrupt, stop executions.
-            if (!catched) {
-                cpu->halted = 1;
-                uc->invalid_error = UC_ERR_EXCEPTION;
-                *ret = EXCP_HLT;
-                return true;
-            }
+            // JHW
+            CPUClass *cc = CPU_GET_CLASS(uc, cpu);
+            *ret = cpu->exception_index;
+            cc->do_interrupt(cpu);
             cpu->exception_index = -1;
 #endif
         }
@@ -415,6 +422,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
                                     TranslationBlock **last_tb, int *tb_exit)
 {
     uintptr_t ret;
+    TranslationBlock* otb = tb;
 
     /* execute the generated code */
     ret = cpu_tb_exec(cpu, tb);
@@ -432,13 +440,19 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
          */
         smp_mb();
         *last_tb = NULL;
+//      printf("- TB 0x%016lx exit requested: %zu of %zu instructions executed\n",
+//             otb->pc, cpu->insn_count, cpu->insn_limit);
+
         break;
     case TB_EXIT_ICOUNT_EXPIRED:
     {
         /* Instruction counter expired.  */
+//      printf("! TB 0x%016lx icount exit requested: %zu of %zu instructions executed\n",
+//             otb->pc, cpu->insn_count, cpu->insn_limit);
 #ifdef CONFIG_USER_ONLY
         abort();
 #else
+#ifdef JHW
         int insns_left = cpu->icount_decr.u32;
         *last_tb = NULL;
         if (cpu->icount_extra && insns_left >= 0) {
@@ -457,11 +471,14 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
             cpu->exception_index = EXCP_INTERRUPT;
             cpu_loop_exit(cpu);
         }
+#endif
         break;
 #endif
     }
     default:
         *last_tb = tb;
+//        printf("! TB 0x%016lx exited regularly: %zu of %zu instructions executed\n",
+//               otb->pc, cpu->insn_count, cpu->insn_limit);
         break;
     }
 }
@@ -506,6 +523,8 @@ void cpu_exec_step_atomic(struct uc_struct *uc, CPUState *cpu)
     // Unicorn: commented out
     //start_exclusive();
 
+    assert(0 && "unexpected call to cpu_exec_step_atomic");
+
     /* Since we got here, we know that parallel_cpus must be true.  */
     uc->parallel_cpus = false;
     cpu_exec_step(uc, cpu);
@@ -531,8 +550,17 @@ int cpu_exec(struct uc_struct *uc, CPUState *cpu)
     atomic_mb_set(&uc->tcg_current_rr_cpu, cpu);
 
     cc->cpu_exec_enter(cpu);
-    cpu->exception_index = -1;
+
     env->invalid_error = UC_ERR_OK;
+
+    atomic_set(&cpu->tcg_exit_req, 0); // JHW: unicorn set this during last iteration, reset now
+
+    // JHW: force generation of new code suitable for single stepping
+    if (uc->emu_count == 1)
+        tb_flush(cpu);
+
+//    int count = 0;
+//    size_t tbsize = 0;
 
     /* prepare setjmp context for exception handling */
     if (sigsetjmp(cpu->jmp_env, 0) != 0) {
@@ -555,6 +583,12 @@ int cpu_exec(struct uc_struct *uc, CPUState *cpu)
 
     /* if an exception is pending, we execute it here */
     while (!cpu_handle_exception(uc, cpu, &ret)) {
+        // JHW abort the execution loop
+        if (cpu->insn_count >= cpu->insn_limit) {
+            uc->stop_request = true;
+            break;
+        }
+
         TranslationBlock *last_tb = NULL;
         int tb_exit = 0;
 
@@ -562,19 +596,25 @@ int cpu_exec(struct uc_struct *uc, CPUState *cpu)
             TranslationBlock *tb = tb_find(cpu, last_tb, tb_exit);
             if (!tb) {   // invalid TB due to invalid code?
                 uc->invalid_error = UC_ERR_FETCH_UNMAPPED;
+                fprintf(stderr, "%s:%d: disas error\n", __FILE__, __LINE__);
                 ret = EXCP_HLT;
                 break;
             }
+
+            //printf("before tb exec pc = %016lx\n", env->pc);
             cpu_loop_exec_tb(cpu, tb, &last_tb, &tb_exit);
+            //printf("after  tb exec pc = %016lx (tb_exit = %d)\n", env->pc, tb_exit);
+
+            if (cpu->insn_count >= cpu->insn_limit)
+                break;
         }
     }
 
     cc->cpu_exec_exit(cpu);
 
-    // Unicorn: flush JIT cache to because emulation might stop in
-    // the middle of translation, thus generate incomplete code.
-    // TODO: optimize this for better performance
-    tb_flush(cpu);
+    // JHW: drop single stepping code, just in case we will stop stepping
+    if (uc->emu_count == 1)
+        tb_flush(cpu);
 
     return ret;
 }

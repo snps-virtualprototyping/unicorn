@@ -1265,7 +1265,7 @@ static inline guint g_hash_table_lookup_node_for_insertion (GHashTable    *hash_
   GHashNode *node;
   guint node_index;
   guint hash_value;
-  guint first_tombstone;
+  guint first_tombstone = 0;
   gboolean have_tombstone = FALSE;
   guint step = 0;
 

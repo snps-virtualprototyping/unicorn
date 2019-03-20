@@ -54,7 +54,10 @@
  * (N = number of input arguments + output arguments).  */
 #define MAX_OPC_PARAM (4 + (MAX_OPC_PARAM_PER_ARG * MAX_OPC_PARAM_ARGS))
 
+/* JW
 #define CPU_TEMP_BUF_NLONGS 128
+*/
+#define CPU_TEMP_BUF_NLONGS 1024
 
 /* Default target word size to pointer size.  */
 #ifndef TCG_TARGET_REG_BITS
@@ -950,6 +953,8 @@ struct TCGContext {
     TCGv cpu_wim;
 
     TCGLabel *exitreq_label;  // gen_tb_start()
+    TCGLabel *icount_label;
+    TCGOp* icount_op; // JHW
 };
 
 static inline size_t temp_idx(TCGContext *tcg_ctx, TCGTemp *ts)

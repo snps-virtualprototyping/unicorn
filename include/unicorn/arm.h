@@ -137,7 +137,88 @@ typedef enum uc_arm_reg {
     UC_ARM_REG_MSP,
     UC_ARM_REG_PSP,
     UC_ARM_REG_CONTROL,
-    UC_ARM_REG_ENDING,		// <-- mark the end of the list or registers
+
+    UC_ARM_REG_R8_USR,
+    UC_ARM_REG_R9_USR,
+    UC_ARM_REG_R10_USR,
+    UC_ARM_REG_R11_USR,
+    UC_ARM_REG_R12_USR,
+
+    UC_ARM_REG_R8_FIQ,
+    UC_ARM_REG_R9_FIQ,
+    UC_ARM_REG_R10_FIQ,
+    UC_ARM_REG_R11_FIQ,
+    UC_ARM_REG_R12_FIQ,
+
+    UC_ARM_REG_R13_USR,
+    UC_ARM_REG_R13_SVC,
+    UC_ARM_REG_R13_ABT,
+    UC_ARM_REG_R13_UND,
+    UC_ARM_REG_R13_IRQ,
+    UC_ARM_REG_R13_FIQ,
+    UC_ARM_REG_R13_HYP,
+    UC_ARM_REG_R13_MON,
+
+    UC_ARM_REG_R14_USR,
+    UC_ARM_REG_R14_SVC,
+    UC_ARM_REG_R14_ABT,
+    UC_ARM_REG_R14_UND,
+    UC_ARM_REG_R14_IRQ,
+    UC_ARM_REG_R14_FIQ,
+    UC_ARM_REG_R14_HYP,
+    UC_ARM_REG_R14_MON,
+
+    UC_ARM_REG_SPSR_USR,
+    UC_ARM_REG_SPSR_SVC,
+    UC_ARM_REG_SPSR_ABT,
+    UC_ARM_REG_SPSR_UND,
+    UC_ARM_REG_SPSR_IRQ,
+    UC_ARM_REG_SPSR_FIQ,
+    UC_ARM_REG_SPSR_HYP,
+    UC_ARM_REG_SPSR_MON,
+
+    UC_ARM_REG_SCR,
+    UC_ARM_REG_VBAR,
+    UC_ARM_REG_VBAR_S,
+    UC_ARM_REG_VBAR_NS,
+    UC_ARM_REG_DACR,
+    UC_ARM_REG_DACR_S,
+    UC_ARM_REG_DACR_NS,
+    UC_ARM_REG_SCTLR,
+    UC_ARM_REG_SCTLR_S,
+    UC_ARM_REG_SCTLR_NS,
+    UC_ARM_REG_FCSEIDR,
+    UC_ARM_REG_FCSEIDR_S,
+    UC_ARM_REG_FCSEIDR_NS,
+    UC_ARM_REG_CONTEXTIDR,
+    UC_ARM_REG_CONTEXTIDR_S,
+    UC_ARM_REG_CONTEXTIDR_NS,
+    UC_ARM_REG_TTBR0,
+    UC_ARM_REG_TTBR0_S,
+    UC_ARM_REG_TTBR0_NS,
+    UC_ARM_REG_TTBR1,
+    UC_ARM_REG_TTBR1_S,
+    UC_ARM_REG_TTBR1_NS,
+    UC_ARM_REG_TTBCR,
+    UC_ARM_REG_TTBCR_S,
+    UC_ARM_REG_TTBCR_NS,
+    UC_ARM_REG_PRRR,
+    UC_ARM_REG_PRRR_S,
+    UC_ARM_REG_PRRR_NS,
+    UC_ARM_REG_NMRR,
+    UC_ARM_REG_NMRR_S,
+    UC_ARM_REG_NMRR_NS,
+    UC_ARM_REG_DBGDSCREXT,
+
+    UC_ARM_REG_MPIDR,
+
+    // > virtual registers
+    UC_ARM_VREG_AA64,  // virtual register for is_aarch64
+    UC_ARM_VREG_THUMB, // virtual register for is_thumb
+
+    UC_ARM_REG_NOIMP,  // placeholder for todo regs
+
+    UC_ARM_REG_ENDING, // <-- mark the end of the list or registers
 
     //> alias registers
     UC_ARM_REG_R13 = UC_ARM_REG_SP,
@@ -155,3 +236,4 @@ typedef enum uc_arm_reg {
 #endif
 
 #endif
+

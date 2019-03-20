@@ -122,7 +122,7 @@ void tlb_init(CPUState *cpu);
  * Flush one page from the TLB of the specified CPU, for all
  * MMU indexes.
  */
-void tlb_flush_page(CPUState *cpu, target_ulong addr);
+void tlb_flush_page(CPUState *cpu, uint64_t addr);
 /**
  * tlb_flush:
  * @cpu: CPU whose TLB should be flushed
@@ -133,6 +133,15 @@ void tlb_flush_page(CPUState *cpu, target_ulong addr);
  * use one of the other functions for efficiency.
  */
 void tlb_flush(CPUState *cpu);
+
+
+/**
+ * JHW: multicore variants of tlb_flush functions
+ */
+void tlb_flush_all_cpus_synced(CPUState *cpu);
+void tlb_flush_page_all_cpus_synced(CPUState *cpu, target_ulong addr);
+void tlb_flush_by_mmuidx_all_cpus_synced(CPUState *cpu, uint16_t idxmap);
+void tlb_flush_page_by_mmuidx_all_cpus_synced(CPUState *cpu, target_ulong addr, uint16_t idxmap);
 /**
  * tlb_flush_page_by_mmuidx:
  * @cpu: CPU whose TLB should be flushed
@@ -142,7 +151,7 @@ void tlb_flush(CPUState *cpu);
  * Flush one page from the TLB of the specified CPU, for the specified
  * MMU indexes.
  */
-void tlb_flush_page_by_mmuidx(CPUState *cpu, target_ulong addr,
+void tlb_flush_page_by_mmuidx(CPUState *cpu, uint64_t addr,
                               uint16_t idxmap);
 /**
  * tlb_flush_by_mmuidx:
@@ -397,5 +406,7 @@ static inline bool cpu_can_do_io(CPUState *cpu)
 
 // Unicorn: Prototype place here
 void page_size_init(struct uc_struct *uc);
+
+void dmi_invalidate(CPUState *cpu, uint64_t start, uint64_t end);
 
 #endif

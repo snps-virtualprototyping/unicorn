@@ -140,6 +140,10 @@ typedef struct CPUIOTLBEntry {
      */
     hwaddr addr;
     MemTxAttrs attrs;
+
+    /* JHW: needed for phys to virt to dmi translation */
+    hwaddr phys;
+    CPUTLBEntry* p2v;
 } CPUIOTLBEntry;
 
 #define CPU_COMMON_TLB \

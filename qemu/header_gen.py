@@ -3332,6 +3332,15 @@ symbols = (
     'xpsr_write',
     'xscale_cp_reginfo',
     'xscale_cpar_write',
+
+    # extra symbols
+    'memory_map_io',
+    'tlb_flush_all_cpus_synced',
+    'tlb_flush_page_all_cpus_synced',
+    'tlb_flush_by_mmuidx_all_cpus_synced',
+    'tlb_flush_page_by_mmuidx_all_cpus_synced',
+    'dmi_invalidate',
+    'helper_trace_tb_entry'
 )
 
 arm_symbols = (
@@ -3379,6 +3388,11 @@ arm_symbols = (
     'uqadd_op',
     'uqsub_op',
     'usra_op',
+
+    # xcores symbols
+    'helper_sev',
+    'helper_sevl',
+    'helper_call_breakpoints',
 )
 
 aarch64_symbols = (
@@ -4425,6 +4439,11 @@ aarch64_symbols = (
     'usra_op',
     'vfp_expand_imm',
     'write_fp_dreg',
+
+    # qiss symbols
+    'helper_sev',
+    'helper_sevl',
+    'helper_call_breakpoints',
 )
 
 m68k_symbols = (

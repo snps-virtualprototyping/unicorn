@@ -50,10 +50,14 @@ void arm_reg_reset(struct uc_struct *uc)
     env->pc = 0;
 }
 
+uint32_t helper_v7m_mrs(CPUARMState *env, uint32_t reg);
+void helper_v7m_msr(CPUARMState *env, uint32_t maskreg, uint32_t val);
+
 int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int count)
 {
     CPUState *mycpu = uc->cpu;
-    CPUARMState *state = &ARM_CPU(uc, mycpu)->env;
+    ARMCPU *cpu = ARM_CPU(uc, mycpu);
+    CPUARMState *state = &cpu->env;
     int i;
 
     for (i = 0; i < count; i++) {
@@ -66,48 +70,271 @@ int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
             *(float64 *)value = *d_reg;
         } else {
             switch(regid) {
-                case UC_ARM_REG_APSR:
-                    *(int32_t *)value = cpsr_read(state) & CPSR_NZCV;
-                    break;
-                case UC_ARM_REG_CPSR:
-                    *(int32_t *)value = cpsr_read(state);
-                    break;
-                //case UC_ARM_REG_SP:
-                case UC_ARM_REG_R13:
-                    *(int32_t *)value = state->regs[13];
-                    break;
-                //case UC_ARM_REG_LR:
-                case UC_ARM_REG_R14:
-                    *(int32_t *)value = state->regs[14];
-                    break;
-                //case UC_ARM_REG_PC:
-                case UC_ARM_REG_R15:
-                    *(int32_t *)value = state->regs[15];
-                    break;
-                case UC_ARM_REG_C1_C0_2:
-                    *(int32_t *)value = state->cp15.cpacr_el1;
-                    break;
-                case UC_ARM_REG_C13_C0_3:
-                    *(int32_t *)value = state->cp15.tpidrro_el[0];
-                    break;
-                case UC_ARM_REG_FPEXC:
-                    *(int32_t *)value = state->vfp.xregs[ARM_VFP_FPEXC];
-                    break;
-                case UC_ARM_REG_FPSCR:
-                    *(int32_t *)value = vfp_get_fpscr(state);
-                    break;
-                case UC_ARM_REG_IPSR:
-                    *(uint32_t *)value = xpsr_read(state) & 0x1ff;
-                    break;
-                case UC_ARM_REG_MSP:
-                    *(uint32_t *)value = helper_v7m_mrs(state, 8);
-                    break;
-                case UC_ARM_REG_PSP:
-                    *(uint32_t *)value = helper_v7m_mrs(state, 9);
-                    break;
-                 case UC_ARM_REG_CONTROL:
-                    *(uint32_t *)value = helper_v7m_mrs(state, 20);
-                    break;
+            case UC_ARM_REG_APSR:
+                *(int32_t *)value = cpsr_read(state) & CPSR_NZCV;
+                break;
+            case UC_ARM_REG_CPSR:
+                *(int32_t *)value = cpsr_read(state);
+                break;
+            //case UC_ARM_REG_SP:
+            case UC_ARM_REG_R13:
+                *(int32_t *)value = state->regs[13];
+                break;
+            //case UC_ARM_REG_LR:
+            case UC_ARM_REG_R14:
+                *(int32_t *)value = state->regs[14];
+                break;
+            //case UC_ARM_REG_PC:
+            case UC_ARM_REG_R15:
+                *(int32_t *)value = state->regs[15];
+                break;
+            case UC_ARM_REG_C1_C0_2:
+                *(int32_t *)value = state->cp15.cpacr_el1;
+                break;
+            case UC_ARM_REG_C13_C0_3:
+                *(int32_t *)value = state->cp15.tpidrro_el[0];
+                break;
+            case UC_ARM_REG_FPEXC:
+                *(int32_t *)value = state->vfp.xregs[ARM_VFP_FPEXC];
+                break;
+            case UC_ARM_REG_FPSCR:
+                *(int32_t *)value = vfp_get_fpscr(state);
+                break;
+            case UC_ARM_REG_IPSR:
+                *(uint32_t *)value = xpsr_read(state) & 0x1ff;
+                break;
+            case UC_ARM_REG_MSP:
+                *(uint32_t *)value = helper_v7m_mrs(state, 8);
+                break;
+            case UC_ARM_REG_PSP:
+                *(uint32_t *)value = helper_v7m_mrs(state, 9);
+                break;
+            case UC_ARM_REG_CONTROL:
+                *(uint32_t *)value = helper_v7m_mrs(state, 20);
+                break;
+
+            case UC_ARM_REG_R8_USR:
+            case UC_ARM_REG_R9_USR:
+            case UC_ARM_REG_R10_USR:
+            case UC_ARM_REG_R11_USR:
+            case UC_ARM_REG_R12_USR:
+                *(uint32_t *)value = state->usr_regs[regid - UC_ARM_REG_R8_USR];
+                break;
+
+            case UC_ARM_REG_R8_FIQ:
+            case UC_ARM_REG_R9_FIQ:
+            case UC_ARM_REG_R10_FIQ:
+            case UC_ARM_REG_R11_FIQ:
+            case UC_ARM_REG_R12_FIQ:
+                *(uint32_t *)value = state->fiq_regs[regid - UC_ARM_REG_R8_FIQ];
+                break;
+
+            case UC_ARM_REG_R13_USR:
+            case UC_ARM_REG_R13_SVC:
+            case UC_ARM_REG_R13_ABT:
+            case UC_ARM_REG_R13_UND:
+            case UC_ARM_REG_R13_IRQ:
+            case UC_ARM_REG_R13_FIQ:
+            case UC_ARM_REG_R13_HYP:
+            case UC_ARM_REG_R13_MON:
+                *(uint32_t *)value = state->banked_r13[regid - UC_ARM_REG_R13_USR];
+                break;
+
+            case UC_ARM_REG_R14_USR:
+            case UC_ARM_REG_R14_SVC:
+            case UC_ARM_REG_R14_ABT:
+            case UC_ARM_REG_R14_UND:
+            case UC_ARM_REG_R14_IRQ:
+            case UC_ARM_REG_R14_FIQ:
+            case UC_ARM_REG_R14_HYP:
+            case UC_ARM_REG_R14_MON:
+                *(uint32_t *)value = state->banked_r14[regid - UC_ARM_REG_R14_USR];
+                break;
+
+            case UC_ARM_REG_SPSR_USR:
+            case UC_ARM_REG_SPSR_SVC:
+            case UC_ARM_REG_SPSR_ABT:
+            case UC_ARM_REG_SPSR_UND:
+            case UC_ARM_REG_SPSR_IRQ:
+            case UC_ARM_REG_SPSR_FIQ:
+            case UC_ARM_REG_SPSR_HYP:
+            case UC_ARM_REG_SPSR_MON:
+                *(uint32_t *)value = state->banked_spsr[regid - UC_ARM_REG_SPSR_USR];
+                break;
+
+            case UC_ARM_REG_SCR:
+                *(uint32_t *)value = state->cp15.scr_el3;
+                break;
+
+            case UC_ARM_REG_VBAR:
+                if (arm_is_secure(state))
+                    *(uint32_t *)value = state->cp15.vbar_s;
+                else
+                    *(uint32_t *)value = state->cp15.vbar_ns;
+                break;
+
+            case UC_ARM_REG_VBAR_S:
+                *(uint32_t *)value = state->cp15.vbar_s;
+                break;
+
+            case UC_ARM_REG_VBAR_NS:
+                *(uint32_t *)value = state->cp15.vbar_ns;
+                break;
+
+            case UC_ARM_REG_DACR:
+                if (arm_is_secure(state))
+                    *(uint32_t *)value = state->cp15.dacr_s;
+                else
+                    *(uint32_t *)value = state->cp15.dacr_ns;
+                break;
+
+            case UC_ARM_REG_DACR_S:
+                *(uint32_t *)value = state->cp15.dacr_s;
+                break;
+
+            case UC_ARM_REG_DACR_NS:
+                *(uint32_t *)value = state->cp15.dacr_ns;
+                break;
+
+            case UC_ARM_REG_SCTLR:
+                if (arm_is_secure(state))
+                    *(uint32_t *)value = state->cp15.sctlr_s;
+                else
+                    *(uint32_t *)value = state->cp15.sctlr_ns;
+                break;
+
+            case UC_ARM_REG_SCTLR_S:
+                *(uint32_t *)value = state->cp15.sctlr_s;
+                break;
+
+            case UC_ARM_REG_SCTLR_NS:
+                *(uint32_t *)value = state->cp15.sctlr_ns;
+                break;
+
+            case UC_ARM_REG_FCSEIDR:
+                if (arm_is_secure(state))
+                    *(uint32_t *)value = state->cp15.fcseidr_s;
+                else
+                    *(uint32_t *)value = state->cp15.fcseidr_ns;
+                break;
+
+            case UC_ARM_REG_FCSEIDR_S:
+                *(uint32_t *)value = state->cp15.fcseidr_s;
+                break;
+
+            case UC_ARM_REG_FCSEIDR_NS:
+                *(uint32_t *)value = state->cp15.fcseidr_ns;
+                break;
+
+            case UC_ARM_REG_CONTEXTIDR:
+                if (arm_is_secure(state))
+                    *(uint32_t *)value = state->cp15.contextidr_s;
+                else
+                    *(uint32_t *)value = state->cp15.contextidr_ns;
+                break;
+
+            case UC_ARM_REG_CONTEXTIDR_S:
+                *(uint32_t *)value = state->cp15.contextidr_s;
+                break;
+
+            case UC_ARM_REG_CONTEXTIDR_NS:
+                *(uint32_t *)value = state->cp15.contextidr_ns;
+                break;
+
+            case UC_ARM_REG_TTBR0:
+                if (arm_is_secure(state))
+                    *(uint32_t *)value = state->cp15.ttbr0_s;
+                else
+                    *(uint32_t *)value = state->cp15.ttbr0_ns;
+                break;
+
+            case UC_ARM_REG_TTBR0_S:
+                *(uint32_t *)value = state->cp15.ttbr0_s;
+                break;
+
+            case UC_ARM_REG_TTBR0_NS:
+                *(uint32_t *)value = state->cp15.ttbr0_ns;
+                break;
+
+            case UC_ARM_REG_TTBR1:
+                if (arm_is_secure(state))
+                    *(uint32_t *)value = state->cp15.ttbr1_s;
+                else
+                    *(uint32_t *)value = state->cp15.ttbr1_ns;
+                break;
+
+            case UC_ARM_REG_TTBR1_S:
+                *(uint32_t *)value = state->cp15.ttbr1_s;
+                break;
+
+            case UC_ARM_REG_TTBR1_NS:
+                *(uint32_t *)value = state->cp15.ttbr1_ns;
+                break;
+
+            case UC_ARM_REG_TTBCR:
+                *(uint32_t *)value = state->cp15.tcr_el[arm_is_secure(state) ? 3 : 1].raw_tcr;
+                break;
+
+            case UC_ARM_REG_TTBCR_S:
+                *(uint32_t *)value = state->cp15.tcr_el[3].raw_tcr;
+                break;
+
+            case UC_ARM_REG_TTBCR_NS:
+                *(uint32_t *)value = state->cp15.tcr_el[1].raw_tcr;
+                break;
+
+            case UC_ARM_REG_PRRR:
+                if (arm_is_secure(state))
+                    *(uint32_t *)value = state->cp15.mair0_s;
+                else
+                    *(uint32_t *)value = state->cp15.mair0_ns;
+                break;
+
+            case UC_ARM_REG_PRRR_S:
+                *(uint32_t *)value = state->cp15.mair0_s;
+                break;
+
+            case UC_ARM_REG_PRRR_NS:
+                *(uint32_t *)value = state->cp15.mair0_ns;
+                break;
+
+            case UC_ARM_REG_NMRR:
+                if (arm_is_secure(state))
+                    *(uint32_t *)value = state->cp15.mair1_s;
+                else
+                    *(uint32_t *)value = state->cp15.mair1_ns;
+                break;
+
+            case UC_ARM_REG_NMRR_S:
+                *(uint32_t *)value = state->cp15.mair1_s;
+                break;
+
+            case UC_ARM_REG_NMRR_NS:
+                *(uint32_t *)value = state->cp15.mair1_ns;
+                break;
+
+            case UC_ARM_REG_DBGDSCREXT:
+                *(uint32_t *)value = state->cp15.mdscr_el1;
+                break;
+
+            case UC_ARM_REG_MPIDR:
+                *(uint32_t *)value = cpu->mp_affinity & 0xfff;
+                break;
+
+            case UC_ARM_VREG_AA64:
+                *(uint32_t *)value = state->aarch64;
+                break;
+
+            case UC_ARM_VREG_THUMB:
+                *(uint32_t *)value = state->thumb;
+                break;
+
+            case UC_ARM_REG_NOIMP:
+                *(uint32_t *)value = 0xeeeeeeee;
+                break;
+
+            default:
+                return -1;
             }
         }
     }
@@ -118,7 +345,8 @@ int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
 int arm_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals, int count)
 {
     CPUState *mycpu = uc->cpu;
-    CPUARMState *state = &ARM_CPU(uc, mycpu)->env;
+    ARMCPU *cpu = ARM_CPU(uc, mycpu);
+    CPUARMState *state = &cpu->env;
     int i;
 
     for (i = 0; i < count; i++) {
@@ -131,56 +359,260 @@ int arm_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals, i
             *d_reg = *(float64 *)value;
         } else {
             switch(regid) {
-                case UC_ARM_REG_APSR:
-                    cpsr_write(state, *(uint32_t *)value, CPSR_NZCV, CPSRWriteRaw);
-                    break;
-                case UC_ARM_REG_CPSR:
-                    cpsr_write(state, *(uint32_t *)value, ~0, CPSRWriteRaw);
-                    break;
-                //case UC_ARM_REG_SP:
-                case UC_ARM_REG_R13:
-                    state->regs[13] = *(uint32_t *)value;
-                    break;
-                //case UC_ARM_REG_LR:
-                case UC_ARM_REG_R14:
-                    state->regs[14] = *(uint32_t *)value;
-                    break;
-                //case UC_ARM_REG_PC:
-                case UC_ARM_REG_R15:
-                    state->pc = (*(uint32_t *)value & ~1);
-                    state->thumb = (*(uint32_t *)value & 1);
-                    state->uc->thumb = (*(uint32_t *)value & 1);
-                    state->regs[15] = (*(uint32_t *)value & ~1);
-                    // force to quit execution and flush TB
-                    uc->quit_request = true;
-                    uc_emu_stop(uc);
+            case UC_ARM_REG_APSR:
+                cpsr_write(state, *(uint32_t *)value, CPSR_NZCV, CPSRWriteRaw);
+                break;
+            case UC_ARM_REG_CPSR:
+                cpsr_write(state, *(uint32_t *)value, ~0, CPSRWriteRaw);
+                break;
+            //case UC_ARM_REG_SP:
+            case UC_ARM_REG_R13:
+                state->regs[13] = *(uint32_t *)value;
+                break;
+            //case UC_ARM_REG_LR:
+            case UC_ARM_REG_R14:
+                state->regs[14] = *(uint32_t *)value;
+                break;
+            //case UC_ARM_REG_PC:
+            case UC_ARM_REG_R15:
+                state->pc = (*(uint32_t *)value & ~1);
+                state->thumb = (*(uint32_t *)value & 1);
+                //state->uc->thumb = (*(uint32_t *)value & 1);
+                state->regs[15] = (*(uint32_t *)value & ~1);
+                // force to quit execution and flush TB
+                uc->quit_request = true;
+                uc_emu_stop(uc);
 
-                    break;
-                case UC_ARM_REG_C1_C0_2:
-                    state->cp15.cpacr_el1 = *(int32_t *)value;
-                    break;
+                break;
+            case UC_ARM_REG_C1_C0_2:
+                state->cp15.cpacr_el1 = *(int32_t *)value;
+                break;
 
-                case UC_ARM_REG_C13_C0_3:
-                    state->cp15.tpidrro_el[0] = *(int32_t *)value;
-                    break;
-                case UC_ARM_REG_FPEXC:
-                    state->vfp.xregs[ARM_VFP_FPEXC] = *(int32_t *)value;
-                    break;
-                case UC_ARM_REG_FPSCR:
-                    vfp_set_fpscr(state, *(uint32_t *)value);
-                    break;
-                case UC_ARM_REG_IPSR:
-                    xpsr_write(state, *(uint32_t *)value, 0x1ff);
-                    break;
-                case UC_ARM_REG_MSP:
-                    helper_v7m_msr(state, 8, *(uint32_t *)value);
-                    break;
-                case UC_ARM_REG_PSP:
-                    helper_v7m_msr(state, 9, *(uint32_t *)value);
-                    break;
-                 case UC_ARM_REG_CONTROL:
-                    helper_v7m_msr(state, 20, *(uint32_t *)value);
-                    break;
+            case UC_ARM_REG_C13_C0_3:
+                state->cp15.tpidrro_el[0] = *(int32_t *)value;
+                break;
+            case UC_ARM_REG_FPEXC:
+                state->vfp.xregs[ARM_VFP_FPEXC] = *(int32_t *)value;
+                break;
+            case UC_ARM_REG_FPSCR:
+                vfp_set_fpscr(state, *(uint32_t *)value);
+                break;
+            case UC_ARM_REG_IPSR:
+                xpsr_write(state, *(uint32_t *)value, 0x1ff);
+                break;
+            case UC_ARM_REG_MSP:
+                helper_v7m_msr(state, 8, *(uint32_t *)value);
+                break;
+            case UC_ARM_REG_PSP:
+                helper_v7m_msr(state, 9, *(uint32_t *)value);
+                break;
+            case UC_ARM_REG_CONTROL:
+                helper_v7m_msr(state, 20, *(uint32_t *)value);
+                break;
+            case UC_ARM_REG_R8_USR:
+            case UC_ARM_REG_R9_USR:
+            case UC_ARM_REG_R10_USR:
+            case UC_ARM_REG_R11_USR:
+            case UC_ARM_REG_R12_USR:
+                state->usr_regs[regid - UC_ARM_REG_R8_USR] = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_R8_FIQ:
+            case UC_ARM_REG_R9_FIQ:
+            case UC_ARM_REG_R10_FIQ:
+            case UC_ARM_REG_R11_FIQ:
+            case UC_ARM_REG_R12_FIQ:
+                state->fiq_regs[regid - UC_ARM_REG_R8_FIQ] = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_R13_USR:
+            case UC_ARM_REG_R13_SVC:
+            case UC_ARM_REG_R13_ABT:
+            case UC_ARM_REG_R13_UND:
+            case UC_ARM_REG_R13_IRQ:
+            case UC_ARM_REG_R13_FIQ:
+            case UC_ARM_REG_R13_HYP:
+            case UC_ARM_REG_R13_MON:
+                state->banked_r13[regid - UC_ARM_REG_R13_USR] = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_R14_USR:
+            case UC_ARM_REG_R14_SVC:
+            case UC_ARM_REG_R14_ABT:
+            case UC_ARM_REG_R14_UND:
+            case UC_ARM_REG_R14_IRQ:
+            case UC_ARM_REG_R14_FIQ:
+            case UC_ARM_REG_R14_HYP:
+            case UC_ARM_REG_R14_MON:
+                state->banked_r14[regid - UC_ARM_REG_R14_USR] = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_SPSR_USR:
+            case UC_ARM_REG_SPSR_SVC:
+            case UC_ARM_REG_SPSR_ABT:
+            case UC_ARM_REG_SPSR_UND:
+            case UC_ARM_REG_SPSR_IRQ:
+            case UC_ARM_REG_SPSR_FIQ:
+            case UC_ARM_REG_SPSR_HYP:
+            case UC_ARM_REG_SPSR_MON:
+                state->banked_spsr[regid - UC_ARM_REG_SPSR_USR] = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_SCR:
+                state->cp15.scr_el3 = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_VBAR_NS:
+                state->cp15.vbar_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_VBAR_S:
+                state->cp15.vbar_s = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_DACR:
+                if (arm_is_secure(state))
+                    state->cp15.dacr_s = *(uint32_t *)value;
+                else
+                    state->cp15.dacr_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_DACR_S:
+                state->cp15.dacr_s = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_DACR_NS:
+                state->cp15.dacr_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_SCTLR:
+                if (arm_is_secure(state))
+                    state->cp15.sctlr_s = *(uint32_t *)value;
+                else
+                    state->cp15.sctlr_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_SCTLR_S:
+                state->cp15.sctlr_s = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_SCTLR_NS:
+                state->cp15.sctlr_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_FCSEIDR:
+                if (arm_is_secure(state))
+                    state->cp15.fcseidr_s = *(uint32_t *)value;
+                else
+                    state->cp15.fcseidr_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_FCSEIDR_S:
+                state->cp15.fcseidr_s = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_FCSEIDR_NS:
+                state->cp15.fcseidr_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_CONTEXTIDR:
+                if (arm_is_secure(state))
+                    state->cp15.contextidr_s = *(uint32_t *)value;
+                else
+                    state->cp15.contextidr_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_CONTEXTIDR_S:
+                state->cp15.contextidr_s = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_CONTEXTIDR_NS:
+                state->cp15.contextidr_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_TTBR0:
+                if (arm_is_secure(state))
+                    state->cp15.ttbr0_s = *(uint32_t *)value;
+                else
+                    state->cp15.ttbr0_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_TTBR0_S:
+                state->cp15.ttbr0_s = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_TTBR0_NS:
+                state->cp15.ttbr0_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_TTBR1:
+                if (arm_is_secure(state))
+                    state->cp15.ttbr1_s = *(uint32_t *)value;
+                else
+                    state->cp15.ttbr1_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_TTBR1_S:
+                state->cp15.ttbr1_s = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_TTBR1_NS:
+                state->cp15.ttbr1_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_TTBCR:
+                state->cp15.tcr_el[arm_is_secure(state) ? 3 : 1].raw_tcr = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_TTBCR_S:
+                state->cp15.tcr_el[3].raw_tcr = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_TTBCR_NS:
+                state->cp15.tcr_el[1].raw_tcr = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_PRRR:
+                if (arm_is_secure(state))
+                    state->cp15.mair0_s = *(uint32_t *)value;
+                else
+                    state->cp15.mair0_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_PRRR_S:
+                state->cp15.mair0_s = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_PRRR_NS:
+               state->cp15.mair0_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_NMRR:
+                if (arm_is_secure(state))
+                    state->cp15.mair1_s = *(uint32_t *)value;
+                else
+                    state->cp15.mair1_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_NMRR_S:
+                state->cp15.mair1_s = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_NMRR_NS:
+                state->cp15.mair1_ns = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_DBGDSCREXT:
+                state->cp15.mdscr_el1 = *(uint32_t *)value;
+                break;
+
+            case UC_ARM_REG_MPIDR:
+                cpu->mp_affinity = *(uint32_t *)value & 0xfff;
+                break;
+
+            case UC_ARM_REG_NOIMP:
+            default:
+                return -1;
             }
         }
     }
@@ -188,6 +620,7 @@ int arm_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals, i
     return 0;
 }
 
+#ifdef jhw
 static bool arm_stop_interrupt(int intno)
 {
     switch(intno) {
@@ -198,6 +631,7 @@ static bool arm_stop_interrupt(int intno)
             return true;
     }
 }
+#endif
 
 static uc_err arm_query(struct uc_struct *uc, uc_query_type type, size_t *result)
 {
@@ -218,6 +652,34 @@ static uc_err arm_query(struct uc_struct *uc, uc_query_type type, size_t *result
     }
 }
 
+// JHW
+void arm_timer_recalc(CPUState *cpu, int timeridx);
+
+void arm_timer_recalc(CPUState *cpu, int timeridx)
+{
+    switch (timeridx) {
+    case GTIMER_PHYS:
+        arm_gt_ptimer_cb(ARM_CPU(cpu->uc, cpu));
+        break;
+
+    case GTIMER_VIRT:
+        arm_gt_vtimer_cb(ARM_CPU(cpu->uc, cpu));
+        break;
+
+    case GTIMER_HYP:
+        arm_gt_htimer_cb(ARM_CPU(cpu->uc, cpu));
+        break;
+
+    case GTIMER_SEC:
+        arm_gt_stimer_cb(ARM_CPU(cpu->uc, cpu));
+        break;
+
+    default:
+        assert(0 && "invalid timer index");
+    }
+
+}
+
 #ifdef TARGET_WORDS_BIGENDIAN
 void armeb_uc_init(struct uc_struct* uc)
 #else
@@ -226,13 +688,16 @@ void arm_uc_init(struct uc_struct* uc)
 {
     register_accel_types(uc);
     arm_cpu_register_types(uc);
-    tosa_machine_init_register_types(uc);
+    //tosa_machine_init_register_types(uc);
+    machvirt_machine_init(uc);
     uc->reg_read = arm_reg_read;
     uc->reg_write = arm_reg_write;
     uc->reg_reset = arm_reg_reset;
     uc->set_pc = arm_set_pc;
-    uc->stop_interrupt = arm_stop_interrupt;
+    //uc->stop_interrupt = arm_stop_interrupt; // jhw
     uc->release = arm_release;
     uc->query = arm_query;
     uc_common_init(uc);
+
+    uc->timer_recalc = arm_timer_recalc;
 }

@@ -61,12 +61,6 @@ void cpu_stop_current(struct uc_struct *uc)
 /***********************************************************/
 /* Semihosting */
 
-bool semihosting_enabled(void)
-{
-    // UNICORN: Always return false
-    return false;
-}
-
 SemihostingTarget semihosting_get_target(void)
 {
     return SEMIHOSTING_TARGET_AUTO;
@@ -163,7 +157,9 @@ int machine_initialize(struct uc_struct *uc)
     configure_accelerator(current_machine);
 
     /* parse features once if machine provides default cpu_type */
-    current_machine->cpu_type = machine_class->default_cpu_type;
+    current_machine->cpu_type = uc->model;
+    if (current_machine->cpu_type == NULL)
+        current_machine->cpu_type = machine_class->default_cpu_type;
 
     return machine_class->init(uc, current_machine);
 }

@@ -32,9 +32,117 @@
 #include "exec/ram_addr.h"
 #include "sysemu/sysemu.h"
 
+#include "uc_priv.h"
+
 //#define DEBUG_UNASSIGNED
 
 #define RAM_ADDR_INVALID (~(ram_addr_t)0)
+
+static MemTxResult uc_mmio_read_helper(struct uc_struct* uc, void *opaque,
+                                       hwaddr addr, uint64_t *data,
+                                       unsigned int size, MemTxAttrs attrs) {
+    uc_mmio_tx_t tx;
+    tx.addr = addr;
+    tx.size = size;
+    tx.data = data;
+
+    tx.is_read = 1;
+    tx.is_io = 0;
+
+    if (!attrs.unspecified) {
+        tx.is_secure = attrs.secure;
+        tx.is_user = attrs.user;
+
+        tx.cpuid = attrs.requester_id;
+    } else {
+        tx.is_secure = 0;
+        tx.is_user = 0;
+        tx.cpuid = -1;
+    }
+
+    uc_mmio_region_t* ops = opaque;
+    uc_cb_mmio_t func = ops->callback;
+    uc_tx_result_t res = (*func)(uc, ops->user_data, &tx);
+
+    switch (res) {
+    case UC_TX_OK:return MEMTX_OK;
+    case UC_TX_ERROR: return MEMTX_ERROR;
+    case UC_TX_ADDRESS_ERROR: return MEMTX_DECODE_ERROR;
+    default: break;
+    }
+
+    g_assert_not_reached();
+    return MEMTX_ERROR;
+}
+
+static MemTxResult uc_mmio_write_helper(struct uc_struct* uc, void *opaque,
+                                        hwaddr addr, uint64_t data,
+                                        unsigned int size, MemTxAttrs attrs) {
+    uc_mmio_tx_t tx;
+    tx.addr = addr;
+    tx.size = size;
+    tx.data = &data;
+
+    tx.is_read = 0;
+    tx.is_io = 0;
+
+    if (!attrs.unspecified) {
+        tx.is_secure = attrs.secure;
+        tx.is_user = attrs.user;
+
+        tx.cpuid = attrs.requester_id;
+    } else {
+        tx.is_secure = 0;
+        tx.is_user = 0;
+        tx.cpuid = -1;
+    }
+
+    uc_mmio_region_t* ops = opaque;
+    uc_cb_mmio_t func = ops->callback;
+    uc_tx_result_t res = (*func)(uc, ops->user_data, &tx);
+
+    switch (res) {
+    case UC_TX_OK:return MEMTX_OK;
+    case UC_TX_ERROR: return MEMTX_ERROR;
+    case UC_TX_ADDRESS_ERROR: return MEMTX_DECODE_ERROR;
+    default: break;
+    }
+
+    g_assert_not_reached();
+    return MEMTX_ERROR;
+}
+
+static const struct MemoryRegionOps uc_mmio_ops = {
+    .read = NULL,
+    .write = NULL,
+    .read_with_attrs = uc_mmio_read_helper,
+    .write_with_attrs = uc_mmio_write_helper,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+    // valid
+    {
+        1, 8,
+        true,
+        NULL,
+    },
+    // impl
+    {
+        1, 8,
+        true,
+        NULL,
+    },
+};
+
+MemoryRegion *memory_map_io(struct uc_struct *uc, hwaddr begin, size_t size,
+                        void *opq) {
+    MemoryRegion *mmio = g_new(MemoryRegion, 1);
+    memory_region_init_io(uc, mmio, NULL, &uc_mmio_ops, opq, "uc.mmio", size);
+    memory_region_add_subregion_overlap(get_system_memory(uc), begin, mmio, 0);
+
+    if (uc->current_cpu)
+    tlb_flush(uc->current_cpu);
+
+    return mmio;
+}
 
 // Unicorn engine
 MemoryRegion *memory_map(struct uc_struct *uc, hwaddr begin, size_t size, uint32_t perms)
@@ -66,7 +174,7 @@ MemoryRegion *memory_map_ptr(struct uc_struct *uc, hwaddr begin, size_t size, ui
         return NULL;
     }
 
-    memory_region_add_subregion(get_system_memory(uc), begin, ram);
+    memory_region_add_subregion_overlap(get_system_memory(uc), begin, ram, 1);
 
     if (uc->current_cpu)
         tlb_flush(uc->current_cpu);
@@ -106,6 +214,23 @@ void memory_unmap(struct uc_struct *uc, MemoryRegion *mr)
             object_property_del_child(mr->uc, qdev_get_machine(mr->uc), obj, &error_abort);
             break;
         }
+    }
+
+    // JHW: cleanup mmio structs
+    uc_mmio_region_t *ptr = uc->mmios;
+    while (ptr) {
+        if (ptr->region->addr == mr->addr) {
+            if (ptr->prev)
+                ptr->prev->next = ptr->next;
+            if (ptr->next)
+                ptr->next->prev = ptr->prev;
+            if (ptr == uc->mmios)
+                uc->mmios = uc->mmios->next;
+
+            g_free(ptr);
+        }
+
+        ptr = ptr->next;
     }
 }
 
@@ -1138,10 +1263,16 @@ static void memory_region_initfn(struct uc_struct *uc, Object *obj, void *opaque
                         NULL, NULL, &error_abort);
 }
 
-static uint64_t unassigned_mem_read(struct uc_struct* uc, hwaddr addr, unsigned size)
-{
+#define DEBUG_UNASSIGNED
+
+static uint64_t unassigned_mem_read(struct uc_struct* uc, void* p, hwaddr addr,
+                                    unsigned size) {
 #ifdef DEBUG_UNASSIGNED
-    printf("Unassigned mem read " TARGET_FMT_plx "\n", addr);
+    uint64_t pc;
+    uc_reg_read(uc, UC_ARM64_REG_PC, &pc);
+    fprintf(stderr, "Unassigned mem read: addr = " TARGET_FMT_plx, addr);
+    fprintf(stderr, " pc = " TARGET_FMT_plx ": ", pc);
+    fprintf(stderr, " memory.c + 1260\n");
 #endif
     if (uc->current_cpu != NULL) {
         cpu_unassigned_access(uc->current_cpu, addr, false, false, 0, size);
@@ -1149,11 +1280,14 @@ static uint64_t unassigned_mem_read(struct uc_struct* uc, hwaddr addr, unsigned 
     return 0;
 }
 
-static void unassigned_mem_write(struct uc_struct* uc, hwaddr addr,
-                                 uint64_t val, unsigned size)
-{
+static void unassigned_mem_write(struct uc_struct* uc, void* p, hwaddr addr,
+                                 uint64_t val, unsigned size) {
 #ifdef DEBUG_UNASSIGNED
-    printf("Unassigned mem write " TARGET_FMT_plx " = 0x%"PRIx64"\n", addr, val);
+    uint64_t pc;
+    uc_reg_read(uc, UC_ARM64_REG_PC, &pc);
+    fprintf(stderr, "Unassigned mem write: addr = " TARGET_FMT_plx, addr);
+    fprintf(stderr, " val = 0x%016lx, pc = 0x%016lx", val, pc);
+    fprintf(stderr, " memory.c + 1275\n");
 #endif
     if (uc->current_cpu != NULL) {
         cpu_unassigned_access(uc->current_cpu, addr, true, false, 0, size);
@@ -1163,12 +1297,12 @@ static void unassigned_mem_write(struct uc_struct* uc, hwaddr addr,
 static bool unassigned_mem_accepts(void *opaque, hwaddr addr,
                                    unsigned size, bool is_write)
 {
-    return false;
+    return true;
 }
 
 const MemoryRegionOps unassigned_mem_ops = {
-    NULL,
-    NULL,
+    unassigned_mem_read,
+    unassigned_mem_write,
     NULL,
     NULL,
     DEVICE_NATIVE_ENDIAN,
@@ -1316,7 +1450,7 @@ MemTxResult memory_region_dispatch_read(MemoryRegion *mr,
     MemTxResult r;
 
     if (!memory_region_access_valid(mr, addr, size, false)) {
-        *pval = unassigned_mem_read(mr->uc, addr, size);
+        *pval = unassigned_mem_read(mr->uc, NULL, addr, size);
         return MEMTX_DECODE_ERROR;
     }
 
@@ -1332,7 +1466,7 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
                                          MemTxAttrs attrs)
 {
     if (!memory_region_access_valid(mr, addr, size, true)) {
-        unassigned_mem_write(mr->uc, addr, data, size);
+        unassigned_mem_write(mr->uc, NULL, addr, data, size);
         return MEMTX_DECODE_ERROR;
     }
 
@@ -1365,6 +1499,7 @@ void memory_region_init_io(struct uc_struct *uc, MemoryRegion *mr,
     mr->ops = ops ? ops : &unassigned_mem_ops;
     mr->opaque = opaque;
     mr->terminates = true;
+    mr->perms = UC_PROT_ALL;
 }
 
 void memory_region_init_ram_nomigrate(struct uc_struct *uc,

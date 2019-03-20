@@ -134,6 +134,11 @@ static void deliver_fault(ARMCPU *cpu, vaddr addr, MMUAccessType access_type,
     uint32_t syn, exc, fsr, fsc;
     ARMMMUIdx arm_mmu_idx = core_to_arm_mmu_idx(env, mmu_idx);
 
+    // Count an ifetch-fault as an executed instruction to avoid the core being
+    // stuck at zero instruction count and not allow time to advance.
+    if (access_type == MMU_INST_FETCH)
+        env->uc->cpu->insn_count++;
+
     target_el = exception_target_el(env);
     if (fi->stage2) {
         target_el = 2;
@@ -187,6 +192,8 @@ void tlb_fill(CPUState *cs, target_ulong addr, int size,
 {
     bool ret;
     ARMMMUFaultInfo fi = {0};
+    bool restore = cs->uc->is_excl;
+    cs->uc->is_excl = false;
 
     ret = arm_tlb_fill(cs, addr, access_type, mmu_idx, &fi);
     if (unlikely(ret)) {
@@ -197,6 +204,8 @@ void tlb_fill(CPUState *cs, target_ulong addr, int size,
 
         deliver_fault(cpu, addr, access_type, mmu_idx, &fi);
     }
+
+    cs->uc->is_excl = restore;
 }
 
 /* Raise a data fault alignment exception for the specified virtual address */
@@ -450,12 +459,14 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
     CPUState *cs = CPU(arm_env_get_cpu(env));
     int target_el = check_wfx_trap(env, false);
 
+#ifdef JHW
     if (cpu_has_work(cs)) {
         /* Don't bother to go into our "low power state" if
          * we would just wake up immediately.
          */
         return;
     }
+#endif
 
     if (target_el) {
         env->pc -= insn_len;
@@ -463,41 +474,77 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
                         target_el);
     }
 
+    uc_hintfunc_t fn = env->uc->uc_hint_func;
+    void* opaque = env->uc->uc_hint_opaque;
+
+    if (fn != NULL) {
+        fn(opaque, UC_HINT_WFI);
+        return;
+    }
+
     cs->exception_index = EXCP_HLT;
     cs->halted = 1;
+    cs->is_idle = true;
+
     cpu_loop_exit(cs);
 }
 
 void HELPER(wfe)(CPUARMState *env)
 {
-    /* This is a hint instruction that is semantically different
-     * from YIELD even though we currently implement it identically.
-     * Don't actually halt the CPU, just yield back to top
-     * level loop. This is not going into a "low power state"
-     * (ie halting until some event occurs), so we never take
-     * a configurable trap to a different exception level.
-     */
-    HELPER(yield)(env);
+    uc_hintfunc_t fn = env->uc->uc_hint_func;
+    void* opaque = env->uc->uc_hint_opaque;
+
+    if (fn != NULL) {
+        fn(opaque, UC_HINT_WFE);
+        return;
+    }
+
+    ARMCPU *cpu = arm_env_get_cpu(env);
+    CPUState *cs = CPU(cpu);
+
+    cs->exception_index = EXCP_YIELD;
+    cs->halted = 1;
+    cs->is_idle = true;
+
+    cpu_loop_exit(cs);
 }
 
 void HELPER(yield)(CPUARMState *env)
 {
+    uc_hintfunc_t fn = env->uc->uc_hint_func;
+    void* opaque = env->uc->uc_hint_opaque;
+
+    if (fn != NULL) {
+        fn(opaque, UC_HINT_YIELD);
+        return;
+    }
+
     ARMCPU *cpu = arm_env_get_cpu(env);
     CPUState *cs = CPU(cpu);
 
-    /* When running in MTTCG we don't generate jumps to the yield and
-     * WFE helpers as it won't affect the scheduling of other vCPUs.
-     * If we wanted to more completely model WFE/SEV so we don't busy
-     * spin unnecessarily we would need to do something more involved.
-     */
-    g_assert(!cs->uc->parallel_cpus);
-
-    /* This is a non-trappable hint instruction that generally indicates
-     * that the guest is currently busy-looping. Yield control back to the
-     * top level loop so that a more deserving VCPU has a chance to run.
-     */
     cs->exception_index = EXCP_YIELD;
+    cs->halted = 1;
+    cs->is_idle = true;
+
     cpu_loop_exit(cs);
+}
+
+void HELPER(sev)(CPUARMState *env)
+{
+    uc_hintfunc_t fn = env->uc->uc_hint_func;
+    void* opaque = env->uc->uc_hint_opaque;
+
+    if (fn != NULL)
+        fn(opaque, UC_HINT_SEV);
+}
+
+void HELPER(sevl)(CPUARMState *env)
+{
+    uc_hintfunc_t fn = env->uc->uc_hint_func;
+    void* opaque = env->uc->uc_hint_opaque;
+
+    if (fn != NULL)
+        fn(opaque, UC_HINT_SEVL);
 }
 
 /* Raise an internal-to-QEMU exception. This is limited to only
@@ -1165,6 +1212,13 @@ void HELPER(check_breakpoints)(CPUARMState *env)
     }
 }
 
+void HELPER(call_breakpoints)(CPUARMState *env) {
+    if (env->uc->uc_breakpoint_func) {
+        uint64_t pc = env->aarch64 ? env->pc : env->regs[15];
+        (env->uc->uc_breakpoint_func)(env->uc->uc_breakpoint_opaque, pc);
+    }
+}
+
 bool arm_debug_check_watchpoint(CPUState *cs, CPUWatchpoint *wp)
 {
     /* Called by core code when a CPU watchpoint fires; need to check if this
@@ -1230,8 +1284,12 @@ void arm_debug_excp_handler(CPUState *cs)
          */
         if (cpu_breakpoint_test(cs, pc, BP_GDB)
             || !cpu_breakpoint_test(cs, pc, BP_CPU)) {
+            cs->uc->invalid_error = UC_ERR_BREAKPOINT;
             return;
         }
+
+        if (cpu_breakpoint_test(cs, pc, BP_CALL))
+            return;
 
         env->exception.fsr = arm_debug_exception_fsr(env);
         /* FAR is UNKNOWN: clear vaddress to avoid potentially exposing

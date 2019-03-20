@@ -8,12 +8,14 @@
 # Compile with debug info when you want to debug code.
 # Change this to 'no' for release edition.
 
-UNICORN_DEBUG ?= yes
+#UNICORN_DEBUG ?= yes
+UNICORN_DEBUG ?= no
 
 ################################################################################
 # Specify which archs you want to compile in. By default, we build all archs.
 
-UNICORN_ARCHS ?= x86 m68k arm aarch64 mips sparc
+#UNICORN_ARCHS ?= x86 m68k arm aarch64 mips sparc
+UNICORN_ARCHS ?= aarch64 arm
 
 
 ################################################################################

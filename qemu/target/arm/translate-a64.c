@@ -31,8 +31,8 @@
 
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
-#include "exec/semihost.h"
 #include "exec/gen-icount.h"
+#include "exec/semihost.h"
 
 #include "translate-a64.h"
 
@@ -511,6 +511,7 @@ static inline void gen_goto_tb(DisasContext *s, int n, uint64_t dest)
 void unallocated_encoding(DisasContext *s)
 {
     /* Unallocated and reserved encodings are uncategorized */
+    fprintf(stderr, "unallocated encoding, pc = 0x%016lx, translate-a64.c +514\n", s->pc);
     gen_exception_insn(s, 4, EXCP_UDEF, syn_uncategorized(),
                        default_exception_el(s));
 }
@@ -1561,26 +1562,36 @@ static void handle_hint(DisasContext *s, uint32_t insn,
         return;
     }
 
+    gen_a64_set_pc_im(s, s->base.pc_next);
+
     switch (selector) {
     case 0b00000: /* NOP */
         break;
-    case 0b00011: /* WFI */
-        s->base.is_jmp = DISAS_WFI;
+    case 0b00011: {/* WFI */
+        TCGv_i32 tmp = tcg_const_i32(tcg_ctx, 4);
+        gen_helper_wfi(tcg_ctx, tcg_ctx->cpu_env, tmp);
+        tcg_temp_free_i32(tcg_ctx, tmp);
+        s->base.is_jmp = DISAS_NEXT;
         break;
+    }
     case 0b00001: /* YIELD */
-        if (!s->uc->parallel_cpus) {
-            s->base.is_jmp = DISAS_YIELD;
-        }
+        gen_helper_yield(tcg_ctx, tcg_ctx->cpu_env);
+        s->base.is_jmp = DISAS_NEXT;
         break;
+
     case 0b00010: /* WFE */
-        if (!s->uc->parallel_cpus) {
-            s->base.is_jmp = DISAS_WFE;
-        }
+        gen_helper_wfe(tcg_ctx, tcg_ctx->cpu_env);
+        s->base.is_jmp = DISAS_NEXT;
         break;
+
     case 0b00100: /* SEV */
-    case 0b00101: /* SEVL */
-        /* we treat all as NOP at least for now */
+        gen_helper_sev(tcg_ctx, tcg_ctx->cpu_env);
         break;
+
+    case 0b00101: /* SEVL */
+        gen_helper_sevl(tcg_ctx, tcg_ctx->cpu_env);
+        break;
+
     case 0b00111: /* XPACLRI */
         if (s->pauth_active) {
             gen_helper_xpaci(tcg_ctx, tcg_ctx->cpu_X[30], tcg_ctx->cpu_env, tcg_ctx->cpu_X[30]);
@@ -2129,7 +2140,7 @@ static void disas_exc(DisasContext *s, uint32_t insn)
          * it is required for halting debug disabled: it will UNDEF.
          * Secondly, "HLT 0xf000" is the A64 semihosting syscall instruction.
          */
-        if (semihosting_enabled() && imm16 == 0xf000) {
+        if (semihosting_enabled(s->uc) && imm16 == 0xf000) {
 #ifndef CONFIG_USER_ONLY
             /* In system mode, don't allow userspace access to semihosting,
              * to provide some semblance of security (and for consistency
@@ -2404,6 +2415,8 @@ static void gen_load_exclusive(DisasContext *s, int rt, int rt2,
     int idx = get_mem_index(s);
     TCGMemOp memop = s->be_data;
 
+    // todo: set uc->exclusive = true
+
     g_assert(size <= 3);
     if (is_pair) {
         g_assert(size >= 2);
@@ -2438,8 +2451,11 @@ static void gen_load_exclusive(DisasContext *s, int rt, int rt2,
         tcg_gen_mov_i64(tcg_ctx, cpu_reg(s, rt), tcg_ctx->cpu_exclusive_val);
     }
     tcg_gen_mov_i64(tcg_ctx, tcg_ctx->cpu_exclusive_addr, addr);
+
+    // todo: set uc->exclusive = false
 }
 
+#ifndef jhw
 static void gen_store_exclusive(DisasContext *s, int rd, int rt, int rt2,
                                 TCGv_i64 addr, int size, int is_pair)
 {
@@ -2498,6 +2514,7 @@ static void gen_store_exclusive(DisasContext *s, int rd, int rt, int rt2,
     gen_set_label(tcg_ctx, done_label);
     tcg_gen_movi_i64(tcg_ctx, tcg_ctx->cpu_exclusive_addr, -1);
 }
+#endif
 
 static void gen_compare_and_swap(DisasContext *s, int rs, int rt,
                                  int rn, int size)
@@ -3745,6 +3762,12 @@ static void disas_ldst_single_struct(DisasContext *s, uint32_t insn)
 /* Loads and stores */
 static void disas_ldst(DisasContext *s, uint32_t insn)
 {
+    /* loads and stores might trigger watchpoints in QEMU or in SystemC, so
+     * we need to sync our pc here to provide a consistent model state to the
+     * debugger.
+     */
+    gen_a64_set_pc_im(s, s->base.pc_next);
+
     switch (extract32(insn, 24, 6)) {
     case 0x08: /* Load/store exclusive */
         disas_ldst_excl(s, insn);
@@ -12828,7 +12851,7 @@ static void disas_simd_two_reg_misc_fp16(DisasContext *s, uint32_t insn)
     TCGv_ptr tcg_fpstatus = NULL;
     bool need_rmode = false;
     bool need_fpst = true;
-    int rmode;
+    int rmode = FPROUNDING_TIEEVEN; // JHW: init rmode to silence compiler
 
     if (!dc_isar_feature(aa64_fp16, s)) {
         unallocated_encoding(s);
@@ -14390,26 +14413,17 @@ static bool btype_destination_ok(uint32_t insn, bool bt, int btype)
 /* C3.1 A64 instruction index by encoding */
 static void disas_a64_insn(CPUARMState *env, DisasContext *s)
 {
-    uint32_t insn;
+    uint32_t insn = ~0;
     TCGContext *tcg_ctx = env->uc->tcg_ctx;
-
-    // Unicorn: end address tells us to stop emulation
-    if (s->pc == s->uc->addr_end) {
-        // imitate WFI instruction to halt emulation
-        s->base.is_jmp = DISAS_WFI;
-        return;
-    }
+    CPUState *cpu = ENV_GET_CPU(env);
 
     insn = arm_ldl_code(env, s->pc, s->sctlr_b);
+
+    //fprintf(stderr, "translating insn %016lx: %08x\n", s->pc, insn);
+    //fflush(stderr);
+
     s->insn = insn;
     s->pc += 4;
-
-    // Unicorn: trace this instruction on request
-    if (HOOK_EXISTS_BOUNDED(env->uc, UC_HOOK_CODE, s->pc - 4)) {
-        gen_uc_tracecode(tcg_ctx, 4, UC_HOOK_CODE_IDX, env->uc, s->pc - 4);
-        // the callback might want to stop emulation immediately
-        check_exit_request(tcg_ctx);
-    }
 
     s->fp_access_checked = false;
 
@@ -14510,6 +14524,7 @@ static void aarch64_tr_init_disas_context(DisasContextBase *dcbase,
 
     dc->isar = &arm_cpu->isar;
     dc->pc = dc->base.pc_first;
+    dc->page_start = dc->pc & TARGET_PAGE_MASK; // JHW
     dc->condjmp = 0;
 
     dc->aarch64 = 1;
@@ -14593,7 +14608,11 @@ static bool aarch64_tr_breakpoint_check(DisasContextBase *dcbase, CPUState *cpu,
     DisasContext *dc = container_of(dcbase, DisasContext, base);
     TCGContext *tcg_ctx = cpu->uc->tcg_ctx;
 
-    if (bp->flags & BP_CPU) {
+    if (bp->flags & BP_CALL) {
+        gen_a64_set_pc_im(dc, dc->pc);
+        gen_helper_call_breakpoints(tcg_ctx, tcg_ctx->cpu_env);
+        dc->base.is_jmp = DISAS_TOO_MANY;
+    } else if (bp->flags & BP_CPU) {
         gen_a64_set_pc_im(dc, dc->pc);
         gen_helper_check_breakpoints(tcg_ctx, tcg_ctx->cpu_env);
         /* End the TB early; it likely won't be executed */

@@ -158,7 +158,11 @@ typedef enum uc_err {
     UC_ERR_FETCH_UNALIGNED,  // Unaligned fetch
     UC_ERR_HOOK_EXIST,  // hook for this event already existed
     UC_ERR_RESOURCE,    // Insufficient resource: uc_emu_start()
-    UC_ERR_EXCEPTION // Unhandled CPU exception
+    UC_ERR_EXCEPTION, // Unhandled CPU exception
+    UC_ERR_BREAKPOINT, // Simulation reached a breakpoint
+    UC_ERR_WATCHPOINT, // Simulation triggered a watchpoint
+    UC_ERR_YIELD, // Simulator wants to yield
+    UC_ERR_INTERNAL, // Internal error
 } uc_err;
 
 
@@ -317,6 +321,57 @@ typedef enum uc_query_type {
     UC_QUERY_ARCH,
 } uc_query_type;
 
+// JHW: extensions for mmio
+typedef struct uc_mmio_tx {
+    uint64_t addr;
+    size_t   size;
+    void*    data;
+
+    bool is_read;
+    bool is_secure; // adapted from MemAttrs
+    bool is_user;
+    bool is_io;
+
+    unsigned int cpuid;
+} uc_mmio_tx_t;
+
+typedef enum uc_tx_result {
+    UC_TX_OK = 0,
+    UC_TX_ERROR = 1,
+    UC_TX_ADDRESS_ERROR = 2,
+} uc_tx_result_t;
+
+typedef uc_tx_result_t (*uc_cb_mmio_t)(uc_engine* uc, void* opaque,
+                                       uc_mmio_tx_t* tx);
+
+typedef enum uc_dmi_prot {
+    UC_DMI_PROT_READ  = 1 << 0,
+    UC_DMI_PROT_WRITE = 1 << 1,
+    UC_DMI_PROT_EXEC  = 1 << 2,
+} uc_dmi_prot_t;
+
+typedef bool (*uc_cb_dmiptr_t)(uc_engine* uc, void* opaque, uint64_t page_addr,
+                               unsigned char** dmiptr, int* prot);
+
+typedef uint64_t (*uc_timer_timefunc_t)(void* opaque, uint64_t clock);
+typedef void     (*uc_timer_irqfunc_t )(void* opaque, int idx, int set);
+typedef void     (*uc_timer_schedule_t)(void* opaque, int idx, uint64_t clock,
+                                        uint64_t ticks);
+
+typedef void (*uc_tlb_cluster_flush_t)(void* opaque);
+typedef void (*uc_tlb_cluster_flush_page_t)(void* opaque, uint64_t addr);
+typedef void (*uc_tlb_cluster_flush_mmuidx_t)(void* opaque, uint16_t idxmap);
+typedef void (*uc_tlb_cluster_flush_page_mmuidx_t)(void* opaque, uint64_t addr,
+                                                   uint16_t idxmap);
+
+typedef void (*uc_breakpoint_hit_t)(void* opaque, uint64_t addr);
+typedef void (*uc_watchpoint_hit_t)(void* opaque, uint64_t addr, uint64_t size,
+                                    uint64_t data, bool iswr);
+
+typedef void (*uc_trace_basic_block_t)(void* opaque, uint64_t addr);
+
+typedef const char* (*uc_get_config_t)(void* opaque, const char* config);
+
 // Opaque storage for CPU context, used with uc_context_*()
 struct uc_context;
 typedef struct uc_context uc_context;
@@ -356,15 +411,13 @@ bool uc_arch_supported(uc_arch arch);
 /*
  Create new instance of unicorn engine.
 
- @arch: architecture type (UC_ARCH_*)
- @mode: hardware mode. This is combined of UC_MODE_*
- @uc: pointer to uc_engine, which will be updated at return time
 
  @return UC_ERR_OK on success, or other value on failure (refer to uc_err enum
    for detailed error).
 */
 UNICORN_EXPORT
-uc_err uc_open(uc_arch arch, uc_mode mode, uc_engine **uc);
+uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
+               uc_engine **result);
 
 /*
  Close a Unicorn engine instance.
@@ -620,6 +673,14 @@ uc_err uc_mem_map(uc_engine *uc, uint64_t address, size_t size, uint32_t perms);
 UNICORN_EXPORT
 uc_err uc_mem_map_ptr(uc_engine *uc, uint64_t address, size_t size, uint32_t perms, void *ptr);
 
+// JHW
+UNICORN_EXPORT
+uc_err uc_mem_map_io(uc_engine *uc, uint64_t addr, size_t size, uc_cb_mmio_t callback, void* opaque);
+
+// JHW
+UNICORN_EXPORT
+uc_err uc_mem_map_portio(uc_engine *uc, uc_cb_mmio_t callback, void *opaque);
+
 /*
  Unmap a region of emulation memory.
  This API deletes a memory mapping from the emulation memory space.
@@ -728,6 +789,227 @@ uc_err uc_context_save(uc_engine *uc, uc_context *context);
 */
 UNICORN_EXPORT
 uc_err uc_context_restore(uc_engine *uc, uc_context *context);
+
+/*
+ * Returns the number of executed target instructions since the last call to
+ * uc_emu_start. (JHW)
+ */
+UNICORN_EXPORT
+size_t uc_instruction_count(uc_engine *uc);
+
+/*
+ * Flushes the entire TCG translation buffer (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_tb_flush(uc_engine *uc);
+
+/*
+ * Flushes the entire TLB of the current MMU (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_tlb_flush(uc_engine *uc);
+
+/*
+ * Flushes one TLB entry from the current MMU (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_tlb_flush_page(uc_engine *uc, uint64_t addr);
+
+/*
+ * Flushes the entire TLB of the given MMUs (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_tlb_flush_mmuidx(uc_engine *uc, uint16_t idxmap);
+
+/*
+ * Flushes one TLB entry from the given MMUs (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_tlb_flush_page_mmuidx(uc_engine *uc, uint64_t addr, uint16_t idxmap);
+
+/*
+ * Registers TLB flush callback needed for multicore clusters (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_register_tlb_cluster(uc_engine *uc, void *opaque,
+        uc_tlb_cluster_flush_t             tlb_cluster_flush_fn,
+        uc_tlb_cluster_flush_page_t        tlb_cluster_flush_page_fn,
+        uc_tlb_cluster_flush_mmuidx_t      tlb_cluster_flush_mmuidx_fn,
+        uc_tlb_cluster_flush_page_mmuidx_t tlb_cluster_flush_page_mmuidx_fn);
+
+/*
+ * Installs a breakpoint at the given address (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_breakpoint_insert(uc_engine *uc, uint64_t addr);
+
+/*
+ * Removes a breakpoint from the given address (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_breakpoint_remove(uc_engine *uc, uint64_t addr);
+
+/*
+ * Sets up a breakpoint callback function (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_cbbreakpoint_setup(uc_engine *uc, void *ptr, uc_breakpoint_hit_t fn);
+
+/*
+ * Installs a callback breakpoint at the given address (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_cbbreakpoint_insert(uc_engine *uc, uint64_t addr);
+
+/*
+ * Removes a callback breakpoint from the given address (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_cbbreakpoint_remove(uc_engine *uc, uint64_t addr);
+
+typedef enum uc_wpflags {
+    UC_WP_READ   = 1 << 0,
+    UC_WP_WRITE  = 1 << 1,
+    UC_WP_ACCESS = UC_WP_READ | UC_WP_WRITE,
+    UC_WP_BEFORE = 1 << 2, /* stop on instruction before watchpoint */
+    UC_WP_CALL   = 1 << 3, /* invoke a callback before watchpoint */
+} uc_wpflags_t;
+
+/*
+ * Installs a watchpoint for the given address (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_watchpoint_insert(uc_engine *uc, uint64_t addr, size_t sz, int flags);
+
+/*
+ * Removes a watchpoint from the given address (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_watchpoint_remove(uc_engine *uc, uint64_t addr, size_t sz, int flags);
+
+/*
+ * Sets up a watchpoint callback function (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_cbwatchpoint_setup(uc_engine *uc, void *ptr, uc_watchpoint_hit_t fn);
+
+/*
+ * Sets up a watchpoint with a callback function (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_cbwatchpoint_insert(uc_engine *uc, uint64_t addr, size_t sz, int flags);
+
+/*
+ * Removes a watchpoint with a callback function (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_cbwatchpoint_remove(uc_engine *uc, uint64_t addr, size_t sz, int flags);
+
+/*
+ * Various interrupt IDs
+ */
+#define UC_IRQID_AARCH64_NIRQ 0x0002 // JHW from include/exec/cpu-all.h
+#define UC_IRQID_AARCH64_FIRQ 0x0010 // JHW from target/arm/cpu.h
+#define UC_IRQID_AARCH64_VIRQ 0x0040 // JHW from target/arm/cpu.h
+#define UC_IRQID_AARCH64_VFIQ 0x0200 // JHW from target/arm/cpu.h
+
+/*
+ * Triggers a hardware interrupt
+ */
+UNICORN_EXPORT
+uc_err uc_interrupt(uc_engine *uc, int irq_id, int set);
+
+
+/*
+ * Translates a virtual to a physical address
+ */
+UNICORN_EXPORT
+uc_err uc_va2pa(uc_engine *uc, uint64_t va, uint64_t *pa);
+
+/*
+ * Set callback to provide unicorn with the current time in nanoseconds
+ */
+UNICORN_EXPORT
+uc_err uc_setup_timer(uc_engine *uc, void *opaque, uc_timer_timefunc_t timefn,
+                      uc_timer_irqfunc_t irqfn, uc_timer_schedule_t schedfn);
+
+/*
+ * Recalculate timer state after interrupt
+ */
+UNICORN_EXPORT
+uc_err uc_update_timer(uc_engine *uc, int timeridx);
+
+/*
+ * Returns true when the processor is idle
+ */
+UNICORN_EXPORT
+bool uc_is_idle(uc_engine *uc);
+
+/*
+ * Returns if the simulator is currently executing debugger commands
+ */
+UNICORN_EXPORT
+bool uc_is_debug(uc_engine *uc);
+
+/*
+ * Returns if the simulator is performing an exclusive memory access
+ */
+UNICORN_EXPORT
+bool uc_is_excl(uc_engine *uc);
+
+/*
+ * Clears the exclusive state, signaling operation was not atomic
+ */
+UNICORN_EXPORT
+uc_err uc_clear_excl(uc_engine *uc);
+
+/*
+ * Set callback to provide unicorn with per-page DMI pointers
+ */
+UNICORN_EXPORT
+uc_err uc_setup_dmi(uc_engine *uc, void *opaque, uc_cb_dmiptr_t dmifn);
+
+/*
+ * Clears previously handed out DMI pointers
+ */
+UNICORN_EXPORT
+uc_err uc_dmi_invalidate(uc_engine *uc, uint64_t start, uint64_t end);
+
+typedef enum uc_hint {
+    UC_HINT_NOP, /* unused! NOP currently generates no code! */
+    UC_HINT_YIELD,
+    UC_HINT_WFE,
+    UC_HINT_WFI,
+    UC_HINT_SEV,
+    UC_HINT_SEVL,
+    UC_HINT_HINT, /* unused! reserved for architectural extensions */
+} uc_hint_t;
+
+typedef void (*uc_hintfunc_t)(void*, uc_hint_t);
+
+/*
+ * Sets up a callback for various hint instructions (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_setup_hint(uc_engine *uc, void *opaque, uc_hintfunc_t hintfn);
+
+/*
+ * Callback for semihosting
+ */
+typedef uint64_t (*uc_shfunc_t)(void* opaque, uint32_t call);
+
+/*
+ * Sets up a callback for semihosting (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_setup_semihosting(uc_engine *uc, void *opaque, uc_shfunc_t fn);
+
+/*
+ * Setup a callback for basic block tracing (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_setup_basic_block_trace(uc_engine *uc, void *opaque,
+                                  uc_trace_basic_block_t fn);
 
 #ifdef __cplusplus
 }

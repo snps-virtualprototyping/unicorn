@@ -7,6 +7,8 @@ obj-$(TARGET_ARM) += unicorn_arm.o
 obj-y += crypto_helper.o
 obj-y += arm-powerctl.o
 
+obj-$(TARGET_AARCH64) += gicv3cpuif.o
+
 DECODETREE = $(SRC_PATH)/scripts/decodetree.py
 
 target/arm/decode-sve.inc.c: $(SRC_PATH)/target/arm/sve.decode $(DECODETREE)

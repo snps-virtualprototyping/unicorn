@@ -171,24 +171,26 @@ static void cpu_gen_init(struct uc_struct *uc)
     tcg_context_init(uc->tcg_ctx);
 }
 
-static void tb_clean_internal(struct uc_struct *uc, int i, void** lp)
+static void tb_clean_internal(size_t lvl, size_t count, void** lp)
 {
-    if (i == 0 || lp == NULL) {
-        return;
+    for (size_t i = 0; i < count; ++i) {
+        if (lp[i] != NULL) {
+            if (lvl > 0) {
+                // recurse to next level - all but first level have V_L2_SIZE entries
+                tb_clean_internal(lvl-1, V_L2_SIZE, lp[i]);
+            } else {
+                // leaf - delete the PageDesc array
+                g_free(lp[i]);
+            }
+        }
     }
-    if (lp && *lp) {
-        tb_clean_internal(uc, i-1, (void*)(((char*)*lp) + ((0 >> (i * V_L2_BITS)) & (V_L2_SIZE - 1))));
-        g_free(*lp);
-    }
+
+    g_free(lp);
 }
 
 void tb_cleanup(struct uc_struct *uc)
 {
-    int index = 0;
-    /* Level 1.  Always allocated.  */
-    void** lp = uc->l1_map + ((index >> uc->v_l1_shift) & (uc->v_l1_size - 1));
-    /* Level 2..N-1.  */
-    tb_clean_internal(uc, uc->v_l1_shift / V_L2_BITS, lp);
+    tb_clean_internal(uc->v_l2_levels, uc->l1_map_size, uc->l1_map);
 }
 
 /* Encode VAL as a signed leb128 sequence at P.
@@ -1797,7 +1799,6 @@ void tb_check_watchpoint(CPUState *cpu)
 {
     TranslationBlock *tb;
     CPUArchState *env = cpu->env_ptr;
-
     tb = tb_find_pc(env->uc, cpu->mem_io_pc);
     if (tb) {
         /* We can use retranslation to find the PC.  */
@@ -1812,11 +1813,9 @@ void tb_check_watchpoint(CPUState *cpu)
 
         cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
         addr = get_page_addr_code(env, pc);
-        tb_invalidate_phys_range(cpu->uc, addr, addr + 1);
+        if (addr != -1)
+            tb_invalidate_phys_range(cpu->uc, addr, addr + 1);
     }
-
-    cpu_restore_state_from_tb(cpu, tb, cpu->mem_io_pc, true);
-    tb_phys_invalidate(cpu->uc, tb, -1);
 }
 
 #ifndef CONFIG_USER_ONLY
@@ -1975,6 +1974,7 @@ void dump_exec_info(FILE *f, fprintf_function cpu_fprintf)
 
 void cpu_interrupt(CPUState *cpu, int mask)
 {
+    printf("cpu_interrupt\n");
     cpu->interrupt_request |= mask;
     cpu->tcg_exit_req = 1;
 }

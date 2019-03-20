@@ -139,7 +139,9 @@ static void aarch64_a57_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->ccsidr[1] = 0x201fe012; /* 48KB L1 icache */
     cpu->ccsidr[2] = 0x70ffe07a; /* 2048KB L2 cache */
     cpu->dcz_blocksize = 4; /* 64 bytes */
+
     define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
+    gicv3_init_cpuif(cpu);
 }
 
 static void aarch64_a53_initfn(struct uc_struct *uc, Object *obj, void *opaque)
@@ -190,7 +192,9 @@ static void aarch64_a53_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->ccsidr[1] = 0x201fe00a; /* 32KB L1 icache */
     cpu->ccsidr[2] = 0x707fe07a; /* 1024KB L2 cache */
     cpu->dcz_blocksize = 4; /* 64 bytes */
+
     define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
+    gicv3_init_cpuif(cpu);
 }
 
 static void aarch64_a72_initfn(struct uc_struct *uc, Object *obj, void *opaque)
@@ -239,7 +243,9 @@ static void aarch64_a72_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->ccsidr[1] = 0x201fe012; /* 48KB L1 icache */
     cpu->ccsidr[2] = 0x707fe07a; /* 1MB L2 cache */
     cpu->dcz_blocksize = 4; /* 64 bytes */
+
     define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
+    gicv3_init_cpuif(cpu);
 }
 
 /* -cpu max: if KVM is enabled, like -cpu host (best possible with this host);
@@ -342,10 +348,10 @@ typedef struct ARMCPUInfo {
 } ARMCPUInfo;
 
 static const ARMCPUInfo aarch64_cpus[] = {
-    { "cortex-a57",  aarch64_a57_initfn },
-    { "cortex-a53",  aarch64_a53_initfn },
-    { "cortex-a72",  aarch64_a72_initfn },
-    { "max",         aarch64_max_initfn },
+    { "Cortex-A57", aarch64_a57_initfn },
+    { "Cortex-A53", aarch64_a53_initfn },
+    { "Cortex-A72", aarch64_a72_initfn },
+    { "Cortex-Max", aarch64_max_initfn },
     { NULL }
 };
 

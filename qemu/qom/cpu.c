@@ -146,7 +146,7 @@ static void cpu_common_reset(CPUState *cpu)
     cpu->mem_io_vaddr = 0;
     cpu->icount_extra = 0;
     atomic_set(&cpu->icount_decr.u32, 0);
-    cpu->can_do_io = 0;
+    cpu->can_do_io = 1; // JHW: we can do IO anytime
     cpu->exception_index = -1;
     cpu->crash_occurred = false;
 

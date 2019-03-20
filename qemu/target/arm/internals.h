@@ -54,7 +54,7 @@ static inline bool excp_is_internal(int excp)
 /* Scale factor for generic timers, ie number of ns per tick.
  * This gives a 62.5MHz timer.
  */
-#define GTIMER_SCALE 16
+#define GTIMER_SCALE 1 /* JHW changed from 16 */
 
 /* Bit definitions for the v7M CONTROL register */
 FIELD(V7M_CONTROL, NPRIV, 0, 1)

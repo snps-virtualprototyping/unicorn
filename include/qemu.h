@@ -28,4 +28,13 @@ typedef struct {
     bool in_use;
 } BounceBuffer;
 
+// JHW: helper for mmio callbacks
+typedef struct uc_mmio_region {
+    void                  *user_data;
+    void                  *callback;
+    MemoryRegion          *region;
+    struct uc_mmio_region *next;
+    struct uc_mmio_region *prev;
+} uc_mmio_region_t;
+
 #endif

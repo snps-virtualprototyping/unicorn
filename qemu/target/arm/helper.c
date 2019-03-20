@@ -9,9 +9,14 @@
 #include "qemu/crc32c.h"
 #include "exec/exec-all.h"
 #include "exec/cpu_ldst.h"
+#include "exec/semihost.h"
 #include "arm_ldst.h"
 #include "fpu/softfloat.h"
 #include "qemu/range.h"
+#include "qemu.h"
+
+// JHW
+//#define TRACE_CPR_LOOKUPS
 
 #define ARM_CPU_FREQ 1000000000 /* FIXME: 1 GHz, should be configurable */
 
@@ -435,33 +440,33 @@ static void contextidr_write(CPUARMState *env, const ARMCPRegInfo *ri,
 static void tlbiall_is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                              uint64_t value)
 {
-    //CPUState *cs = ENV_GET_CPU(env);
+    CPUState *cs = ENV_GET_CPU(env);
 
-    //tlb_flush_all_cpus_synced(cs);
+    tlb_flush_all_cpus_synced(cs);
 }
 
 static void tlbiasid_is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                              uint64_t value)
 {
-    //CPUState *cs = ENV_GET_CPU(env);
+    CPUState *cs = ENV_GET_CPU(env);
 
-    //tlb_flush_all_cpus_synced(cs);
+    tlb_flush_all_cpus_synced(cs);
 }
 
 static void tlbimva_is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                              uint64_t value)
 {
-    //CPUState *cs = ENV_GET_CPU(env);
+    CPUState *cs = ENV_GET_CPU(env);
 
-    //tlb_flush_page_all_cpus_synced(cs, value & TARGET_PAGE_MASK);
+    tlb_flush_page_all_cpus_synced(cs, value & TARGET_PAGE_MASK);
 }
 
 static void tlbimvaa_is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                              uint64_t value)
 {
-    //CPUState *cs = ENV_GET_CPU(env);
+    CPUState *cs = ENV_GET_CPU(env);
 
-    //tlb_flush_page_all_cpus_synced(cs, value & TARGET_PAGE_MASK);
+    tlb_flush_page_all_cpus_synced(cs, value & TARGET_PAGE_MASK);
 }
 
 /*
@@ -546,7 +551,7 @@ static void tlbiall_nsnh_is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                   uint64_t value)
 {
   // Unicorn: if'd out. See issue 642
-#if 0
+#if 1
     CPUState *cs = ENV_GET_CPU(env);
 
     tlb_flush_by_mmuidx_all_cpus_synced(cs,
@@ -581,8 +586,8 @@ static void tlbiipas2_is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                uint64_t value)
 {
   // Unicorn: if'd out, see issue 642
-#if 0
-    CPUState *other_cs;
+#if 1
+	CPUState *cs = ENV_GET_CPU(env);
     uint64_t pageaddr;
 
     if (!arm_feature(env, ARM_FEATURE_EL2) || !(env->cp15.scr_el3 & SCR_NS)) {
@@ -608,7 +613,7 @@ static void tlbiall_hyp_is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                  uint64_t value)
 {
     // Unicorn: if'd out. See issue 642
-#if 0
+#if 1
     CPUState *cs = ENV_GET_CPU(env);
 
     tlb_flush_by_mmuidx_all_cpus_synced(cs, ARMMMUIdxBit_S1E2);
@@ -628,13 +633,26 @@ static void tlbimva_hyp_is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                  uint64_t value)
 {
   // Unicorn: if'd out. See issue 642.
-#if 0
+#if 1
     CPUState *cs = ENV_GET_CPU(env);
     uint64_t pageaddr = value & ~MAKE_64BIT_MASK(0, 12);
 
     tlb_flush_page_by_mmuidx_all_cpus_synced(cs, pageaddr,
                                              ARMMMUIdxBit_S1E2);
 #endif
+}
+
+//#define ICACHE_DEBUG
+#ifdef ICACHE_DEBUG
+#define icache_debug(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define icache_debug(...)
+#endif
+
+static void icache_flush_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                               uint64_t value) {
+    icache_debug("[%08lx] flush icache\n", (unsigned long)env->pc);
+    tb_flush(ENV_GET_CPU(env));
 }
 
 static const ARMCPRegInfo cp_reginfo[] = {
@@ -698,6 +716,11 @@ static const ARMCPRegInfo not_v8_cp_reginfo[] = {
     { .name = "CACHEMAINT", .cp = 15, .crn = 7, .crm = CP_ANY,
       .opc1 = 0, .opc2 = CP_ANY, .access = PL1_W,
       .type = ARM_CP_NOP | ARM_CP_OVERRIDE },
+    /* jhw intercept icache flushes to flush tlb */
+    { .name = "ICACHE_FLUSH", .cp = 15, .crn = 7, .crm = 5,
+      .opc1 = 0, .opc2 = 0, .access = PL1_W, .writefn = icache_flush_write,
+      .type = ARM_CP_IO | ARM_CP_NO_RAW,
+    },
     REGINFO_SENTINEL
 };
 
@@ -2185,12 +2208,34 @@ static CPAccessResult gt_stimer_access(CPUARMState *env,
 
 static uint64_t gt_get_countervalue(CPUARMState *env)
 {
-    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / GTIMER_SCALE;
+    if (env->uc->timer_timefunc) {
+        uint64_t freq = env->cp15.c14_cntfrq;
+        void* opaque = env->uc->timer_opaque;
+        return env->uc->timer_timefunc(opaque, freq);
+    }
+
+    static int once = 1;
+    if (once) {
+        once = 0;
+        printf("no time function provided, arch_timer not working\n");
+    }
+
+    return 0;
 }
 
 static void gt_recalc_timer(ARMCPU *cpu, int timeridx)
 {
     ARMGenericTimer *gt = &cpu->env.cp15.c14_timer[timeridx];
+    CPUARMState* env = &cpu->env;
+    uint64_t freq = env->cp15.c14_cntfrq;
+    void* opaque = env->uc->timer_opaque;
+
+    static int warned = 0;
+    if (!warned && !env->uc->timer_initialized) {
+        warned = 1;
+        fprintf(stderr, "arch_timer not initialized\n");
+        return;
+    }
 
     if (gt->ctl & 1) {
         /* Timer enabled: calculate and set current ISTATUS, irq, and
@@ -2202,12 +2247,14 @@ static void gt_recalc_timer(ARMCPU *cpu, int timeridx)
         /* Note that this must be unsigned 64 bit arithmetic: */
         int istatus = count - offset >= gt->cval;
         uint64_t nexttick;
-        //int irqstate;
+        int irqstate;
 
         gt->ctl = deposit32(gt->ctl, 2, 1, istatus);
 
         // Unicorn: commented out
-        //irqstate = (istatus && !(gt->ctl & 2));
+        // JHW: commented in!
+        irqstate = (istatus && !(gt->ctl & 2));
+        env->uc->timer_irqfunc(opaque, timeridx, irqstate);
         //qemu_set_irq(cpu->gt_timer_outputs[timeridx], irqstate);
 
         if (istatus) {
@@ -2225,12 +2272,19 @@ static void gt_recalc_timer(ARMCPU *cpu, int timeridx)
         if (nexttick > INT64_MAX / GTIMER_SCALE) {
             nexttick = INT64_MAX / GTIMER_SCALE;
         }
+
+        env->uc->timer_schedule(opaque, timeridx, freq, nexttick);
+
         // Unicorn: commented out
         //timer_mod(cpu->gt_timer[timeridx], nexttick);
         //trace_arm_gt_recalc(timeridx, irqstate, nexttick);
     } else {
         /* Timer disabled: ISTATUS and timer output always clear */
         gt->ctl &= ~4;
+
+        env->uc->timer_irqfunc(opaque, timeridx, 0);
+        env->uc->timer_schedule(opaque, timeridx, freq, ~0);
+
         // Unicorn: commented out
         //qemu_set_irq(cpu->gt_timer_outputs[timeridx], 0);
         //timer_del(cpu->gt_timer[timeridx]);
@@ -2260,7 +2314,7 @@ static void gt_cval_write(CPUARMState *env, const ARMCPRegInfo *ri,
     // Unicorn: commented out
     //trace_arm_gt_cval_write(timeridx, value);
     env->cp15.c14_timer[timeridx].cval = value;
-    //gt_recalc_timer(arm_env_get_cpu(env), timeridx);
+    gt_recalc_timer(arm_env_get_cpu(env), timeridx);
 }
 
 static uint64_t gt_tval_read(CPUARMState *env, const ARMCPRegInfo *ri,
@@ -2292,6 +2346,13 @@ static void gt_ctl_write(CPUARMState *env, const ARMCPRegInfo *ri,
     ARMCPU *cpu = arm_env_get_cpu(env);
     uint32_t oldval = env->cp15.c14_timer[timeridx].ctl;
 
+    static int warned = 0;
+    if (!warned && !env->uc->timer_initialized) {
+    	warned = 1;
+    	fprintf(stderr, "arch_timer not initialized\n");
+    	return;
+    }
+
     // Unicorn: commented out
     //trace_arm_gt_ctl_write(timeridx, value);
     env->cp15.c14_timer[timeridx].ctl = deposit64(oldval, 0, 2, value);
@@ -2302,12 +2363,12 @@ static void gt_ctl_write(CPUARMState *env, const ARMCPRegInfo *ri,
         /* IMASK toggled: don't need to recalculate,
          * just set the interrupt line based on ISTATUS
          */
-        /* Unicorn: commented out
+        /* Unicorn: commented out */
         int irqstate = (oldval & 4) && !(value & 2);
+		env->uc->timer_irqfunc(env->uc->timer_opaque, timeridx, irqstate);
 
-        trace_arm_gt_imask_toggle(timeridx, irqstate);
-        qemu_set_irq(cpu->gt_timer_outputs[timeridx], irqstate);
-        */
+        //trace_arm_gt_imask_toggle(timeridx, irqstate);
+        //qemu_set_irq(cpu->gt_timer_outputs[timeridx], irqstate);
     }
 }
 
@@ -3564,7 +3625,7 @@ static void tlbi_aa64_vmalle1is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                 uint64_t value)
 {
 // UNICORN: TODO: issue #642
-#if 0
+#if 1
     bool sec = arm_is_secure_below_el3(env);
     CPUState *cs = ENV_GET_CPU(env);
 
@@ -3655,7 +3716,7 @@ static void tlbi_aa64_alle1is_write(CPUARMState *env, const ARMCPRegInfo *ri,
      * stage 1 translations.
      */
 // UNICORN: TODO: issue #642
-#if 0
+#if 1
     bool sec = arm_is_secure_below_el3(env);
     bool has_el2 = arm_feature(env, ARM_FEATURE_EL2);
     CPUState *cs = ENV_GET_CPU(env);
@@ -3681,7 +3742,7 @@ static void tlbi_aa64_alle2is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                     uint64_t value)
 {
 // UNICORN: TODO: issue #642
-#if 0
+#if 1
     CPUState *cs = ENV_GET_CPU(env);
 
     tlb_flush_by_mmuidx_all_cpus_synced(cs, ARMMMUIdxBit_S1E2);
@@ -3692,7 +3753,7 @@ static void tlbi_aa64_alle3is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                     uint64_t value)
 {
 // UNICORN: TODO: issue #642
-#if 0
+#if 1
     CPUState *cs = ENV_GET_CPU(env);
 
     tlb_flush_by_mmuidx_all_cpus_synced(cs, ARMMMUIdxBit_S1E3);
@@ -3731,9 +3792,9 @@ static void tlbi_aa64_vae1is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                    uint64_t value)
 {
 // UNICORN: TODO: issue #642
-#if 0
+#if 1
     bool sec = arm_is_secure_below_el3(env);
-    CPUState *cs = ENV_GET_CPU(env)
+    CPUState *cs = ENV_GET_CPU(env);
     uint64_t pageaddr = sextract64(value << 12, 0, 56);
 
     if (sec) {
@@ -3780,7 +3841,7 @@ static void tlbi_aa64_vae2is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                    uint64_t value)
 {
 // UNICORN: TODO: issue #642
-#if 0
+#if 1
     CPUState *cs = ENV_GET_CPU(env);
     uint64_t pageaddr = sextract64(value << 12, 0, 56);
 
@@ -3793,7 +3854,7 @@ static void tlbi_aa64_vae3is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                    uint64_t value)
 {
 // UNICORN: TODO: issue #642
-#if 0
+#if 1
     CPUState *cs = ENV_GET_CPU(env);
     uint64_t pageaddr = sextract64(value << 12, 0, 56);
 
@@ -3828,7 +3889,7 @@ static void tlbi_aa64_ipas2e1is_write(CPUARMState *env, const ARMCPRegInfo *ri,
                                       uint64_t value)
 {
 // UNICORN: TODO: issue #642
-#if 0
+#if 1
     CPUState *cs = ENV_GET_CPU(env);
     uint64_t pageaddr;
 
@@ -3930,6 +3991,31 @@ static void sdcr_write(CPUARMState *env, const ARMCPRegInfo *ri,
     env->cp15.mdcr_el3 = value & SDCR_VALID_MASK;
 }
 
+static void ic_ialluis_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                             uint64_t value) {
+    icache_debug("[0x%016lx] flush icache local", env->pc);
+    tb_flush(ENV_GET_CPU(env));
+}
+
+static void ic_iallu_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                           uint64_t value) {
+    icache_debug("[0x%016lx] flush icache", env->pc);
+    tb_flush(ENV_GET_CPU(env));
+}
+
+static void ic_ivau_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                          uint64_t value) {
+    icache_debug("[0x%016lx] flush icache VA 0x%016lx PA 0x%016lx", env->pc,
+                 value, 0ul);
+
+    // TODO: determine cache line size and avoid over-flushing
+    // JHW: this might fault, but thats okay according to the manual (C5-450)
+    //hwaddr phys = get_page_addr_code(env, value);
+    //tb_invalidate_phys_page_range(env->uc, phys, phys + CACHE_LINE_SIZE, 1);
+    tb_flush(ENV_GET_CPU(env));
+}
+
+
 static const ARMCPRegInfo v8_cp_reginfo[] = {
     /* Minimal set of EL0-visible registers. This will need to be expanded
      * significantly for system emulation of AArch64 CPUs.
@@ -3969,13 +4055,13 @@ static const ARMCPRegInfo v8_cp_reginfo[] = {
     /* Cache ops: all NOPs since we don't emulate caches */
     { .name = "IC_IALLUIS", .state = ARM_CP_STATE_AA64,
       .opc0 = 1, .opc1 = 0, .crn = 7, .crm = 1, .opc2 = 0,
-      .access = PL1_W, .type = ARM_CP_NOP },
+      .access = PL1_W, .writefn = ic_ialluis_write, .type = ARM_CP_NO_RAW },
     { .name = "IC_IALLU", .state = ARM_CP_STATE_AA64,
       .opc0 = 1, .opc1 = 0, .crn = 7, .crm = 5, .opc2 = 0,
-      .access = PL1_W, .type = ARM_CP_NOP },
+      .access = PL1_W, .writefn = ic_iallu_write, .type = ARM_CP_NO_RAW },
     { .name = "IC_IVAU", .state = ARM_CP_STATE_AA64,
       .opc0 = 1, .opc1 = 3, .crn = 7, .crm = 5, .opc2 = 1,
-      .access = PL0_W, .type = ARM_CP_NOP,
+      .access = PL0_W, .writefn = ic_ivau_write, .type = ARM_CP_NO_RAW,
       .accessfn = aa64_cacheop_access },
     { .name = "DC_IVAC", .state = ARM_CP_STATE_AA64,
       .opc0 = 1, .opc1 = 0, .crn = 7, .crm = 6, .opc2 = 1,
@@ -6915,7 +7001,21 @@ void modify_arm_cp_regs(ARMCPRegInfo *regs, const ARMCPRegUserSpaceInfo *mods)
 
 const ARMCPRegInfo *get_arm_cp_reginfo(GHashTable *cpregs, uint32_t encoded_cp)
 {
-    return g_hash_table_lookup(cpregs, &encoded_cp);
+#ifdef TRACE_CPR_LOOKUPS
+    fprintf(stderr, "lookup cpreg 0x%u... ", encoded_cp);
+#endif
+
+    ARMCPRegInfo* info = g_hash_table_lookup(cpregs, &encoded_cp);
+
+#ifdef TRACE_CPR_LOOKUPS
+    if (!info) {
+        fprintf(stderr, "not found\n");
+    } else {
+        fprintf(stderr, "found %s\n", info->name);
+    }
+#endif
+
+    return info;
 }
 
 void arm_cp_write_ignore(CPUARMState *env, const ARMCPRegInfo *ri,
@@ -9370,11 +9470,10 @@ static void arm_cpu_do_interrupt_aarch64_(CPUState *cs)
         addr += 0x100;
         break;
     case EXCP_SEMIHOST:
-        /* UNICORN: Commented out
         qemu_log_mask(CPU_LOG_INT,
                       "...handling as semihosting call 0x%" PRIx64 "\n",
                       env->xregs[0]);
-        env->xregs[0] = do_arm_semihosting(env);*/
+        env->xregs[0] = do_arm_semihosting(env);
         return;
     default:
         cpu_abort(cs, "Unhandled exception 0x%x\n", cs->exception_index);
@@ -9407,14 +9506,10 @@ static void arm_cpu_do_interrupt_aarch64_(CPUState *cs)
 
 static inline bool check_for_semihosting(CPUState *cs)
 {
-    return false;
-
-// Unicorn: ifdefd out
-#if 0
     /* Check whether this exception is a semihosting call; if so
      * then handle it and return true; otherwise return false.
      */
-    ARMCPU *cpu = ARM_CPU(cs);
+    ARMCPU *cpu = ARM_CPU(cs->uc, cs);
     CPUARMState *env = &cpu->env;
 
     if (is_a64(env)) {
@@ -9437,7 +9532,7 @@ static inline bool check_for_semihosting(CPUState *cs)
          * semblance of security.
          */
         if (cs->exception_index != EXCP_SEMIHOST &&
-            (!semihosting_enabled() ||
+            (!semihosting_enabled(cs->uc) ||
              ((env->uncached_cpsr & CPSR_M) == ARM_CPU_MODE_USR))) {
             return false;
         }
@@ -9486,7 +9581,6 @@ static inline bool check_for_semihosting(CPUState *cs)
         env->regs[0] = do_arm_semihosting(env);
         return true;
     }
-#endif
 }
 
 /* Handle a CPU exception for A and R profile CPUs.
@@ -10004,6 +10098,35 @@ static uint32_t arm_ldl_ptw(CPUState *cs, hwaddr addr, bool is_secure,
     return 0;
 }
 
+/* JHW: loads a quadword from a physical address via dmi */
+static uint64_t* arm_ldq_ptw_dmi(CPUState *cs, hwaddr addr, ARMMMUIdx mmu) {
+    ARMCPU *cpu = ARM_CPU(cs->uc, cs);
+    CPUARMState *env = &cpu->env;
+    CPUTLBEntry* entry;
+    CPUIOTLBEntry* ioentry;
+    hwaddr page = addr & TARGET_PAGE_MASK;
+    int idx, mmu_idx = arm_to_core_mmu_idx(mmu);
+    target_ulong virt;
+
+    for (idx = 0; idx < CPU_TLB_SIZE; idx++) {
+        ioentry = &env->iotlb[mmu_idx][idx];
+        if (ioentry->phys != page || ioentry->p2v == NULL)
+            continue;
+
+        entry = ioentry->p2v;
+        if ((entry->addr_read == (target_ulong)-1) ||
+            (entry->addr_read & TLB_MMIO)) {
+            continue;
+        }
+
+        virt = (entry->addr_read & TARGET_PAGE_MASK) +
+               (addr & ~TARGET_PAGE_MASK);
+        return (uint64_t*)(virt + entry->addend);
+    }
+
+    return NULL;
+}
+
 static uint64_t arm_ldq_ptw(CPUState *cs, hwaddr addr, bool is_secure,
                             ARMMMUIdx mmu_idx, ARMMMUFaultInfo *fi)
 {
@@ -10012,7 +10135,7 @@ static uint64_t arm_ldq_ptw(CPUState *cs, hwaddr addr, bool is_secure,
     MemTxAttrs attrs = {0};
     MemTxResult result = MEMTX_OK;
     AddressSpace *as;
-    uint64_t data;
+    uint64_t data, *ptr;
 
     attrs.secure = is_secure;
     as = arm_addressspace(cs, attrs);
@@ -10020,10 +10143,15 @@ static uint64_t arm_ldq_ptw(CPUState *cs, hwaddr addr, bool is_secure,
     if (fi->s1ptw) {
         return 0;
     }
+
     if (regime_translation_big_endian(env, mmu_idx)) {
         data = address_space_ldq_be(as, addr, attrs, &result);
     } else {
-        data = address_space_ldq_le(as, addr, attrs, &result);
+        ptr = arm_ldq_ptw_dmi(cs, addr, mmu_idx);
+        if (ptr != NULL)
+            data = *ptr;
+        else
+            data = address_space_ldq_le(as, addr, attrs, &result);
     }
     if (result == MEMTX_OK) {
         return data;
@@ -10463,6 +10591,37 @@ ARMVAParameters aa64_va_parameters_both(CPUARMState *env, uint64_t va,
     result.hpd = hpd;
     result.using16k = using16k;
     result.using64k = using64k;
+    return result;
+}
+
+static inline
+ARMVAParameters aa64_va_parameters_both_tbi_tbid_only(CPUARMState *env,
+                                                      uint64_t va,
+                                                      ARMMMUIdx mmu_idx)
+{
+    uint64_t tcr = regime_tcr(env, mmu_idx)->raw_tcr;
+    uint32_t el = regime_el(env, mmu_idx);
+    bool tbi, tbid;
+    ARMVAParameters result = {0};
+
+    if (el > 1) {
+        if (mmu_idx == ARMMMUIdx_S2NS) {
+            /* VTCR_EL2 */
+            tbi = tbid = false;
+        } else {
+            tbi = extract32(tcr, 20, 1);
+            tbid = extract32(tcr, 29, 1);
+        }
+    } else if (!extract64(va, 55, 1)) {
+        tbi = extract64(tcr, 37, 1);
+        tbid = extract64(tcr, 51, 1);
+    } else {
+        tbi = extract64(tcr, 38, 1);
+        tbid = extract64(tcr, 52, 1);
+    }
+
+    result.tbi = tbi;
+    result.tbid = tbid;
     return result;
 }
 
@@ -12566,6 +12725,7 @@ uint32_t HELPER(crc32c)(uint32_t acc, uint32_t val, uint32_t bytes)
 /* Return the exception level to which FP-disabled exceptions should
  * be taken, or 0 if FP is enabled.
  */
+inline
 int fp_exception_el(CPUARMState *env, int cur_el)
 {
 #ifndef CONFIG_USER_ONLY
@@ -12659,6 +12819,7 @@ ARMMMUIdx arm_v7m_mmu_idx_for_secstate(CPUARMState *env, bool secstate)
     return arm_v7m_mmu_idx_for_secstate_and_priv(env, secstate, priv);
 }
 
+inline
 ARMMMUIdx arm_mmu_idx(CPUARMState *env)
 {
     int el;
@@ -12675,6 +12836,7 @@ ARMMMUIdx arm_mmu_idx(CPUARMState *env)
     }
 }
 
+inline
 int cpu_mmu_index(CPUARMState *env, bool ifetch)
 {
     return arm_to_core_mmu_idx(arm_mmu_idx(env));
@@ -12705,12 +12867,12 @@ void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
         /* Get control bits for tagged addresses.  */
         {
             ARMMMUIdx stage1 = stage_1_mmu_idx(mmu_idx);
-            ARMVAParameters p0 = aa64_va_parameters_both(env, 0, stage1);
+            ARMVAParameters p0 = aa64_va_parameters_both_tbi_tbid_only(env, 0, stage1);
             int tbii, tbid;
 
             /* FIXME: ARMv8.1-VHE S2 translation regime.  */
             if (regime_el(env, stage1) < 2) {
-                ARMVAParameters p1 = aa64_va_parameters_both(env, -1, stage1);
+                ARMVAParameters p1 = aa64_va_parameters_both_tbi_tbid_only(env, -1, stage1);
                 tbid = (p1.tbi << 1) | p0.tbi;
                 tbii = tbid & ~((p1.tbid << 1) | p0.tbid);
             } else {

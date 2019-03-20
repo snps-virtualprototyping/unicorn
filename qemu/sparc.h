@@ -3326,6 +3326,13 @@
 #define xpsr_write xpsr_write_sparc
 #define xscale_cp_reginfo xscale_cp_reginfo_sparc
 #define xscale_cpar_write xscale_cpar_write_sparc
+#define memory_map_io memory_map_io_sparc
+#define tlb_flush_all_cpus_synced tlb_flush_all_cpus_synced_sparc
+#define tlb_flush_page_all_cpus_synced tlb_flush_page_all_cpus_synced_sparc
+#define tlb_flush_by_mmuidx_all_cpus_synced tlb_flush_by_mmuidx_all_cpus_synced_sparc
+#define tlb_flush_page_by_mmuidx_all_cpus_synced tlb_flush_page_by_mmuidx_all_cpus_synced_sparc
+#define dmi_invalidate dmi_invalidate_sparc
+#define helper_trace_tb_entry helper_trace_tb_entry_sparc
 #define cpu_cwp_dec cpu_cwp_dec_sparc
 #define cpu_cwp_inc cpu_cwp_inc_sparc
 #define cpu_get_psr cpu_get_psr_sparc

@@ -1311,6 +1311,7 @@ void memory_register_types(struct uc_struct *uc);
 
 MemoryRegion *memory_map(struct uc_struct *uc, hwaddr begin, size_t size, uint32_t perms);
 MemoryRegion *memory_map_ptr(struct uc_struct *uc, hwaddr begin, size_t size, uint32_t perms, void *ptr);
+MemoryRegion *memory_map_io(struct uc_struct *uc, hwaddr begin, size_t size, void *opaque); // JHW
 void memory_unmap(struct uc_struct *uc, MemoryRegion *mr);
 int memory_free(struct uc_struct *uc);
 

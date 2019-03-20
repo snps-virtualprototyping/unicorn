@@ -223,3 +223,17 @@ static void *atomic_mmu_lookup(CPUArchState *env, target_ulong addr,
 
 #endif /* !CONFIG_SOFTMMU */
 
+
+// JHW for basic block tracing
+void HELPER(trace_tb_entry)(CPUArchState *env, uint64_t pc)
+{
+    uc_trace_basic_block_t trace_func = env->uc->uc_trace_bb_func;
+    void* opaque = env->uc->uc_trace_bb_opaque;
+
+    if (trace_func == NULL) {
+        fprintf(stderr, "unicorn: missing trace function for tb@0x%lx\n", pc);
+        abort();
+    }
+
+    (*trace_func)(opaque, pc);
+}

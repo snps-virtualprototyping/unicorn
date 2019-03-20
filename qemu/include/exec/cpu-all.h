@@ -395,6 +395,21 @@ static inline bool tlb_hit(target_ulong tlb_addr, target_ulong addr)
     return tlb_hit_page(tlb_addr, addr & TARGET_PAGE_MASK);
 }
 
+/**
+ * tlb_hit_range: return true if TLB entry @tlb_addr is inside the memory
+ * range [@start, @end] (JHW)
+ *
+ * @tlb_addr: TLB entry address (a CPUTLBEntry addr_read/write/code value)
+ * @start: start of physical memory range
+ * @end: end of physical memory range
+ */
+static inline bool tlb_hit_range(target_ulong tlb_addr, target_ulong start,
+                                 target_ulong end) {
+    target_ulong addr = tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK);
+    return (addr >= start) && (addr <= end);
+}
+
+
 ram_addr_t last_ram_offset(struct uc_struct *uc);
 void qemu_mutex_lock_ramlist(struct uc_struct *uc);
 void qemu_mutex_unlock_ramlist(struct uc_struct *uc);

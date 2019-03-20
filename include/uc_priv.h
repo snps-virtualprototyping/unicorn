@@ -61,6 +61,27 @@ typedef void (*uc_args_uc_t)(struct uc_struct*);
 typedef int (*uc_args_int_uc_t)(struct uc_struct*);
 typedef void (*uc_cpu_exec_exit_t)(CPUState*);
 
+typedef void (*tb_flush_t)(CPUState*); // JHW
+
+typedef void (*dmi_invalidate_t)(CPUState*, uint64_t, uint64_t); // JHW
+
+typedef void (*tlb_flush_t)(CPUState*); // JHW
+typedef void (*tlb_flush_page_t)(CPUState*, uint64_t); // JHW
+typedef void (*tlb_flush_mmuidx_t)(CPUState*, uint16_t); // JHW
+typedef void (*tlb_flush_page_mmuidx_t)(CPUState*, uint64_t, uint16_t); // JHW
+
+typedef void (*tlb_cluster_flush_t)(CPUState*); // JHW
+typedef void (*tlb_cluster_flush_page_t)(CPUState*, uint64_t); // JHW
+typedef void (*tlb_cluster_flush_mmuidx_t)(CPUState*, uint16_t); // JHW
+typedef void (*tlb_cluster_flush_page_mmuidx_t)(CPUState*, uint64_t, uint16_t); // JHW
+
+typedef int  (*cpu_breakpoint_insert_t)(CPUState*, vaddr, int, CPUBreakpoint**);
+typedef int  (*cpu_breakpoint_remove_t)(CPUState*, vaddr, int);
+typedef int  (*cpu_watchpoint_insert_t)(CPUState*, vaddr, vaddr, int, CPUWatchpoint**);
+typedef int  (*cpu_watchpoint_remove_t)(CPUState*, vaddr, vaddr, int);
+
+typedef void (*uc_timer_recalc_t)(CPUState*, int); // JHW
+
 typedef bool (*uc_args_tcg_enable_t)(struct uc_struct*);
 
 typedef void (*uc_args_uc_long_t)(struct uc_struct*, unsigned long);
@@ -70,6 +91,8 @@ typedef void (*uc_args_uc_u64_t)(struct uc_struct *, uint64_t addr);
 typedef MemoryRegion* (*uc_args_uc_ram_size_t)(struct uc_struct*,  hwaddr begin, size_t size, uint32_t perms);
 
 typedef MemoryRegion* (*uc_args_uc_ram_size_ptr_t)(struct uc_struct*,  hwaddr begin, size_t size, uint32_t perms, void *ptr);
+
+typedef MemoryRegion* (*uc_args_uc_mmio_size_t)(struct uc_struct*, hwaddr begin, size_t size, void* opaque);
 
 typedef void (*uc_mem_unmap_t)(struct uc_struct*, MemoryRegion *mr);
 
@@ -170,9 +193,73 @@ struct uc_struct {
     uc_args_uc_long_t tcg_exec_init;
     uc_args_uc_ram_size_t memory_map;
     uc_args_uc_ram_size_ptr_t memory_map_ptr;
+    uc_args_uc_mmio_size_t memory_map_mmio;
     uc_mem_unmap_t memory_unmap;
     uc_readonly_mem_t readonly_mem;
     uc_mem_redirect_t mem_redirect;
+
+    // JHW
+    tb_flush_t tb_flush;
+
+    uc_cb_mmio_t uc_portio_func;
+    void*        uc_portio_opaque;
+
+    uc_cb_dmiptr_t   get_dmi_ptr;
+    dmi_invalidate_t inv_dmi_ptr;
+    void*            dmi_opaque;
+
+    tlb_flush_t             tlb_flush;
+    tlb_flush_page_t        tlb_flush_page;
+    tlb_flush_mmuidx_t      tlb_flush_mmuidx;
+    tlb_flush_page_mmuidx_t tlb_flush_page_mmuidx;
+
+    tlb_cluster_flush_t             tlb_cluster_flush;
+    tlb_cluster_flush_page_t        tlb_cluster_flush_page;
+    tlb_cluster_flush_mmuidx_t      tlb_cluster_flush_mmuidx;
+    tlb_cluster_flush_page_mmuidx_t tlb_cluster_flush_page_mmuidx;
+
+    uc_tlb_cluster_flush_t             uc_tlb_cluster_flush;
+    uc_tlb_cluster_flush_page_t        uc_tlb_cluster_flush_page;
+    uc_tlb_cluster_flush_mmuidx_t      uc_tlb_cluster_flush_mmuidx;
+    uc_tlb_cluster_flush_page_mmuidx_t uc_tlb_cluster_flush_page_mmuidx;
+    void*                              uc_tlb_cluster_opaque;
+
+    cpu_breakpoint_insert_t breakpoint_insert;
+    cpu_breakpoint_remove_t breakpoint_remove;
+    cpu_watchpoint_insert_t watchpoint_insert;
+    cpu_watchpoint_remove_t watchpoint_remove;
+
+    uc_breakpoint_hit_t uc_breakpoint_func;
+    void*               uc_breakpoint_opaque;
+
+    uc_watchpoint_hit_t uc_watchpoint_func;
+    void*               uc_watchpoint_opaque;
+
+    uc_hintfunc_t uc_hint_func;
+    void*         uc_hint_opaque;
+
+    uc_shfunc_t uc_semihost_func;
+    void*       uc_semihost_opaque;
+
+    uc_trace_basic_block_t uc_trace_bb_func;
+    void*                  uc_trace_bb_opaque;
+
+    uc_get_config_t uc_config_func;
+    void*           uc_config_opaque;
+
+    uc_timer_timefunc_t timer_timefunc;
+    uc_timer_irqfunc_t  timer_irqfunc;
+    uc_timer_schedule_t timer_schedule;
+    uc_timer_recalc_t   timer_recalc;
+    void*               timer_opaque;
+    bool                timer_initialized;
+
+    bool is_debug;
+    bool is_excl;
+
+    char model[80];
+    // JHW /end
+
     // TODO: remove current_cpu, as it's a flag for something else ("cpu running"?)
     CPUState *cpu, *current_cpu;
 
@@ -268,7 +355,7 @@ struct uc_struct {
 
     uint64_t addr_end;  // address where emulation stops (@end param of uc_emu_start())
 
-    int thumb;  // thumb mode for ARM
+    //int thumb;  // thumb mode for ARM
     // full TCG cache leads to middle-block break in the last translation?
     bool block_full;
     int size_arg;     // what tcg arg slot do we need to update with the size of the block?
@@ -284,6 +371,8 @@ struct uc_struct {
     // util/cacheinfo.c
     int qemu_icache_linesize;
     int qemu_dcache_linesize;
+
+    uc_mmio_region_t *mmios; // JHW: pointer to mapped IOs
 };
 
 // Metadata stub for the variable-size cpu context used with uc_context_*()
@@ -298,6 +387,17 @@ MemoryRegion *memory_mapping(struct uc_struct* uc, uint64_t address);
 // Defined in util/cacheinfo.c. Made externally linked to
 // allow calling it directly.
 void init_cache_info(struct uc_struct *uc);
+
+static inline const char* uc_get_config(struct uc_struct *uc, const char* cfg) {
+    if (!uc || !uc->uc_config_func)
+        return "";
+
+    void* opaque = uc->uc_config_opaque;
+    uc_get_config_t fn = uc->uc_config_func;
+
+    const char* res = fn(opaque, cfg);
+    return res ? res : "";
+}
 
 #endif
 /* vim: set ts=4 noet:  */

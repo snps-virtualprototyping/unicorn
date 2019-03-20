@@ -306,7 +306,7 @@ static void arm_cpu_reset(CPUState *s)
     }
 
     // Unicorn: force Thumb mode by setting of uc_open()
-    env->thumb = env->uc->thumb;
+    //env->thumb = env->uc->thumb;
 
     /* AArch32 has a hard highvec setting of 0xFFFF0000.  If we are currently
      * executing as AArch32 then check if highvecs are enabled and
@@ -383,6 +383,16 @@ static void arm_cpu_reset(CPUState *s)
 
     hw_breakpoint_update_all(cpu);
     hw_watchpoint_update_all(cpu);
+
+    // JHW: set config registers (taken from hw/arm/boot.c)
+    if (arm_feature(env, ARM_FEATURE_EL3) && env->aarch64)
+    	env->cp15.scr_el3 |= SCR_RW;  // 64bit registers on el3
+
+    if (arm_feature(env, ARM_FEATURE_EL2) && env->aarch64)
+    	env->cp15.hcr_el2 |= HCR_RW;  // 64bit registers on el2
+
+    if (arm_feature(env, ARM_FEATURE_EL3) && arm_feature(env, ARM_FEATURE_EL2))
+    	env->cp15.scr_el3 |= SCR_HCE; // hypervisor call available
 }
 
 bool arm_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
@@ -589,8 +599,8 @@ static void arm_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
                                                 arm_gt_htimer_cb, cpu);
     cpu->gt_timer[GTIMER_SEC] = timer_new(QEMU_CLOCK_VIRTUAL, GTIMER_SCALE,
                                                 arm_gt_stimer_cb, cpu);
-    //qdev_init_gpio_out(DEVICE(cpu), cpu->gt_timer_outputs,
-    //                   ARRAY_SIZE(cpu->gt_timer_outputs));
+    qdev_init_gpio_out(DEVICE(cpu), cpu->gt_timer_outputs,
+                       ARRAY_SIZE(cpu->gt_timer_outputs));
 #endif
 #endif
 
@@ -635,7 +645,12 @@ static void arm_cpu_post_init(struct uc_struct *uc, Object *obj)
         //                         &error_abort);
     }
 
+    if (arm_feature(&cpu->env, ARM_FEATURE_EL2)) {
+        cpu->has_el2 = true;
+    }
+
     if (arm_feature(&cpu->env, ARM_FEATURE_EL3)) {
+        cpu->has_el3 = true;
         /* Add the has_el3 state CPU property only if EL3 is allowed.  This will
          * prevent "has_el3" from existing on CPUs which cannot support EL3.
          */
@@ -1395,6 +1410,7 @@ static void cortex_a9_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->clidr = (1 << 27) | (1 << 24) | 3;
     cpu->ccsidr[0] = 0xe00fe019; /* 16k L1 dcache. */
     cpu->ccsidr[1] = 0x200fe019; /* 16k L1 icache. */
+
     define_arm_cp_regs(cpu, cortexa9_cp_reginfo);
 }
 
@@ -1461,6 +1477,7 @@ static void cortex_a7_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->ccsidr[0] = 0x701fe00a; /* 32K L1 dcache */
     cpu->ccsidr[1] = 0x201fe00a; /* 32K L1 icache */
     cpu->ccsidr[2] = 0x711fe07a; /* 4096K L2 unified cache */
+
     define_arm_cp_regs(cpu, cortexa15_cp_reginfo); /* Same as A15 */
 }
 
@@ -1503,6 +1520,7 @@ static void cortex_a15_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->ccsidr[0] = 0x701fe00a; /* 32K L1 dcache */
     cpu->ccsidr[1] = 0x201fe00a; /* 32K L1 icache */
     cpu->ccsidr[2] = 0x711fe07a; /* 4096K L2 unified cache */
+
     define_arm_cp_regs(cpu, cortexa15_cp_reginfo);
 }
 
@@ -1743,16 +1761,16 @@ static const ARMCPUInfo arm_cpus[] = {
     { "arm1136",     arm1136_initfn },
     { "arm1176",     arm1176_initfn },
     { "arm11mpcore", arm11mpcore_initfn },
-    { "cortex-m0",   cortex_m0_initfn, arm_v7m_class_init },
-    { "cortex-m3",   cortex_m3_initfn, arm_v7m_class_init },
-    { "cortex-m4",   cortex_m4_initfn, arm_v7m_class_init },
-    { "cortex-m33",  cortex_m33_initfn, arm_v7m_class_init },
-    { "cortex-r5",   cortex_r5_initfn },
-    { "cortex-r5f",  cortex_r5f_initfn },
-    { "cortex-a7",   cortex_a7_initfn },
-    { "cortex-a8",   cortex_a8_initfn },
-    { "cortex-a9",   cortex_a9_initfn },
-    { "cortex-a15",  cortex_a15_initfn },
+    { "Cortex-M0",   cortex_m0_initfn, arm_v7m_class_init },
+    { "Cortex-M3",   cortex_m3_initfn, arm_v7m_class_init },
+    { "Cortex-M4",   cortex_m4_initfn, arm_v7m_class_init },
+    { "Cortex-M33",  cortex_m33_initfn, arm_v7m_class_init },
+    { "Cortex-R5",   cortex_r5_initfn },
+    { "Cortex-R5f",  cortex_r5f_initfn },
+    { "Cortex-A7",   cortex_a7_initfn },
+    { "Cortex-A8",   cortex_a8_initfn },
+    { "Cortex-A9",   cortex_a9_initfn },
+    { "Cortex-A15",  cortex_a15_initfn },
     { "ti925t",      ti925t_initfn },
     { "sa1100",      sa1100_initfn },
     { "sa1110",      sa1110_initfn },
@@ -1770,7 +1788,7 @@ static const ARMCPUInfo arm_cpus[] = {
     { "pxa270-c0",   pxa270c0_initfn },
     { "pxa270-c5",   pxa270c5_initfn },
 #ifndef TARGET_AARCH64
-    { "max",         arm_max_initfn },
+    { "Max",         arm_max_initfn },
 #endif
 #ifdef CONFIG_USER_ONLY
     { "any",         arm_max_initfn },

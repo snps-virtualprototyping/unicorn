@@ -286,6 +286,12 @@ static void gen_exception_internal(DisasContext *s, int excp)
 
 static void gen_exception(DisasContext *s, int excp, uint32_t syndrome, uint32_t target_el)
 {
+    if (excp == EXCP_UDEF) {
+        fprintf(stderr,
+                "undefined instruction, pc = 0x%08x, translate.c +514\n",
+                (unsigned int)s->pc);
+    }
+
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     TCGv_i32 tcg_excp = tcg_const_i32(tcg_ctx, excp);
     TCGv_i32 tcg_syn = tcg_const_i32(tcg_ctx, syndrome);
@@ -1355,7 +1361,7 @@ static inline void gen_hlt(DisasContext *s, int imm)
      * semihosting, to provide some semblance of security
      * (and for consistency with our 32-bit semihosting).
      */
-    if (semihosting_enabled() &&
+    if (semihosting_enabled(s->uc) &&
 #ifndef CONFIG_USER_ONLY
         s->current_el != 0 &&
 #endif
@@ -5156,6 +5162,8 @@ static int disas_neon_ls_insn(DisasContext *s, uint32_t insn)
     TCGv_i32 tmp2;
     TCGv_i64 tmp64;
 
+    stride = 0; /* JHW: silence compiler warning */
+
     /* FIXME: this access check should not take precedence over UNDEF
      * for invalid encodings; we will generate incorrect syndrome information
      * for attempts to execute invalid vfp/neon encodings with FP disabled.
@@ -8795,6 +8803,12 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
     ri = get_arm_cp_reginfo(s->cp_regs,
             ENCODE_CP_REG(cpnum, is64, s->ns, crn, crm, opc1, opc2));
     if (ri) {
+
+        //fprintf(stderr, "[%08lx] %s %s (cp=%d,crn=%d,crm=%d,opc0=%d,opc1=%d,opc2=%d)\n",
+        //        (unsigned long)s->pc, isread ? "read" : "write", ri->name,
+        //        (int)ri->cp, (int)ri->crn, (int)ri->crm, (int)ri->opc0,
+        //        (int)ri->opc1, (int)ri->opc2);
+
         /* Check access permissions */
         if (!cp_access_ok(s->current_el, ri, isread)) {
             return 1;
@@ -13609,7 +13623,12 @@ static bool arm_tr_breakpoint_check(DisasContextBase *dcbase, CPUState *cpu,
     DisasContext *dc = container_of(dcbase, DisasContext, base);
     TCGContext *tcg_ctx = cpu->uc->tcg_ctx;
 
-    if (bp->flags & BP_CPU) {
+    if (bp->flags & BP_CALL) {
+        gen_set_condexec(dc);
+        gen_set_pc_im(dc, dc->pc);
+        gen_helper_call_breakpoints(tcg_ctx, tcg_ctx->cpu_env);
+        dc->base.is_jmp = DISAS_TOO_MANY;
+    } else if (bp->flags & BP_CPU) {
         gen_set_condexec(dc);
         gen_set_pc_im(dc, dc->pc);
         gen_helper_check_breakpoints(tcg_ctx, tcg_ctx->cpu_env);
