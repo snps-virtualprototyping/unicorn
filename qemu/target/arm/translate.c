@@ -13928,10 +13928,12 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             break;
         }
         case DISAS_WFE:
-            gen_helper_wfe(tcg_ctx, tcg_ctx->cpu_env);
+            /* JHW: disable unused wfe helper call */
+            /*gen_helper_wfe(tcg_ctx, tcg_ctx->cpu_env);*/
             break;
         case DISAS_YIELD:
-            gen_helper_yield(tcg_ctx, tcg_ctx->cpu_env);
+            /* JHW: disable unused yield helper call */
+            /*gen_helper_yield(tcg_ctx, tcg_ctx->cpu_env);*/
             break;
         case DISAS_SWI:
             gen_exception(dc, EXCP_SWI, syn_aa32_svc(dc->svc_imm, dc->thumb),

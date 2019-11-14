@@ -1571,25 +1571,26 @@ static void handle_hint(DisasContext *s, uint32_t insn,
         TCGv_i32 tmp = tcg_const_i32(tcg_ctx, 4);
         gen_helper_wfi(tcg_ctx, tcg_ctx->cpu_env, tmp);
         tcg_temp_free_i32(tcg_ctx, tmp);
-        s->base.is_jmp = DISAS_NEXT;
         break;
     }
     case 0b00001: /* YIELD */
-        gen_helper_yield(tcg_ctx, tcg_ctx->cpu_env);
-        s->base.is_jmp = DISAS_NEXT;
+        /* JHW: disable unused yield helper call */
+        /* gen_helper_yield(tcg_ctx, tcg_ctx->cpu_env); */
         break;
 
     case 0b00010: /* WFE */
-        gen_helper_wfe(tcg_ctx, tcg_ctx->cpu_env);
-        s->base.is_jmp = DISAS_NEXT;
+        /* JHW: disable unused wfe helper call */
+        /* gen_helper_wfe(tcg_ctx, tcg_ctx->cpu_env); */
         break;
 
     case 0b00100: /* SEV */
-        gen_helper_sev(tcg_ctx, tcg_ctx->cpu_env);
+        /* JHW: disable unused sev helper call */
+        /* gen_helper_sev(tcg_ctx, tcg_ctx->cpu_env); */
         break;
 
     case 0b00101: /* SEVL */
-        gen_helper_sevl(tcg_ctx, tcg_ctx->cpu_env);
+        /* JHW: disable unused sevl helper call */
+        /* gen_helper_sevl(tcg_ctx, tcg_ctx->cpu_env); */
         break;
 
     case 0b00111: /* XPACLRI */

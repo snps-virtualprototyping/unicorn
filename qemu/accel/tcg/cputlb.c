@@ -441,7 +441,7 @@ tb_page_addr_t get_page_addr_code(CPUArchState *env, target_ulong addr)
 
     CPUIOTLBEntry *ioentry = &env->iotlb[mmu_idx][index];
     hwaddr phys = (ioentry->addr & TARGET_PAGE_MASK) + addr;
-    return phys & TARGET_PAGE_MASK;
+    return phys;
 }
 
 static void tlb_set_dirty1(CPUTLBEntry *tlb_entry, target_ulong vaddr)
@@ -651,7 +651,8 @@ static void io_writex(CPUArchState *env, CPUIOTLBEntry *iotlbentry,
 
         cpu_transaction_failed(cpu, physaddr, addr, size, MMU_DATA_STORE,
                                mmu_idx, iotlbentry->attrs, r, retaddr);
-    }
+    } else if (addr & TLB_NOTDIRTY)
+        tlb_set_dirty(cpu, addr); // jhw: if it was not dirty before, it now is
 }
 
 /* Probe for whether the specified guest write access is permitted.
