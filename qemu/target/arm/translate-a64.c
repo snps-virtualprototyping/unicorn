@@ -3765,7 +3765,7 @@ static void disas_ldst(DisasContext *s, uint32_t insn)
 {
     /* loads and stores might trigger watchpoints in QEMU or in SystemC, so
      * we need to sync our pc here to provide a consistent model state to the
-     * debugger.
+     * debugger - JHW
      */
     gen_a64_set_pc_im(s, s->base.pc_next);
 
