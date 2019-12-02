@@ -1653,7 +1653,7 @@ uc_err uc_cbbreakpoint_remove(uc_engine *uc, uint64_t addr) {
     return ret;
 }
 
-static uc_err __uc_watchpoint_insert(uc_engine *uc, uint64_t addr, size_t size, int flags) {
+static int __uc_convert_watchpoint_flags(int flags) {
     int qemu_flags = 0;
     if (flags & UC_WP_READ)
         qemu_flags |= BP_MEM_READ;
@@ -1664,6 +1664,12 @@ static uc_err __uc_watchpoint_insert(uc_engine *uc, uint64_t addr, size_t size, 
     if (flags & UC_WP_CALL)
         qemu_flags |= BP_CALL;
 
+    return qemu_flags;
+}
+
+static uc_err __uc_watchpoint_insert(uc_engine *uc, uint64_t addr, size_t size, int flags) {
+    int qemu_flags = __uc_convert_watchpoint_flags(flags);
+
     if (!uc->watchpoint_insert(uc->cpu, addr, size, qemu_flags, NULL))
         return UC_ERR_OK;
 
@@ -1671,13 +1677,7 @@ static uc_err __uc_watchpoint_insert(uc_engine *uc, uint64_t addr, size_t size, 
 }
 
 static uc_err __uc_watchpoint_remove(uc_engine *uc, uint64_t addr, size_t size, int flags) {
-    int qemu_flags = 0;
-    if (flags & UC_WP_READ)
-        qemu_flags |= BP_MEM_READ;
-    if (flags & UC_WP_WRITE)
-        qemu_flags |= BP_MEM_WRITE;
-    if (flags & UC_WP_BEFORE)
-        qemu_flags |= BP_STOP_BEFORE_ACCESS;
+    int qemu_flags = __uc_convert_watchpoint_flags(flags);
 
     if (!uc->watchpoint_remove(uc->cpu, addr, size, qemu_flags))
         return UC_ERR_OK;

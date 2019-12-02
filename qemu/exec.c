@@ -1852,7 +1852,7 @@ static MemTxResult watch_mem_read(struct uc_struct* uc, void *opaque,
     int asidx = cpu_asidx_from_attrs(uc->cpu, attrs);
     AddressSpace *as = uc->cpu->cpu_ases[asidx].as;
 
-    check_watchpoint_cb(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_READ | BP_CALL, 0); // JHW
+    check_watchpoint_cb(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_READ, 0); // JHW
     check_watchpoint(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_READ);
     switch (size) {
     case 1:
@@ -1881,7 +1881,7 @@ static MemTxResult watch_mem_write(struct uc_struct* uc, void *opaque, hwaddr ad
     int asidx = cpu_asidx_from_attrs(uc->cpu, attrs);
     AddressSpace *as = uc->cpu->cpu_ases[asidx].as;
 
-    check_watchpoint_cb(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_WRITE | BP_CALL, val); // JHW
+    check_watchpoint_cb(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_WRITE, val); // JHW
     check_watchpoint(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_WRITE);
     switch (size) {
     case 1:
