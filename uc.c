@@ -316,6 +316,8 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
         uc->uc_trace_bb_func = NULL;
         uc->uc_trace_bb_opaque = NULL;
 
+        uc->setup_once = NULL;
+
         uc->is_debug = false;
         uc->is_excl = false;
 
@@ -822,6 +824,11 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
     uc->stop_request = false;
     uc->addr_end = until;
     uc->cpu->singlestep_enabled = (count == 1);
+
+    if (uc->setup_once) {
+        uc->setup_once(uc->cpu);
+        uc->setup_once = NULL;
+    }
 
     if (timeout)
         enable_emu_timer(uc, timeout * 1000);   // microseconds -> nanoseconds

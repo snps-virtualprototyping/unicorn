@@ -82,6 +82,8 @@ typedef int  (*cpu_watchpoint_remove_t)(CPUState*, vaddr, vaddr, int);
 
 typedef void (*uc_timer_recalc_t)(CPUState*, int); // JHW
 
+typedef void (*uc_setup_once_t)(CPUState*); // JHW
+
 typedef bool (*uc_args_tcg_enable_t)(struct uc_struct*);
 
 typedef void (*uc_args_uc_long_t)(struct uc_struct*, unsigned long);
@@ -253,6 +255,8 @@ struct uc_struct {
     uc_timer_recalc_t   timer_recalc;
     void*               timer_opaque;
     bool                timer_initialized;
+
+    uc_setup_once_t setup_once;
 
     bool is_debug;
     bool is_excl;
