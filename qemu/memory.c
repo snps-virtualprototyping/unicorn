@@ -128,7 +128,6 @@ static const struct MemoryRegionOps uc_mmio_ops = {
     {
         1, 8,
         true,
-        NULL,
     },
 };
 

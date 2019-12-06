@@ -2104,7 +2104,8 @@ char *g_strdup_vprintf(const char *format, va_list ap)
        return NULL;
    vsnprintf(str_res, len+1, format, ap);
 #else
-   vasprintf(&str_res, format, ap);
+   if (vasprintf(&str_res, format, ap) < 0)
+       str_res = NULL;
 #endif
    return str_res;
 }

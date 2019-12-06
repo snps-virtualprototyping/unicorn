@@ -540,7 +540,7 @@ int cpu_exec(struct uc_struct *uc, CPUState *cpu)
 {
     CPUArchState *env = cpu->env_ptr;
     CPUClass *cc = CPU_GET_CLASS(uc, cpu);
-    int ret;
+    int ret = 0;
 
     if (cpu_handle_halt(cpu)) {
         return EXCP_HALTED;
