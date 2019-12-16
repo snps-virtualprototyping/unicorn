@@ -152,8 +152,8 @@ typedef struct CPUIOTLBEntry {
     CPUTLBEntry tlb_v_table[NB_MMU_MODES][CPU_VTLB_SIZE];               \
     CPUIOTLBEntry iotlb[NB_MMU_MODES][CPU_TLB_SIZE];                    \
     CPUIOTLBEntry iotlb_v[NB_MMU_MODES][CPU_VTLB_SIZE];                 \
-    target_ulong tlb_flush_addr;                                        \
-    target_ulong tlb_flush_mask;                                        \
+    target_ulong tlb_flush_addr[NB_MMU_MODES];                          \
+    target_ulong tlb_flush_mask[NB_MMU_MODES];                          \
     target_ulong vtlb_index;                                            \
 
 #else

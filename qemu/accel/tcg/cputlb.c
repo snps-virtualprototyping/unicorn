@@ -66,7 +66,7 @@ static void tlb_flush_entry(CPUTLBEntry *tlb_entry, target_ulong addr);
 static bool tlb_is_dirty_ram(CPUTLBEntry *tlbe);
 //static ram_addr_t qemu_ram_addr_from_host_nofail(struct uc_struct *uc, void *ptr);
 static void tlb_add_large_page(CPUArchState *env, target_ulong vaddr,
-                               target_ulong size);
+                               target_ulong size, int mmu_idx);
 static void tlb_set_dirty1(CPUTLBEntry *tlb_entry, target_ulong vaddr);
 
 void tlb_init(CPUState *cpu)
@@ -87,8 +87,21 @@ void tlb_flush(CPUState *cpu)
     cpu_tb_jmp_cache_clear(cpu);
 
     env->vtlb_index = 0;
-    env->tlb_flush_addr = -1;
-    env->tlb_flush_mask = 0;
+    memset(env->tlb_flush_addr, -1, sizeof(env->tlb_flush_addr));
+    memset(env->tlb_flush_mask,  0, sizeof(env->tlb_flush_mask));
+}
+
+static void tlb_flush_one_mmu(CPUState *cpu, int mmu_idx)
+{
+    CPUArchState *env = cpu->env_ptr;
+
+    memset(env->tlb_table[mmu_idx], -1, sizeof(env->tlb_table[0]));
+    memset(env->tlb_v_table[mmu_idx], -1, sizeof(env->tlb_v_table[0]));
+
+    env->tlb_flush_addr[mmu_idx] = -1;
+    env->tlb_flush_mask[mmu_idx] = 0;
+
+    cpu_tb_jmp_cache_clear(cpu);
 }
 
 void tlb_flush_page(CPUState *cpu, uint64_t addr)
@@ -99,13 +112,16 @@ void tlb_flush_page(CPUState *cpu, uint64_t addr)
     tlb_debug("page : 0x%lx\n", addr);
 
     /* Check if we need to flush due to large pages.  */
-    if ((addr & env->tlb_flush_mask) == env->tlb_flush_addr) {
-        tlb_debug("forcing full flush ("
-                  TARGET_FMT_lx "/" TARGET_FMT_lx ")\n",
-                  env->tlb_flush_addr, env->tlb_flush_mask);
-
-        tlb_flush(cpu);
-        return;
+    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
+        target_ulong flush_mask = env->tlb_flush_mask[mmu_idx];
+        target_ulong flush_addr = env->tlb_flush_addr[mmu_idx];
+        if ((addr & flush_mask) == flush_addr) {
+            tlb_debug("forcing full flush ("
+                      TARGET_FMT_lx "/" TARGET_FMT_lx ")\n",
+                      flush_addr, flush_mask);
+            tlb_flush(cpu); // full flush of all TLBs
+            return;
+        }
     }
 
     addr &= TARGET_PAGE_MASK;
@@ -230,7 +246,7 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
         sz = TARGET_PAGE_SIZE;
     } else {
         if (size > TARGET_PAGE_SIZE) {
-            tlb_add_large_page(env, vaddr, size);
+            tlb_add_large_page(env, vaddr, size, mmu_idx);
         }
         sz = size;
     }
@@ -306,7 +322,7 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
      */
     env->iotlb[mmu_idx][index].addr = iotlb - vaddr_page;
     env->iotlb[mmu_idx][index].attrs = attrs;
-    
+
     /* link iotlb back to tlb to enable dmi */
     env->iotlb[mmu_idx][index].phys = paddr_page;
     env->iotlb[mmu_idx][index].p2v = te;
@@ -454,24 +470,26 @@ static void tlb_set_dirty1(CPUTLBEntry *tlb_entry, target_ulong vaddr)
 /* Our TLB does not support large pages, so remember the area covered by
    large pages and trigger a full TLB flush if these are invalidated.  */
 static void tlb_add_large_page(CPUArchState *env, target_ulong vaddr,
-                               target_ulong size)
+                               target_ulong size, int mmu_idx)
 {
     target_ulong mask = ~(size - 1);
 
-    if (env->tlb_flush_addr == (target_ulong)-1) {
-        env->tlb_flush_addr = vaddr & mask;
-        env->tlb_flush_mask = mask;
+    if (env->tlb_flush_addr[mmu_idx] == (target_ulong)-1) {
+        env->tlb_flush_addr[mmu_idx] = vaddr & mask;
+        env->tlb_flush_mask[mmu_idx] = mask;
         return;
     }
+
     /* Extend the existing region to include the new page.
        This is a compromise between unnecessary flushes and the cost
        of maintaining a full variable size TLB.  */
-    mask &= env->tlb_flush_mask;
-    while (((env->tlb_flush_addr ^ vaddr) & mask) != 0) {
+    mask &= env->tlb_flush_mask[mmu_idx];
+    while (((env->tlb_flush_addr[mmu_idx] ^ vaddr) & mask) != 0) {
         mask <<= 1;
     }
-    env->tlb_flush_addr &= mask;
-    env->tlb_flush_mask = mask;
+
+    env->tlb_flush_addr[mmu_idx] &= mask;
+    env->tlb_flush_mask[mmu_idx] = mask;
 }
 
 static bool tlb_is_dirty_ram(CPUTLBEntry *tlbe)
@@ -493,6 +511,9 @@ void tlb_flush_by_mmuidx(CPUState *cpu, uint16_t idxmap)
 
             memset(env->tlb_table[mmu_idx], -1, sizeof(env->tlb_table[0]));
             memset(env->tlb_v_table[mmu_idx], -1, sizeof(env->tlb_v_table[0]));
+
+            env->tlb_flush_addr[mmu_idx] = (target_ulong)-1;
+            env->tlb_flush_mask[mmu_idx] = 0;
         }
     }
 
@@ -517,13 +538,16 @@ void tlb_flush_page_by_mmuidx(CPUState *cpu, uint64_t addr, uint16_t idxmap)
     tlb_debug("addr 0x%lx\n", addr);
 
     /* Check if we need to flush due to large pages.  */
-    if ((addr & env->tlb_flush_mask) == env->tlb_flush_addr) {
-        tlb_debug("forced full flush ("
-                  TARGET_FMT_lx "/" TARGET_FMT_lx ")\n",
-                  env->tlb_flush_addr, env->tlb_flush_mask);
+    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
+        target_ulong flush_mask = env->tlb_flush_mask[mmu_idx];
+        target_ulong flush_addr = env->tlb_flush_addr[mmu_idx];
+        if ((addr & flush_mask) == flush_addr) {
+            tlb_debug("forced full flush ("
+                      TARGET_FMT_lx "/" TARGET_FMT_lx ")\n",
+                      flush_addr, flush_mask);
 
-        tlb_flush_by_mmuidx(cpu, idxmap);
-        return;
+            tlb_flush_one_mmu(cpu, mmu_idx);
+        }
     }
 
     addr &= TARGET_PAGE_MASK;
