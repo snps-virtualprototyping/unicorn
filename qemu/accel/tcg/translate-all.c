@@ -1251,6 +1251,8 @@ static inline void tb_alloc_page(struct uc_struct *uc, TranslationBlock *tb,
     tb->page_next[n] = p->first_tb;
 #ifndef CONFIG_USER_ONLY
     page_already_protected = p->first_tb != NULL;
+    if (!page_already_protected)
+        tlb_reset_dirty(uc->cpu, page_addr, TARGET_PAGE_SIZE);
 #endif
     p->first_tb = (TranslationBlock *)((uintptr_t)tb | n);
     invalidate_page_bitmap(p);

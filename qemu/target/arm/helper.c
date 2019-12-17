@@ -3991,6 +3991,7 @@ static void sdcr_write(CPUARMState *env, const ARMCPRegInfo *ri,
     env->cp15.mdcr_el3 = value & SDCR_VALID_MASK;
 }
 
+#ifdef JHW
 static void ic_ialluis_write(CPUARMState *env, const ARMCPRegInfo *ri,
                              uint64_t value) {
     icache_debug("[0x%016lx] flush icache local", env->pc);
@@ -4003,18 +4004,40 @@ static void ic_iallu_write(CPUARMState *env, const ARMCPRegInfo *ri,
     tb_flush(ENV_GET_CPU(env));
 }
 
+void tb_invalidate_phys_page_range(struct uc_struct *uc, tb_page_addr_t start,
+                                   tb_page_addr_t end, int is_cpu_write_access);
+
 static void ic_ivau_write(CPUARMState *env, const ARMCPRegInfo *ri,
                           uint64_t value) {
     icache_debug("[0x%016lx] flush icache VA 0x%016lx PA 0x%016lx", env->pc,
                  value, 0ul);
 
-    // TODO: determine cache line size and avoid over-flushing
-    // JHW: this might fault, but thats okay according to the manual (C5-450)
-    //hwaddr phys = get_page_addr_code(env, value);
-    //tb_invalidate_phys_page_range(env->uc, phys, phys + CACHE_LINE_SIZE, 1);
-    tb_flush(ENV_GET_CPU(env));
-}
+    hwaddr phys = 0;
+    target_ulong virt = value;
+    target_ulong size = TARGET_PAGE_SIZE;
 
+    ARMMMUFaultInfo fi = {0};
+    ARMMMUIdx mmu_idx = arm_mmu_idx(env);
+    uintptr_t index = tlb_index(env, mmu_idx, virt);
+    CPUTLBEntry *entry = tlb_entry(env, mmu_idx, virt);
+
+    if (likely(tlb_hit(entry->addr_code, virt))) {
+        CPUIOTLBEntry *ioentry = &env->iotlb[mmu_idx][index];
+        phys = (ioentry->addr & TARGET_PAGE_MASK) + virt;
+    } else {
+        int prot;
+        MemTxAttrs attr;
+        ARMMMUFaultInfo fi;
+        bool ret = get_phys_addr(env, virt, MMU_DATA_LOAD, mmu_idx, &phys,
+                                 &attr, &prot, &size, &fi, NULL);
+        if (ret)
+            return;
+    }
+
+    tb_page_addr_t page = phys & ~(size - 1);
+    tb_invalidate_phys_page_range(env->uc, page, page + size, 1);
+}
+#endif
 
 static const ARMCPRegInfo v8_cp_reginfo[] = {
     /* Minimal set of EL0-visible registers. This will need to be expanded
@@ -4055,13 +4078,13 @@ static const ARMCPRegInfo v8_cp_reginfo[] = {
     /* Cache ops: all NOPs since we don't emulate caches */
     { .name = "IC_IALLUIS", .state = ARM_CP_STATE_AA64,
       .opc0 = 1, .opc1 = 0, .crn = 7, .crm = 1, .opc2 = 0,
-      .access = PL1_W, .writefn = ic_ialluis_write, .type = ARM_CP_NO_RAW },
+      .access = PL1_W, /*.writefn = ic_ialluis_write, .type = ARM_CP_NO_RAW*/ .type = ARM_CP_NOP },
     { .name = "IC_IALLU", .state = ARM_CP_STATE_AA64,
       .opc0 = 1, .opc1 = 0, .crn = 7, .crm = 5, .opc2 = 0,
-      .access = PL1_W, .writefn = ic_iallu_write, .type = ARM_CP_NO_RAW },
+      .access = PL1_W, /*.writefn = ic_iallu_write, .type = ARM_CP_NO_RAW*/ .type = ARM_CP_NOP },
     { .name = "IC_IVAU", .state = ARM_CP_STATE_AA64,
       .opc0 = 1, .opc1 = 3, .crn = 7, .crm = 5, .opc2 = 1,
-      .access = PL0_W, .writefn = ic_ivau_write, .type = ARM_CP_NO_RAW,
+      .access = PL0_W, /*.writefn = ic_ivau_write, .type = ARM_CP_NO_RAW,*/ .type = ARM_CP_NOP,
       .accessfn = aa64_cacheop_access },
     { .name = "DC_IVAC", .state = ARM_CP_STATE_AA64,
       .opc0 = 1, .opc1 = 0, .crn = 7, .crm = 6, .opc2 = 1,

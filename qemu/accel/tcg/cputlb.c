@@ -32,6 +32,7 @@
 #include "exec/helper-proto.h"
 #include "qemu/atomic.h"
 #include "qemu/atomic128.h"
+#include "accel/tcg/translate-all.h"
 
 #include "uc_priv.h"
 
@@ -341,7 +342,7 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
     }
 
     if (prot & PAGE_WRITE) {
-        te->addr_write = address /*| TLB_NOTDIRTY*/;
+        te->addr_write = address | TLB_NOTDIRTY;
     } else {
         te->addr_write = -1;
     }
@@ -675,8 +676,14 @@ static void io_writex(CPUArchState *env, CPUIOTLBEntry *iotlbentry,
 
         cpu_transaction_failed(cpu, physaddr, addr, size, MMU_DATA_STORE,
                                mmu_idx, iotlbentry->attrs, r, retaddr);
-    } else if (addr & TLB_NOTDIRTY)
+    } else if (addr & TLB_NOTDIRTY) {
+        hwaddr physaddr = mr_offset +
+            section->offset_within_address_space -
+            section->offset_within_region;
+
+        tb_invalidate_phys_page_fast(cpu->uc, physaddr, size);
         tlb_set_dirty(cpu, addr); // jhw: if it was not dirty before, it now is
+    }
 }
 
 /* Probe for whether the specified guest write access is permitted.
