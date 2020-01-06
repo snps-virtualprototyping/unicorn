@@ -10121,6 +10121,17 @@ static uint32_t arm_ldl_ptw(CPUState *cs, hwaddr addr, bool is_secure,
     return 0;
 }
 
+#if 0
+
+// using he TLB to perform DMI accesses to physical addresses is costly
+// because the TLB is indexed virtually so we need to iterate over all
+// entries
+
+// instead, the processor model will probably be used in a context that
+// has its own, secondary DMI handling, which will be physically indexed
+// so passing the request to the next layer will be faster than
+// a linear search over the (sizeable) TLB
+
 /* JHW: loads a quadword from a physical address via dmi */
 static uint64_t* arm_ldq_ptw_dmi(CPUState *cs, hwaddr addr, ARMMMUIdx mmu) {
     ARMCPU *cpu = ARM_CPU(cs->uc, cs);
@@ -10150,6 +10161,8 @@ static uint64_t* arm_ldq_ptw_dmi(CPUState *cs, hwaddr addr, ARMMMUIdx mmu) {
     return NULL;
 }
 
+#endif
+
 static uint64_t arm_ldq_ptw(CPUState *cs, hwaddr addr, bool is_secure,
                             ARMMMUIdx mmu_idx, ARMMMUFaultInfo *fi)
 {
@@ -10158,7 +10171,7 @@ static uint64_t arm_ldq_ptw(CPUState *cs, hwaddr addr, bool is_secure,
     MemTxAttrs attrs = {0};
     MemTxResult result = MEMTX_OK;
     AddressSpace *as;
-    uint64_t data, *ptr;
+    uint64_t data;
 
     attrs.secure = is_secure;
     as = arm_addressspace(cs, attrs);
@@ -10170,11 +10183,7 @@ static uint64_t arm_ldq_ptw(CPUState *cs, hwaddr addr, bool is_secure,
     if (regime_translation_big_endian(env, mmu_idx)) {
         data = address_space_ldq_be(as, addr, attrs, &result);
     } else {
-        ptr = arm_ldq_ptw_dmi(cs, addr, mmu_idx);
-        if (ptr != NULL)
-            data = *ptr;
-        else
-            data = address_space_ldq_le(as, addr, attrs, &result);
+        data = address_space_ldq_le(as, addr, attrs, &result);
     }
     if (result == MEMTX_OK) {
         return data;
