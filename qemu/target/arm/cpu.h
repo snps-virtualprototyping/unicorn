@@ -679,6 +679,7 @@ typedef struct CPUARMState {
     const struct arm_boot_info *boot_info;
     /* Store GICv3CPUState to access from this struct */
     void *gicv3state;
+    uint32_t vic_vectaddr;
 
     // Note: The event map has been moved here in Unicorn to avoid non-const file-static state.
 
@@ -1756,6 +1757,7 @@ enum arm_features {
     ARM_FEATURE_VBAR, /* has cp15 VBAR */
     ARM_FEATURE_M_SECURITY, /* M profile Security Extension */
     ARM_FEATURE_M_MAIN, /* M profile Main Extension */
+    ARM_FEATURE_R_VIC, /* R profile: IRQ handler provided by VIC PL19x */
 };
 
 static inline int arm_feature(CPUARMState *env, int feature)

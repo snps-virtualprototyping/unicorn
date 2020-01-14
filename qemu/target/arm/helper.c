@@ -9348,7 +9348,7 @@ static void arm_cpu_do_interrupt_aarch32_(CPUState *cs)
         break;
     case EXCP_IRQ:
         new_mode = ARM_CPU_MODE_IRQ;
-        addr = 0x18;
+        addr = arm_feature(env, ARM_FEATURE_R_VIC) ? env->vic_vectaddr : 0x18;
         /* Disable IRQ and imprecise data aborts.  */
         mask = CPSR_A | CPSR_I;
         offset = 4;

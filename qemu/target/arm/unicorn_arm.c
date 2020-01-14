@@ -369,6 +369,10 @@ int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
                 *value = cpu->mp_affinity & 0xfff;
                 break;
 
+            case UC_ARM_REG_VECTADDR:
+                *value = state->vic_vectaddr;
+                break;
+
             case UC_ARM_VREG_AA64:
                 *value = state->aarch64;
                 break;
@@ -693,6 +697,10 @@ int arm_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals, i
 
             case UC_ARM_REG_MPIDR:
                 cpu->mp_affinity = *value & 0xfff;
+                break;
+
+            case UC_ARM_REG_VECTADDR:
+                state->vic_vectaddr = *value;
                 break;
 
             case UC_ARM_REG_NOIMP:

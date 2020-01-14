@@ -212,6 +212,8 @@ typedef enum uc_arm_reg {
 
     UC_ARM_REG_MPIDR,
 
+    UC_ARM_REG_VECTADDR,
+
     // > virtual registers
     UC_ARM_VREG_AA64,  // virtual register for is_aarch64
     UC_ARM_VREG_THUMB, // virtual register for is_thumb
