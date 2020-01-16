@@ -1568,9 +1568,7 @@ static void handle_hint(DisasContext *s, uint32_t insn,
     case 0b00000: /* NOP */
         break;
     case 0b00011: {/* WFI */
-        TCGv_i32 tmp = tcg_const_i32(tcg_ctx, 4);
-        gen_helper_wfi(tcg_ctx, tcg_ctx->cpu_env, tmp);
-        tcg_temp_free_i32(tcg_ctx, tmp);
+        s->base.is_jmp = DISAS_WFI;
         break;
     }
     case 0b00001: /* YIELD */
@@ -14720,7 +14718,7 @@ static void aarch64_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
              */
             TCGv_i32 tmp = tcg_const_i32(tcg_ctx, 4);
 
-            gen_a64_set_pc_im(dc, dc->pc);
+            gen_a64_set_pc_im(dc, dc->base.pc_next);
             gen_helper_wfi(tcg_ctx, tcg_ctx->cpu_env, tmp);
             tcg_temp_free_i32(tcg_ctx, tmp);
             /* The helper doesn't necessarily throw an exception, but we
