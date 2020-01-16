@@ -368,13 +368,13 @@ static void arm_cpu_reset(CPUState *s)
 
     // JHW: set config registers (taken from hw/arm/boot.c)
     if (arm_feature(env, ARM_FEATURE_EL3) && env->aarch64)
-    	env->cp15.scr_el3 |= SCR_RW;  // 64bit registers on el3
+        env->cp15.scr_el3 |= SCR_RW;  // 64bit registers on el3
 
     if (arm_feature(env, ARM_FEATURE_EL2) && env->aarch64)
-    	env->cp15.hcr_el2 |= HCR_RW;  // 64bit registers on el2
+        env->cp15.hcr_el2 |= HCR_RW;  // 64bit registers on el2
 
     if (arm_feature(env, ARM_FEATURE_EL3) && arm_feature(env, ARM_FEATURE_EL2))
-    	env->cp15.scr_el3 |= SCR_HCE; // hypervisor call available
+        env->cp15.scr_el3 |= SCR_HCE; // hypervisor call available
 }
 
 bool arm_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
@@ -494,6 +494,46 @@ void arm_cpu_update_vfiq(ARMCPU *cpu)
         } else {
             cpu_reset_interrupt(cs, CPU_INTERRUPT_VFIQ);
         }
+    }
+}
+
+static void arm_cpu_set_irq(CPUState *cs, int irq, int level)
+{
+    ARMCPU *cpu = ARM_CPU(NULL, cs);
+    CPUARMState *env = &cpu->env;
+
+    static const int mask[] = {
+        [ARM_CPU_IRQ] = CPU_INTERRUPT_HARD,
+        [ARM_CPU_FIQ] = CPU_INTERRUPT_FIQ,
+        [ARM_CPU_VIRQ] = CPU_INTERRUPT_VIRQ,
+        [ARM_CPU_VFIQ] = CPU_INTERRUPT_VFIQ
+    };
+
+    if (level) {
+        env->irq_line_state |= mask[irq];
+    } else {
+        env->irq_line_state &= ~mask[irq];
+    }
+
+    switch (irq) {
+    case ARM_CPU_VIRQ:
+        assert(arm_feature(env, ARM_FEATURE_EL2));
+        arm_cpu_update_virq(cpu);
+        break;
+    case ARM_CPU_VFIQ:
+        assert(arm_feature(env, ARM_FEATURE_EL2));
+        arm_cpu_update_vfiq(cpu);
+        break;
+    case ARM_CPU_IRQ:
+    case ARM_CPU_FIQ:
+        if (level) {
+            cpu_interrupt(cs, mask[irq]);
+        } else {
+            cpu_reset_interrupt(cs, mask[irq]);
+        }
+        break;
+    default:
+        g_assert_not_reached();
     }
 }
 
@@ -1806,6 +1846,8 @@ static void arm_cpu_class_init(struct uc_struct *uc, ObjectClass *oc, void *data
     acc->parent_realize = dc->realize;
     dc->realize = arm_cpu_realizefn;
     //dc->props = arm_cpu_properties;
+
+    cc->set_irq = arm_cpu_set_irq;
 
     acc->parent_reset = cc->reset;
     cc->reset = arm_cpu_reset;

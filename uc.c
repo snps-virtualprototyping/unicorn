@@ -1730,11 +1730,8 @@ uc_err uc_cbwatchpoint_remove(uc_engine *uc, uint64_t addr, size_t size, int fla
 
 UNICORN_EXPORT
 uc_err uc_interrupt(uc_engine *uc, int irqid, int set) {
-    if (set)
-        uc->cpu->interrupt_request |= irqid;
-    else
-        uc->cpu->interrupt_request &= ~irqid;
-    atomic_set(&uc->cpu->tcg_exit_req, 1);
+    CPUClass *cc = CPU_GET_CLASS(uc, uc->cpu);
+    cc->set_irq(uc->cpu, irqid, set);
     return UC_ERR_OK;
 }
 

@@ -136,8 +136,9 @@ typedef struct CPUClass {
     /*< public >*/
 
     ObjectClass *(*class_by_name)(struct uc_struct *uc, const char *cpu_model);
-    void (*parse_features)(struct uc_struct *uc, const char *typename, char *str, Error **errp);
+    void (*parse_features)(struct uc_struct *uc, const char *type_name, char *str, Error **errp);
 
+    void (*set_irq)(CPUState *cpu, int irq, int level); // JHW
     void (*reset)(CPUState *cpu);
     int reset_dump_flags;
     bool (*has_work)(CPUState *cpu);

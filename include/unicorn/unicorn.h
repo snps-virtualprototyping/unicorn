@@ -908,10 +908,10 @@ uc_err uc_cbwatchpoint_remove(uc_engine *uc, uint64_t addr, size_t sz, int flags
 /*
  * Various interrupt IDs
  */
-#define UC_IRQID_AARCH64_NIRQ 0x0002 // JHW from include/exec/cpu-all.h
-#define UC_IRQID_AARCH64_FIRQ 0x0010 // JHW from target/arm/cpu.h
-#define UC_IRQID_AARCH64_VIRQ 0x0040 // JHW from target/arm/cpu.h
-#define UC_IRQID_AARCH64_VFIQ 0x0200 // JHW from target/arm/cpu.h
+#define UC_IRQID_AARCH64_NIRQ 0 // JHW from target/arm/cpu.h
+#define UC_IRQID_AARCH64_FIRQ 1 // JHW from target/arm/cpu.h
+#define UC_IRQID_AARCH64_VIRQ 2 // JHW from target/arm/cpu.h
+#define UC_IRQID_AARCH64_VFIQ 3 // JHW from target/arm/cpu.h
 
 /*
  * Triggers a hardware interrupt
