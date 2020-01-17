@@ -479,12 +479,11 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
 
     if (fn != NULL) {
         fn(opaque, UC_HINT_WFI);
-        return;
+    } else {
+        cs->exception_index = EXCP_HLT;
+        cs->halted = 1;
+        cs->is_idle = true;
     }
-
-    cs->exception_index = EXCP_HLT;
-    cs->halted = 1;
-    cs->is_idle = true;
 
     cpu_loop_exit(cs);
 }
