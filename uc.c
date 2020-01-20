@@ -1871,3 +1871,10 @@ uc_err uc_setup_basic_block_trace(uc_engine *uc, void *opaque,
     uc->uc_trace_bb_func = fn;
     return UC_ERR_OK;
 }
+
+UNICORN_EXPORT
+uc_err uc_reset_cpu(uc_engine *uc) {
+    CPUClass *cc = CPU_GET_CLASS(uc, uc->cpu);
+    cc->reset(uc->cpu);
+    return UC_ERR_OK;
+}

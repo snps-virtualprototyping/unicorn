@@ -1011,6 +1011,12 @@ UNICORN_EXPORT
 uc_err uc_setup_basic_block_trace(uc_engine *uc, void *opaque,
                                   uc_trace_basic_block_t fn);
 
+/*
+ * Resets the cpu (JHW)
+ */
+UNICORN_EXPORT
+uc_err uc_reset_cpu(uc_engine *uc);
+
 #ifdef __cplusplus
 }
 #endif
