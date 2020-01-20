@@ -8811,6 +8811,9 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
 
         /* Check access permissions */
         if (!cp_access_ok(s->current_el, ri, isread)) {
+            fprintf(stderr, "illegal attempt at pc %p to %s %s from EL%d\n",
+                    (void*)(long)s->base.pc_next, isread ? "read" : "write",
+                    ri->name, s->current_el);
             return 1;
         }
 

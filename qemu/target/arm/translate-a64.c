@@ -511,7 +511,8 @@ static inline void gen_goto_tb(DisasContext *s, int n, uint64_t dest)
 void unallocated_encoding(DisasContext *s)
 {
     /* Unallocated and reserved encodings are uncategorized */
-    fprintf(stderr, "unallocated encoding, pc = 0x%016lx, translate-a64.c +514\n", s->pc);
+    fprintf(stderr, "unallocated encoding at pc %p, translate-a64.c +514\n",
+            (void*)(long)s->base.pc_next);
     gen_exception_insn(s, 4, EXCP_UDEF, syn_uncategorized(),
                        default_exception_el(s));
 }
@@ -1917,6 +1918,9 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
 
     /* Check access permissions */
     if (!cp_access_ok(s->current_el, ri, isread)) {
+        fprintf(stderr, "illegal attempt at pc %p to %s %s from EL%d\n",
+                (void*)(long)s->base.pc_next, isread ? "read" : "write",
+                ri->name, s->current_el);
         unallocated_encoding(s);
         return;
     }
