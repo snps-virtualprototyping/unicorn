@@ -281,6 +281,7 @@ static inline MemoryRegionSection MemoryRegionSection_make(MemoryRegion *mr, Fla
     section.size = size;
     section.offset_within_address_space = offset_within_address_space;
     section.readonly = readonly;
+    section.nonvolatile = false;
     return section;
 }
 
