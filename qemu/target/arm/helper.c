@@ -12398,7 +12398,7 @@ void HELPER(dc_zva)(CPUARMState *env, uint64_t vaddr_in)
      */
 
     ARMCPU *cpu = arm_env_get_cpu(env);
-    uint64_t blocklen = 4 << cpu->dcz_blocksize;
+    uint64_t blocklen = 4ul << cpu->dcz_blocksize;
     uint64_t vaddr = vaddr_in & ~(blocklen - 1);
 
 #ifndef CONFIG_USER_ONLY

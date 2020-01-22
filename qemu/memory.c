@@ -226,10 +226,12 @@ void memory_unmap(struct uc_struct *uc, MemoryRegion *mr)
             if (ptr == uc->mmios)
                 uc->mmios = uc->mmios->next;
 
+            uc_mmio_region_t *next = ptr->next;
             g_free(ptr);
+            ptr = next;
+        } else {
+            ptr = ptr->next;
         }
-
-        ptr = ptr->next;
     }
 }
 
