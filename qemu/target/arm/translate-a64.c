@@ -1961,7 +1961,7 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
          * guaranteed to be constant by the tb flags.
          */
         tcg_rt = cpu_reg(s, rt);
-        tcg_gen_movi_i64(tcg_ctx, tcg_rt, s->current_el << 2);
+        tcg_gen_movi_i64(tcg_ctx, tcg_rt, (int64_t)s->current_el << 2);
         return;
     case ARM_CP_DC_ZVA:
         /* Writes clear the aligned block of memory which rt points into. */
@@ -10342,6 +10342,12 @@ static void handle_vec_simd_shri(DisasContext *s, bool is_q, bool is_u,
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     int size = 32 - clz32(immh) - 1;
+
+    if (size > 3) { // JHW: see assert below
+        unallocated_encoding(s);
+        return;
+    }
+
     int immhb = immh << 3 | immb;
     int shift = 2 * (8 << size) - immhb;
     bool accumulate = false;
@@ -10470,6 +10476,12 @@ static void handle_vec_simd_wshli(DisasContext *s, bool is_q, bool is_u,
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     int size = 32 - clz32(immh) - 1;
+
+    if (size >= 3) {
+        unallocated_encoding(s);
+        return;
+    }
+
     int immhb = immh << 3 | immb;
     int shift = immhb - (8 << size);
     int dsize = 64;
@@ -10478,11 +10490,6 @@ static void handle_vec_simd_wshli(DisasContext *s, bool is_q, bool is_u,
     TCGv_i64 tcg_rn = new_tmp_a64(s);
     TCGv_i64 tcg_rd = new_tmp_a64(s);
     int i;
-
-    if (size >= 3) {
-        unallocated_encoding(s);
-        return;
-    }
 
     if (!fp_access_check(s)) {
         return;
@@ -10511,6 +10518,7 @@ static void handle_vec_simd_shrn(DisasContext *s, bool is_q,
     int size = 32 - clz32(immh) - 1;
     int dsize = 64;
     int esize = 8 << size;
+    assert(esize);
     int elements = dsize/esize;
     int shift = (2 * esize) - immhb;
     bool round = extract32(opcode, 0, 1);

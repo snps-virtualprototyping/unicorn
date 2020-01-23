@@ -1024,7 +1024,7 @@ static bool trans_RDVL(DisasContext *s, arg_RDVL *a)
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         TCGv_i64 reg = cpu_reg(s, a->rd);
-        tcg_gen_movi_i64(tcg_ctx, reg, a->imm * vec_full_reg_size(s));
+        tcg_gen_movi_i64(tcg_ctx, reg, a->imm * (int64_t)vec_full_reg_size(s));
     }
     return true;
 }
@@ -1841,7 +1841,7 @@ static bool trans_CNT_r(DisasContext *s, arg_CNT_r *a)
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned fullsz = vec_full_reg_size(s);
         unsigned numelem = decode_pred_count(fullsz, a->pat, a->esz);
-        tcg_gen_movi_i64(tcg_ctx, cpu_reg(s, a->rd), numelem * a->imm);
+        tcg_gen_movi_i64(tcg_ctx, cpu_reg(s, a->rd), (int64_t)numelem * a->imm);
     }
     return true;
 }

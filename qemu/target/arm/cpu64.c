@@ -41,7 +41,7 @@ static uint64_t a57_a53_l2ctlr_read(CPUARMState *env, const ARMCPRegInfo *ri)
     ARMCPU *cpu = arm_env_get_cpu(env);
 
     /* Number of cores is in [25:24]; otherwise we RAZ */
-    return (cpu->core_count - 1) << 24;
+    return ((uint64_t)cpu->core_count - 1) << 24;
 }
 #endif
 
