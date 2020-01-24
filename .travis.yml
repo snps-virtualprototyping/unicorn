@@ -13,7 +13,7 @@ env:
     - BUILD_DEBUG=false
 
 script:
-  - CC="gcc -m64" make UNICORN_STATIC=yes UNICORN_DYNAMIC=no UNICORN_DEBUG=$BUILD_DEBUG
+  - make UNICORN_STATIC=yes UNICORN_DYNAMIC=no UNICORN_DEBUG=$BUILD_DEBUG
 
 addons:
   coverity_scan:
@@ -21,6 +21,6 @@ addons:
       name: "snps-virtualprototyping/unicorn"
       description: "unicorn/QEMU fork to be used with the OpenCpuX API" 
     notification_email: tobies@synopsys.com
-    build_command: "CC=\"gcc -m64\" make UNICORN_STATIC=yes UNICORN_DYNAMIC=no UNICORN_DEBUG=$BUILD_DEBUG"
+    build_command: "make UNICORN_STATIC=yes UNICORN_DYNAMIC=no UNICORN_DEBUG=$BUILD_DEBUG"
     branch_pattern: master 
 
