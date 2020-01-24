@@ -891,8 +891,7 @@ void HELPER(pre_hvc)(CPUARMState *env)
 {
     ARMCPU *cpu = arm_env_get_cpu(env);
     int cur_el = arm_current_el(env);
-    /* FIXME: Use actual secure state.  */
-    bool secure = false;
+    bool secure = arm_is_secure(env);
     bool undef;
 
     if (arm_is_psci_call(cpu, EXCP_HVC)) {
