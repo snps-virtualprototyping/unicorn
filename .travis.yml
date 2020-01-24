@@ -8,8 +8,19 @@ compiler:
 
 env:
   global:
+    - secure: "C+XFJ0J8GoHuTRQC/Emkab5MbM8ftUaUousiy8HSLb7jDsFSvjs+rfb9mxz9pmBK+hhn6f3BRuETrVRrgyMU/eCRqioKbAoZRoJkQ0rV04Mwndx8f/recddDKweNBcW3Im3B7jWrJ2r5PRezLDNsaojSnrT3V9+g1Bxl/8YJGG0XkgwZ0FZTnyEMceEiCbXjkpZuh0F/NtkbfF7k7i4BV6pBHB3/PH3SQ53A9ynTghHgXSyXT4W6EZynSFPWXg56TkQ+lAv38iYhAo0EuwsJ3NZKMKwKzB7MVg60dtGiHUiDo1nnPhS8kt34khQm1m984gicsO+UdNaSsxOg/XoKeZuR+a7JdYy3LCleM8RCFtjsFPCBP9oUnsNH+pE0fyYgQHCE9yWbmviSHv8vA1BYjHU5eXqO2Co9ylg3dYU8zXzZvAyE8eMlL/2WjrX/voAgGp1UwhNpb1PpGDOMU/+C+qicSU8F68mG+2hFyJxeWzY859JG44HvjbpE82N4n5BD19tV1+0r9K2W9UqEMWsCNW/fv9i4SW2mZQIOCTOJnDO2pG6f+DncTrepsmuwXpu2LlXVEO6F76ozVY5VCK1jgdHHYu+g43SBerlY8Yr7yEiyXbe6vZQe5sT5N3BWkY6YZFrzpYj49zX2uIkUWIZqq1Ti3DLanwwt67tWRDCIhSI="
+
     - BUILD_DEBUG=false
 
 script:
-  - CXX="g++ -m64" CC="gcc -m64" make UNICORN_STATIC=yes UNICORN_DYNAMIC=no UNICORN_DEBUG=$BUILD_DEBUG
+  - CC="gcc -m64" make UNICORN_STATIC=yes UNICORN_DYNAMIC=no UNICORN_DEBUG=$BUILD_DEBUG
+
+addons:
+  coverity_scan:
+    project:
+      name: "snps-virtualprototyping/unicorn"
+      description: "unicorn/QEMU fork to be used with the OpenCpuX API" 
+    notification_email: tobies@synopsys.com
+    build_command: "CC=\"gcc -m64\" make UNICORN_STATIC=yes UNICORN_DYNAMIC=no UNICORN_DEBUG=$BUILD_DEBUG"
+    branch_pattern: master 
 
