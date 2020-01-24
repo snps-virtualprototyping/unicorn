@@ -7569,7 +7569,7 @@ static void handle_simd_dupe(DisasContext *s, int is_q, int rd, int rn,
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     int size = ctz32(imm5);
-    int index = imm5 >> (size + 1);
+    assert(size >= 0);
 
     if (size > 3 || (size == 3 && !is_q)) {
         unallocated_encoding(s);
@@ -7580,6 +7580,7 @@ static void handle_simd_dupe(DisasContext *s, int is_q, int rd, int rn,
         return;
     }
 
+    int index = imm5 >> (size + 1);
     tcg_gen_gvec_dup_mem(tcg_ctx, size, vec_full_reg_offset(s, rd),
                          vec_reg_offset(s, rn, index, size),
                          is_q ? 16 : 8, vec_full_reg_size(s));
@@ -8302,20 +8303,24 @@ static void handle_scalar_simd_shli(DisasContext *s, bool insert,
                                     int rn, int rd)
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    int size = 32 - clz32(immh) - 1;
-    int immhb = immh << 3 | immb;
-    int shift = immhb - (8 << size);
-    TCGv_i64 tcg_rn = new_tmp_a64(s);
-    TCGv_i64 tcg_rd = new_tmp_a64(s);
+
+    if (!fp_access_check(s)) {
+        return;
+    }
 
     if (!extract32(immh, 3, 1)) {
         unallocated_encoding(s);
         return;
     }
 
-    if (!fp_access_check(s)) {
-        return;
-    }
+    /* JHW: size cannot be negative due previous check */
+    int size = 32 - clz32(immh) - 1;
+    int immhb = immh << 3 | immb;
+
+    /* coverity[negative_shift] */
+    int shift = immhb - (8 << size);
+    TCGv_i64 tcg_rn = new_tmp_a64(s);
+    TCGv_i64 tcg_rd = new_tmp_a64(s);
 
     tcg_rn = read_fp_dreg(s, rn);
     tcg_rd = insert ? read_fp_dreg(s, rd) : tcg_temp_new_i64(tcg_ctx);
@@ -8342,6 +8347,7 @@ static void handle_vec_simd_sqshrn(DisasContext *s, bool is_scalar, bool is_q,
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     int immhb = immh << 3 | immb;
     int size = 32 - clz32(immh) - 1;
+    assert(size >= 0);
     int esize = 8 << size;
     int shift = (2 * esize) - immhb;
     int elements = is_scalar ? 1 : (64 / esize);
@@ -8433,6 +8439,7 @@ static void handle_simd_qshl(DisasContext *s, bool scalar, bool is_q,
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     int immhb = immh << 3 | immb;
     int size = 32 - clz32(immh) - 1;
+    assert(size >= 0);
     int shift = immhb - (8 << size);
     int pass;
 
@@ -10348,6 +10355,8 @@ static void handle_vec_simd_shri(DisasContext *s, bool is_q, bool is_u,
         return;
     }
 
+    assert(size >= 0);
+
     int immhb = immh << 3 | immb;
     int shift = 2 * (8 << size) - immhb;
     bool accumulate = false;
@@ -10449,10 +10458,11 @@ static void handle_vec_simd_shli(DisasContext *s, bool is_q, bool insert,
 {
     int size = 32 - clz32(immh) - 1;
     int immhb = immh << 3 | immb;
-    int shift = immhb - (8 << size);
 
     /* Range of size is limited by decode: immh is a non-zero 4 bit field */
     assert(size >= 0 && size <= 3);
+
+    int shift = immhb - (8 << size);
 
     if (extract32(immh, 3, 1) && !is_q) {
         unallocated_encoding(s);
@@ -10481,6 +10491,8 @@ static void handle_vec_simd_wshli(DisasContext *s, bool is_q, bool is_u,
         unallocated_encoding(s);
         return;
     }
+
+    assert(size >= 0);
 
     int immhb = immh << 3 | immb;
     int shift = immhb - (8 << size);
@@ -10516,6 +10528,7 @@ static void handle_vec_simd_shrn(DisasContext *s, bool is_q,
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     int immhb = immh << 3 | immb;
     int size = 32 - clz32(immh) - 1;
+    assert(size >= 0);
     int dsize = 64;
     int esize = 8 << size;
     assert(esize);
