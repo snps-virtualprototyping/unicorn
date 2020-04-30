@@ -676,13 +676,19 @@ static void io_writex(CPUArchState *env, CPUIOTLBEntry *iotlbentry,
 
         cpu_transaction_failed(cpu, physaddr, addr, size, MMU_DATA_STORE,
                                mmu_idx, iotlbentry->attrs, r, retaddr);
-    } else if (addr & TLB_NOTDIRTY) {
+    } else {
+        int index;
+
         hwaddr physaddr = mr_offset +
             section->offset_within_address_space -
             section->offset_within_region;
 
         tb_invalidate_phys_page_fast(cpu->uc, physaddr, size);
-        tlb_set_dirty(cpu, addr); // jhw: if it was not dirty before, it now is
+
+        // jhw: mark the page dirty by clearing the not-dirty bit; this also
+        // re-enables direct memory access from generated code for this page.
+        index = tlb_index(env, mmu_idx, addr);
+        env->tlb_table[mmu_idx][index].addr_write &= ~TLB_NOTDIRTY;
     }
 }
 
