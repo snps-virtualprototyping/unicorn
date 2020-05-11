@@ -144,7 +144,7 @@ EXT = dll
 AR_EXT = a
 BIN_EXT = .exe
 UNICORN_QEMU_FLAGS += --disable-stack-protector
-UNICORN_CFLAGS := $(UNICORN_CFLAGS:-fPIC=)
+UNICORN_CFLAGS := $(UNICORN_CFLAGS:-fPIC=) -D__USE_MINGW_ANSI_STDIO=1
 $(LIBNAME)_LDFLAGS += -Wl,--output-def,unicorn.def
 DO_WINDOWS_EXPORT = 1
 
