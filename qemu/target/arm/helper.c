@@ -2348,9 +2348,9 @@ static void gt_ctl_write(CPUARMState *env, const ARMCPRegInfo *ri,
 
     static int warned = 0;
     if (!warned && !env->uc->timer_initialized) {
-    	warned = 1;
-    	fprintf(stderr, "arch_timer not initialized\n");
-    	return;
+        warned = 1;
+        fprintf(stderr, "arch_timer not initialized\n");
+        return;
     }
 
     // Unicorn: commented out
@@ -2365,7 +2365,7 @@ static void gt_ctl_write(CPUARMState *env, const ARMCPRegInfo *ri,
          */
         /* Unicorn: commented out */
         int irqstate = (oldval & 4) && !(value & 2);
-		env->uc->timer_irqfunc(env->uc->timer_opaque, timeridx, irqstate);
+        env->uc->timer_irqfunc(env->uc->timer_opaque, timeridx, irqstate);
 
         //trace_arm_gt_imask_toggle(timeridx, irqstate);
         //qemu_set_irq(cpu->gt_timer_outputs[timeridx], irqstate);
