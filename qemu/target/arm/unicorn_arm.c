@@ -65,6 +65,13 @@ static const uint32_t r13_14_mode_map[] = {
 uint32_t helper_v7m_mrs(CPUARMState *env, uint32_t reg);
 void helper_v7m_msr(CPUARMState *env, uint32_t maskreg, uint32_t val);
 
+static uint32_t calc_pc_offset(struct uc_struct *uc, CPUARMState *state) {
+    if (!uc->is_running)
+        return 0;
+
+    return state->thumb ? 2 : 4;
+}
+
 int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int count)
 {
     CPUState *mycpu = uc->cpu;
@@ -98,7 +105,7 @@ int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
                 break;
             //case UC_ARM_REG_PC:
             case UC_ARM_REG_R15:
-                *value = state->regs[15];
+                *value = state->regs[15] - calc_pc_offset(uc, state);
                 break;
             case UC_ARM_REG_C1_C0_2:
                 *value = state->cp15.cpacr_el1;

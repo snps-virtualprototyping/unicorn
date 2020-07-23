@@ -50,6 +50,16 @@ int arm_reg_read_arm(struct uc_struct *uc, unsigned int *regs, void **vals, int 
 int arm_reg_write_arm(struct uc_struct *uc, unsigned int *regs, void* const* vals, int count);
 #endif
 
+static uint64_t calc_pc_offset(struct uc_struct *uc, CPUARMState *state) {
+    if (!uc->is_running)
+        return 0;
+
+    if (!state->aarch64 && state->thumb)
+        return 2;
+
+    return 4;
+}
+
 int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int count)
 {
     CPUState *mycpu = uc->cpu;
@@ -118,7 +128,7 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
                 *(int64_t *)value = state->xregs[30];
                 break;
             case UC_ARM64_REG_PC:
-                *(uint64_t *)value = state->pc;
+                *(uint64_t *)value = state->pc - calc_pc_offset(uc, state);
                 break;
             case UC_ARM64_REG_SP:
                 *(int64_t *)value = state->xregs[31];

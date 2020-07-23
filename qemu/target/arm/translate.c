@@ -10709,12 +10709,6 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
                 goto illegal_op;
             }
 
-            /* loads and stores might trigger watchpoints in QEMU or in SystemC, so
-             * we need to sync our pc here to provide a consistent model state to the
-             * debugger - JHW
-             */
-            gen_set_pc_im(s, s->base.pc_next);
-
             /* load/store byte/word */
             rn = (insn >> 16) & 0xf;
             rd = (insn >> 12) & 0xf;
