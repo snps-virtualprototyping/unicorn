@@ -126,6 +126,8 @@ static inline void uc_common_init(struct uc_struct* uc)
     uc->target_page_size = TARGET_PAGE_SIZE;
     uc->target_page_align = TARGET_PAGE_SIZE - 1;
 
+    uc->is_running = false; // JHW
+
     if (!uc->release) {
         uc->release = release_common;
     }

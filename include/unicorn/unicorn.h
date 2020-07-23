@@ -1017,6 +1017,12 @@ uc_err uc_setup_basic_block_trace(uc_engine *uc, void *opaque,
 UNICORN_EXPORT
 uc_err uc_reset_cpu(uc_engine *uc);
 
+/*
+ * Returns true if unicorn is currently running, i.e. during uc_emu_start (JHW)
+ */
+UNICORN_EXPORT
+bool uc_is_running(uc_engine *uc);
+
 #ifdef __cplusplus
 }
 #endif

@@ -833,9 +833,12 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
     if (timeout)
         enable_emu_timer(uc, timeout * 1000);   // microseconds -> nanoseconds
 
-    if (uc->vm_start(uc)) {
+    uc->is_running = true;
+    int res = uc->vm_start(uc);
+    uc->is_running = false;
+
+    if (res != 0)
         return UC_ERR_RESOURCE;
-    }
 
     // emulation is done
     uc->emulation_done = true;
@@ -1877,4 +1880,11 @@ uc_err uc_reset_cpu(uc_engine *uc) {
     CPUClass *cc = CPU_GET_CLASS(uc, uc->cpu);
     cc->reset(uc->cpu);
     return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
+bool uc_is_running(uc_engine *uc) {
+    if (!uc || !uc->is_running)
+        return false;
+    return true;
 }

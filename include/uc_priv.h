@@ -376,6 +376,7 @@ struct uc_struct {
     int qemu_icache_linesize;
     int qemu_dcache_linesize;
 
+    bool is_running; // JHW: true during uc_emu_start (i.e. during callbacks)
     uc_mmio_region_t *mmios; // JHW: pointer to mapped IOs
 };
 
