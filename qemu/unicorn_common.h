@@ -127,6 +127,7 @@ static inline void uc_common_init(struct uc_struct* uc)
     uc->target_page_align = TARGET_PAGE_SIZE - 1;
 
     uc->is_running = false; // JHW
+    uc->is_memcb = false;
 
     if (!uc->release) {
         uc->release = release_common;

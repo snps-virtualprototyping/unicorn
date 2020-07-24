@@ -854,12 +854,17 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
     return uc->invalid_error;
 }
 
-
 UNICORN_EXPORT
 uc_err uc_emu_stop(uc_engine *uc)
 {
     if (uc->emulation_done)
         return UC_ERR_OK;
+
+    if (uc->is_memcb) {
+        void* pc;
+        uc_reg_read(uc, UC_ARM64_REG_PC, &pc);
+        fprintf(stderr, "warning: stop during memcb at %p\n", pc);
+    }
 
     uc->stop_request = true;
     // TODO: make this atomic somehow?

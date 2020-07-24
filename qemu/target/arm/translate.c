@@ -8900,6 +8900,10 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
         }
 #endif
 
+        // JHW: need to sync next instruction's PC here in case callback for
+        // register access calls stop();
+        gen_set_pc_im(s, s->pc);
+
         if (isread) {
             /* Read */
             if (is64) {

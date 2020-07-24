@@ -16,6 +16,11 @@ static void arm64_set_pc(struct uc_struct *uc, uint64_t address)
 {
     CPUArchState *state = uc->cpu->env_ptr;
 
+    if (uc->is_memcb) {
+        fprintf(stderr, "cannot set PC during memory callback\n");
+        abort();
+    }
+
     state->pc = address;
 }
 
@@ -51,7 +56,7 @@ int arm_reg_write_arm(struct uc_struct *uc, unsigned int *regs, void* const* val
 #endif
 
 static uint64_t calc_pc_offset(struct uc_struct *uc, CPUARMState *state) {
-    if (!uc->is_running)
+    if (!uc->is_memcb)
         return 0;
 
     if (!state->aarch64 && state->thumb)
@@ -336,6 +341,11 @@ int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals,
                 state->xregs[30] = *(uint64_t *)value;
                 break;
             case UC_ARM64_REG_PC:
+                if (uc->is_memcb) {
+                    fprintf(stderr, "cannot set PC during memory callback\n");
+                    abort();
+                }
+
                 state->pc = *(uint64_t *)value;
                 // force to quit execution and flush TB
                 uc->quit_request = true;

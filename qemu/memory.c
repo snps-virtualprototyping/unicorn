@@ -60,9 +60,13 @@ static MemTxResult uc_mmio_read_helper(struct uc_struct* uc, void *opaque,
         tx.cpuid = -1;
     }
 
+    uc->is_memcb = true;
+
     uc_mmio_region_t* ops = opaque;
     uc_cb_mmio_t func = ops->callback;
     uc_tx_result_t res = (*func)(uc, ops->user_data, &tx);
+
+    uc->is_memcb = false;
 
     switch (res) {
     case UC_TX_OK:return MEMTX_OK;
@@ -97,9 +101,13 @@ static MemTxResult uc_mmio_write_helper(struct uc_struct* uc, void *opaque,
         tx.cpuid = -1;
     }
 
+    uc->is_memcb = true;
+
     uc_mmio_region_t* ops = opaque;
     uc_cb_mmio_t func = ops->callback;
     uc_tx_result_t res = (*func)(uc, ops->user_data, &tx);
+
+    uc->is_memcb = false;
 
     switch (res) {
     case UC_TX_OK:return MEMTX_OK;

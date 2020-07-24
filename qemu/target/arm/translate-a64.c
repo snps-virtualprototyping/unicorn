@@ -1991,6 +1991,7 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
             tcg_gen_movi_i64(tcg_ctx, tcg_rt, ri->resetvalue);
         } else if (ri->readfn) {
             TCGv_ptr tmpptr;
+            gen_a64_set_pc_im(s, s->pc);
             tmpptr = tcg_const_ptr(tcg_ctx, ri);
             gen_helper_get_cp_reg64(tcg_ctx, tcg_rt, tcg_ctx->cpu_env, tmpptr);
             tcg_temp_free_ptr(tcg_ctx, tmpptr);
@@ -2003,6 +2004,7 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
             return;
         } else if (ri->writefn) {
             TCGv_ptr tmpptr;
+            gen_a64_set_pc_im(s, s->pc);
             tmpptr = tcg_const_ptr(tcg_ctx, ri);
             gen_helper_set_cp_reg64(tcg_ctx, tcg_ctx->cpu_env, tmpptr, tcg_rt);
             tcg_temp_free_ptr(tcg_ctx, tmpptr);

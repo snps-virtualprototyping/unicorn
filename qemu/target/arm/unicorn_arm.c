@@ -66,7 +66,7 @@ uint32_t helper_v7m_mrs(CPUARMState *env, uint32_t reg);
 void helper_v7m_msr(CPUARMState *env, uint32_t maskreg, uint32_t val);
 
 static uint32_t calc_pc_offset(struct uc_struct *uc, CPUARMState *state) {
-    if (!uc->is_running)
+    if (!uc->is_memcb)
         return 0;
 
     return state->thumb ? 2 : 4;
@@ -434,6 +434,11 @@ int arm_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals, i
                 break;
             //case UC_ARM_REG_PC:
             case UC_ARM_REG_R15:
+                if (uc->is_memcb) {
+                    fprintf(stderr, "cannot set PC during memory callback\n");
+                    abort();
+                }
+
                 state->pc = (*value & ~1);
                 state->thumb = (*value & 1);
                 //state->uc->thumb = (*value & 1);
