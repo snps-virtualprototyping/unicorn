@@ -110,3 +110,5 @@ cmocka/
 /.settings/
 /.project
 /.cproject
+
+!/prebuilt/*
