@@ -860,12 +860,6 @@ uc_err uc_emu_stop(uc_engine *uc)
     if (uc->emulation_done)
         return UC_ERR_OK;
 
-    if (uc->is_memcb) {
-        void* pc;
-        uc_reg_read(uc, UC_ARM64_REG_PC, &pc);
-        fprintf(stderr, "warning: stop during memcb at %p\n", pc);
-    }
-
     uc->stop_request = true;
     // TODO: make this atomic somehow?
     if (uc->current_cpu) {
