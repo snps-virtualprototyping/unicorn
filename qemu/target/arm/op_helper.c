@@ -478,7 +478,9 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
     void* opaque = env->uc->uc_hint_opaque;
 
     if (fn != NULL) {
+        env->uc->is_memcb = true; // force adjustment during PC register read
         fn(opaque, UC_HINT_WFI);
+        env->uc->is_memcb = false;
     } else {
         cs->exception_index = EXCP_HLT;
         cs->halted = 1;

@@ -3771,11 +3771,7 @@ static void disas_ldst(DisasContext *s, uint32_t insn)
      * we need to sync our pc here to provide a consistent model state to the
      * debugger - JHW
      */
-    /*
-     * TODO: this causes the load/store instruction to be repeated, if stop()
-     * is called during its handler
-     */
-    //gen_a64_set_pc_im(s, s->base.pc_next);
+    gen_a64_set_pc_im(s, s->pc);
 
     switch (extract32(insn, 24, 6)) {
     case 0x08: /* Load/store exclusive */
