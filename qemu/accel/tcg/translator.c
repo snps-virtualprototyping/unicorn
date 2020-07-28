@@ -99,13 +99,13 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
         tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
         /* Pass breakpoint hits to target for further processing */
-        if (!db->singlestep_enabled
-            && unlikely(!QTAILQ_EMPTY(&cpu->breakpoints))) {
+        if (/*!db->singlestep_enabled // JHW: always generate breakpoints, even in single step
+            &&*/ unlikely(!QTAILQ_EMPTY(&cpu->breakpoints))) {
             CPUBreakpoint *bp;
             QTAILQ_FOREACH(bp, &cpu->breakpoints, entry) {
                 if (bp->pc == db->pc_next) {
                     if (ops->breakpoint_check(db, cpu, bp)) {
-                        bp_insn = 1;
+                        bp_insn = (bp->flags & BP_CALL) ? 0 : 1;
                         break;
                     }
                 }
