@@ -287,9 +287,11 @@ typedef enum uc_arm64_reg {
     UC_ARM64_REG_ESR,
 
     //> thread registers
-    UC_ARM64_REG_TPIDR_EL0,
     UC_ARM64_REG_TPIDRRO_EL0,
+    UC_ARM64_REG_TPIDR_EL0,
     UC_ARM64_REG_TPIDR_EL1,
+    UC_ARM64_REG_TPIDR_EL2,
+    UC_ARM64_REG_TPIDR_EL3,
 
     UC_ARM64_REG_PSTATE,        // PSTATE pseudoregister
 

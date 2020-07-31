@@ -117,15 +117,6 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
             case UC_ARM64_REG_ESR:
                 *(uint32_t *)value = state->exception.syndrome;
                 break;
-            case UC_ARM64_REG_TPIDR_EL0:
-                *(int64_t *)value = state->cp15.tpidr_el[0];
-                break;
-            case UC_ARM64_REG_TPIDRRO_EL0:
-                *(int64_t *)value = state->cp15.tpidrro_el[0];
-                break;
-            case UC_ARM64_REG_TPIDR_EL1:
-                *(int64_t *)value = state->cp15.tpidr_el[1];
-                break;
             case UC_ARM64_REG_X29:
                 *(int64_t *)value = state->xregs[29];
                 break;
@@ -236,6 +227,17 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
                 *(uint64_t*)value = state->cp15.ttbr1_el[1 + regid - UC_ARM64_REG_TTBR1_EL1];
                 break;
 
+            case UC_ARM64_REG_TPIDR_EL0:
+            case UC_ARM64_REG_TPIDR_EL1:
+            case UC_ARM64_REG_TPIDR_EL2:
+            case UC_ARM64_REG_TPIDR_EL3:
+                *(uint64_t*)value = state->cp15.tpidr_el[regid - UC_ARM64_REG_TPIDR_EL0];
+                break;
+
+            case UC_ARM64_REG_TPIDRRO_EL0:
+                *(int64_t *)value = state->cp15.tpidrro_el[0];
+                break;
+
             case UC_ARM64_REG_VTTBR_EL2:
                 *(uint64_t*)value = state->cp15.vttbr_el2;
                 break;
@@ -324,15 +326,6 @@ int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals,
             switch(regid) {
             case UC_ARM64_REG_CPACR_EL1:
                 state->cp15.cpacr_el1 = *(uint32_t *)value;
-                break;
-            case UC_ARM64_REG_TPIDR_EL0:
-                state->cp15.tpidr_el[0] = *(uint64_t *)value;
-                break;
-            case UC_ARM64_REG_TPIDRRO_EL0:
-                state->cp15.tpidrro_el[0] = *(uint64_t *)value;
-                break;
-            case UC_ARM64_REG_TPIDR_EL1:
-                state->cp15.tpidr_el[1] = *(uint64_t *)value;
                 break;
             case UC_ARM64_REG_X29:
                 state->xregs[29] = *(uint64_t *)value;
@@ -447,6 +440,17 @@ int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals,
             case UC_ARM64_REG_TTBR1_EL2:
             case UC_ARM64_REG_TTBR1_EL3:
                 state->cp15.ttbr1_el[1 + regid - UC_ARM64_REG_TTBR1_EL1] = *(uint64_t*)value;
+                break;
+
+            case UC_ARM64_REG_TPIDR_EL0:
+            case UC_ARM64_REG_TPIDR_EL1:
+            case UC_ARM64_REG_TPIDR_EL2:
+            case UC_ARM64_REG_TPIDR_EL3:
+                state->cp15.tpidr_el[regid - UC_ARM64_REG_TPIDR_EL0] = *(uint64_t*)value;
+                break;
+
+            case UC_ARM64_REG_TPIDRRO_EL0:
+                state->cp15.tpidrro_el[0] = *(uint64_t *)value;
                 break;
 
             case UC_ARM64_REG_VTTBR_EL2:
