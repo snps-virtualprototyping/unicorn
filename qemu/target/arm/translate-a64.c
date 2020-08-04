@@ -491,8 +491,10 @@ static inline void gen_goto_tb(DisasContext *s, int n, uint64_t dest)
 
     tb = s->base.tb;
     if (use_goto_tb(s, n, dest)) {
-        tcg_gen_goto_tb(tcg_ctx, n);
+        // JHW: might exit at start of next TB, so we need to sync PC here
         gen_a64_set_pc_im(s, dest);
+        tcg_gen_goto_tb(tcg_ctx, n);
+        //gen_a64_set_pc_im(s, dest);
         tcg_gen_exit_tb(tcg_ctx, tb, n);
         s->base.is_jmp = DISAS_NORETURN;
     } else {
@@ -1925,6 +1927,10 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
         return;
     }
 
+    // JHW: always set PC to current address to allow IO register callbacks to
+    // read it correctly (moved from below)
+    gen_a64_set_pc_im(s, s->pc - 4);
+
     if (ri->accessfn) {
         /* Emit code to perform further access permissions checks at
          * runtime; this may result in an exception.
@@ -1933,7 +1939,7 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
         TCGv_i32 tcg_syn, tcg_isread;
         uint32_t syndrome;
 
-        gen_a64_set_pc_im(s, s->pc - 4);
+        //gen_a64_set_pc_im(s, s->pc - 4);
         tmpptr = tcg_const_ptr(tcg_ctx, ri);
         syndrome = syn_aa64_sysregtrap(op0, op1, op2, crn, crm, rt, isread);
         tcg_syn = tcg_const_i32(tcg_ctx, syndrome);
@@ -1991,7 +1997,6 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
             tcg_gen_movi_i64(tcg_ctx, tcg_rt, ri->resetvalue);
         } else if (ri->readfn) {
             TCGv_ptr tmpptr;
-            gen_a64_set_pc_im(s, s->pc);
             tmpptr = tcg_const_ptr(tcg_ctx, ri);
             gen_helper_get_cp_reg64(tcg_ctx, tcg_rt, tcg_ctx->cpu_env, tmpptr);
             tcg_temp_free_ptr(tcg_ctx, tmpptr);
@@ -2004,7 +2009,6 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
             return;
         } else if (ri->writefn) {
             TCGv_ptr tmpptr;
-            gen_a64_set_pc_im(s, s->pc);
             tmpptr = tcg_const_ptr(tcg_ctx, ri);
             gen_helper_set_cp_reg64(tcg_ctx, tcg_ctx->cpu_env, tmpptr, tcg_rt);
             tcg_temp_free_ptr(tcg_ctx, tmpptr);

@@ -32,10 +32,7 @@ static uint64_t gicv3reg_read(CPUARMState *env, const ARMCPRegInfo *ri) {
     tx.is_user = false;
 
     //fprintf(stderr, "gicv3reg_read %s @ 0x%016lx\n", ri->name, tx.addr);
-
-    uc->is_memcb = true;
     func(env->uc, opaque, &tx);
-    uc->is_memcb = false;
 
     return val;
 }
@@ -63,10 +60,7 @@ static void gicv3reg_write(CPUARMState *env, const ARMCPRegInfo *ri,
     tx.is_user = false;
 
     //fprintf(stderr, "gicv3reg_write %s @ 0x%016lx pc = 0x%016lx\n", ri->name, tx.addr, env->pc);
-
-    uc->is_memcb = true;
     func(env->uc, opaque, &tx);
-    uc->is_memcb = false;
 }
 
 static CPAccessResult gicv3reg_access(CPUARMState *env,
