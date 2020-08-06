@@ -76,6 +76,9 @@ ABI_TYPE ATOMIC_NAME(cmpxchg)(CPUArchState *env, target_ulong addr,
 #endif
     } else {
 
+        fprintf(stderr, "%s: slowpath cmpxchg not supported\n", __func__);
+        abort();
+
         size_t mmu_idx = get_mmuidx(oi);
         uintptr_t index = tlb_index(env, mmu_idx, addr);
         CPUIOTLBEntry *iotlbentry = &env->iotlb[mmu_idx][index];
