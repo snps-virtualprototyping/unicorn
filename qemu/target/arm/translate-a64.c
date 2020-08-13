@@ -2581,7 +2581,7 @@ static void gen_compare_and_swap_pair(DisasContext *s, int rs, int rt,
         }
         tcg_temp_free_i64(tcg_ctx, cmp);
         // Unicorn: commented out as parallel context support isn't implemented
-    /* } else if (s->base.tb->cflags & CF_PARALLEL) {
+    } else /*if (s->base.tb->cflags & CF_PARALLEL)*/ {
         TCGv_i32 tcg_rs = tcg_const_i32(tcg_ctx, rs);
 
         if (s->be_data == MO_LE) {
@@ -2589,8 +2589,10 @@ static void gen_compare_and_swap_pair(DisasContext *s, int rs, int rt,
         } else {
             gen_helper_casp_be_parallel(tcg_ctx, tcg_ctx->cpu_env, tcg_rs, clean_addr, t1, t2);
         }
-        tcg_temp_free_i32(tcg_ctx, tcg_rs);*/
-    } else {
+        tcg_temp_free_i32(tcg_ctx, tcg_rs);
+    }
+#ifdef JHW
+    else {
         TCGv_i64 d1 = tcg_temp_new_i64(tcg_ctx);
         TCGv_i64 d2 = tcg_temp_new_i64(tcg_ctx);
         TCGv_i64 a2 = tcg_temp_new_i64(tcg_ctx);
@@ -2625,6 +2627,7 @@ static void gen_compare_and_swap_pair(DisasContext *s, int rs, int rt,
         tcg_temp_free_i64(tcg_ctx, d1);
         tcg_temp_free_i64(tcg_ctx, d2);
     }
+#endif
 }
 
 /* Update the Sixty-Four bit (SF) registersize. This logic is derived
@@ -3328,6 +3331,7 @@ static void disas_ldst_atomic(DisasContext *s, uint32_t insn,
         unallocated_encoding(s);
         return;
     }
+
     switch (o3_opc) {
     case 000: /* LDADD */
         fn = tcg_gen_atomic_fetch_add_i64;
