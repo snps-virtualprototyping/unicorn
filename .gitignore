@@ -110,5 +110,6 @@ cmocka/
 /.settings/
 /.project
 /.cproject
+/.pydevproject
 
 !/prebuilt/*
