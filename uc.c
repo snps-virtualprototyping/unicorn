@@ -209,6 +209,29 @@ bool uc_arch_supported(uc_arch arch)
     }
 }
 
+#define UC_DEFAULT_TBSZ (8ull * 1024ull * 1024ull) // 8MB
+
+static size_t parse_tbsz(const char* tbsz) {
+    char* postfix = NULL;
+    size_t sz = strtoull(tbsz, &postfix, 10);
+
+    if (sz == 0ull) {
+        if (strlen(tbsz) > 0) {
+            fprintf(stderr, "[QEMU TCG] failed to parse '%s' using %zu bytes "
+                    "default", tbsz, UC_DEFAULT_TBSZ);
+        }
+        return UC_DEFAULT_TBSZ;
+    }
+
+    if (!strcmp(postfix, "kB") || !strcmp(postfix, "kb"))
+        return sz * 1024ull;
+    if (!strcmp(postfix, "MB") || !strcmp(postfix, "mb"))
+        return sz * 1024ull * 1024ull;
+    if (!strcmp(postfix, "GB") || !strcmp(postfix, "gb"))
+        return sz * 1024ull * 1024ull * 1024ull;
+
+    return sz;
+}
 
 UNICORN_EXPORT
 uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
@@ -269,6 +292,9 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
 
         uc->uc_config_func = cfg_func;
         uc->uc_config_opaque = cfg_opaque;
+
+        const char* tbsz = uc_get_config(uc, "tbsize");
+        uc->tb_size = parse_tbsz(tbsz);
 
         snprintf(uc->model, sizeof(uc->model), "%s-arm-cpu", model);
 

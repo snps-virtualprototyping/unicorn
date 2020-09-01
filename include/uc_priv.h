@@ -201,6 +201,7 @@ struct uc_struct {
     uc_mem_redirect_t mem_redirect;
 
     // JHW
+    size_t tb_size;
     tb_flush_t tb_flush;
 
     uc_cb_mmio_t uc_portio_func;
