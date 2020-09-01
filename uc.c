@@ -217,7 +217,7 @@ static size_t parse_tbsz(const char* tbsz) {
 
     if (sz == 0ull) {
         if (strlen(tbsz) > 0) {
-            fprintf(stderr, "[QEMU TCG] failed to parse '%s' using %zu bytes "
+            fprintf(stderr, "[QEMU TCG] failed to parse '%s' using %llu bytes "
                     "default", tbsz, UC_DEFAULT_TBSZ);
         }
         return UC_DEFAULT_TBSZ;
