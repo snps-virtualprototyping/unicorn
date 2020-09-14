@@ -288,7 +288,7 @@ static void gen_exception(DisasContext *s, int excp, uint32_t syndrome, uint32_t
 {
     if (excp == EXCP_UDEF) {
         fprintf(stderr,
-                "undefined instruction, pc = 0x%08x, translate.c +514\n",
+                "undefined instruction, pc = 0x%08x, translate.c +291\n",
                 (unsigned int)s->pc);
     }
 
