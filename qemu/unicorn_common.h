@@ -59,6 +59,16 @@ static inline void free_tcg_temp_names(TCGContext *s)
 #endif
 }
 
+void tb_invalidate_phys_page_range(struct uc_struct *uc, tb_page_addr_t start,
+                                   tb_page_addr_t end, int is_cpu_write_access);
+
+static inline void tb_flush_page(CPUState* cpu,  uint64_t start,
+                                 uint64_t end) 
+{
+    uc_engine *uc = cpu->uc;
+    tb_invalidate_phys_page_range(uc, start, end, 0);
+}
+
 /** Freeing common resources */
 static void release_common(void *t)
 {
@@ -104,6 +114,7 @@ static inline void uc_common_init(struct uc_struct* uc)
     uc->vm_start = vm_start;
 
     uc->tb_flush = tb_flush;
+    uc->tb_flush_page = tb_flush_page;
 
     uc->inv_dmi_ptr = dmi_invalidate;
 

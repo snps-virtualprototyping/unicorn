@@ -1592,6 +1592,14 @@ uc_err uc_tb_flush(uc_engine *uc) {
 }
 
 UNICORN_EXPORT
+uc_err uc_tb_flush_page(uc_engine *uc, uint64_t start, uint64_t end) {
+    if (!uc || !uc->tb_flush_page)
+        return UC_ERR_ARG;
+    uc->tb_flush_page(uc->cpu, start, end);
+    return UC_ERR_OK;
+}
+
+UNICORN_EXPORT
 uc_err uc_tlb_flush(uc_engine *uc) {
     if (!uc || !uc->tlb_flush)
         return UC_ERR_ARG;

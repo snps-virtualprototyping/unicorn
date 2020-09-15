@@ -804,6 +804,12 @@ UNICORN_EXPORT
 uc_err uc_tb_flush(uc_engine *uc);
 
 /*
+ * Invalidate the TCG translation buffers for a range of pages
+ */
+UNICORN_EXPORT
+uc_err uc_tb_flush_page(uc_engine *uc, uint64_t start, uint64_t end);
+
+/*
  * Flushes the entire TLB of the current MMU (JHW)
  */
 UNICORN_EXPORT

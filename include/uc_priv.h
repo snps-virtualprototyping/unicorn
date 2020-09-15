@@ -62,6 +62,7 @@ typedef int (*uc_args_int_uc_t)(struct uc_struct*);
 typedef void (*uc_cpu_exec_exit_t)(CPUState*);
 
 typedef void (*tb_flush_t)(CPUState*); // JHW
+typedef void (*tb_flush_page_t)(CPUState*, uint64_t,  uint64_t); // JHW
 
 typedef void (*dmi_invalidate_t)(CPUState*, uint64_t, uint64_t); // JHW
 
@@ -203,6 +204,7 @@ struct uc_struct {
     // JHW
     size_t tb_size;
     tb_flush_t tb_flush;
+    tb_flush_page_t tb_flush_page;
 
     uc_cb_mmio_t uc_portio_func;
     void*        uc_portio_opaque;
