@@ -2237,21 +2237,25 @@ static void liveness_pass_1(TCGContext *s)
                 }
 
                 /* If end of basic block, update.  */
-                if (def->flags & TCG_OPF_BB_END) {
-                    // Unicorn: do not optimize dead temps on brcond,
-                    // this causes problem because check_exit_request() inserts
-                    // brcond instruction in the middle of the TB,
-                    // which incorrectly flags end-of-block
-                    if (opc != INDEX_op_brcond_i32) {
-                        la_bb_end(s, nb_globals, nb_temps);
-                    } else {
-                        // Unicorn: we do not touch dead temps for brcond,
-                        // but we should refresh TCG globals In-Memory states,
-                        // otherwise, important CPU states(especially conditional flags) might be forgotten,
-                        // result in wrongly generated host code that run into wrong branch.
-                        // Refer to https://github.com/unicorn-engine/unicorn/issues/287 for further information
-                        tcg_la_br_end(s);
-                    }
+                if (def->flags & TCG_OPF_BB_EXIT) {  // JHW restored
+                    la_func_end(s, nb_globals, nb_temps);
+                } else if (def->flags & TCG_OPF_BB_END) {
+                    la_bb_end(s, nb_globals, nb_temps);
+//
+//                    // Unicorn: do not optimize dead temps on brcond,
+//                    // this causes problem because check_exit_request() inserts
+//                    // brcond instruction in the middle of the TB,
+//                    // which incorrectly flags end-of-block
+//                    if (opc != INDEX_op_brcond_i32) {
+//                        la_bb_end(s, nb_globals, nb_temps);
+//                    } else {
+//                        // Unicorn: we do not touch dead temps for brcond,
+//                        // but we should refresh TCG globals In-Memory states,
+//                        // otherwise, important CPU states(especially conditional flags) might be forgotten,
+//                        // result in wrongly generated host code that run into wrong branch.
+//                        // Refer to https://github.com/unicorn-engine/unicorn/issues/287 for further information
+//                        tcg_la_br_end(s);
+//                    }
                 } else if (def->flags & TCG_OPF_SIDE_EFFECTS) {
                     la_global_sync(s, nb_globals);
                     if (def->flags & TCG_OPF_CALL_CLOBBER) {
