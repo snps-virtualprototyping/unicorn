@@ -11889,7 +11889,7 @@ static bool get_phys_addr(CPUARMState *env, target_ulong address,
     if (regime_translation_disabled(env, mmu_idx)) {
         /* MMU disabled. */
         *phys_ptr = address;
-        *prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
+        *prot = -1; //PAGE_READ | PAGE_WRITE | PAGE_EXEC;
         *page_size = TARGET_PAGE_SIZE;
         return 0;
     }
