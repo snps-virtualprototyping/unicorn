@@ -90,6 +90,9 @@ void tlb_flush(CPUState *cpu)
     env->vtlb_index = 0;
     memset(env->tlb_flush_addr, -1, sizeof(env->tlb_flush_addr));
     memset(env->tlb_flush_mask,  0, sizeof(env->tlb_flush_mask));
+
+    memset(env->iotlb, -1, sizeof(env->iotlb));
+    memset(env->iotlb_v, -1, sizeof(env->iotlb_v));
 }
 
 static void tlb_flush_one_mmu(CPUState *cpu, int mmu_idx)
@@ -220,7 +223,6 @@ void tlb_set_dirty(CPUState *cpu, target_ulong vaddr)
         }
     }
 }
-
 
 /* Add a new TLB entry. At most one entry for a given virtual address
    is permitted. Only a single TARGET_PAGE_SIZE region is mapped, the
@@ -830,38 +832,44 @@ static void dmi_invalidate_page(CPUState *cpu, target_ulong page_addr)
 }
 #endif
 
+static target_ulong lookup_virt_addr(CPUIOTLBEntry* iotlbe);
+static target_ulong lookup_virt_addr(CPUIOTLBEntry* iotlbe) {
+    CPUTLBEntry* tlbe = iotlbe->p2v;
+    if (tlbe == NULL)
+        return -1;
+
+    if (tlbe->addr_read != -1)
+        return tlbe->addr_read & TARGET_PAGE_MASK;
+    if (tlbe->addr_write != -1)
+        return tlbe->addr_write & TARGET_PAGE_MASK;
+    if (tlbe->addr_code != -1)
+        return tlbe->addr_code & TARGET_PAGE_MASK;
+
+    return -1;
+}
+
 void dmi_invalidate(CPUState *cpu, uint64_t start, uint64_t end) {
     CPUArchState *env = cpu->env_ptr;
     int mmu_idx, idx;
 
-    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
-        for (idx = 0; idx < CPU_TLB_SIZE; idx++) {
-            CPUTLBEntry* entry = &env->tlb_table[mmu_idx][idx];
-            if (tlb_hit_range(entry->addr_code, start, end) ||
-                tlb_hit_range(entry->addr_read, start, end) ||
-                tlb_hit_range(entry->addr_write, start, end)) {
-                tb_flush_jmp_cache(cpu, entry->addr_code & TARGET_PAGE_MASK);
-                entry->addr_read  |= TLB_MMIO;
-                entry->addr_write |= TLB_MMIO;
-                entry->addr_code  |= TLB_MMIO;
-                entry->addend = 0;
-            }
-        }
+    if (start == 0 && end == ~0ull) {
+        tlb_flush(cpu);
+        return;
     }
 
-    /* check whether there are entries that need to be flushed in the vtlb */
     for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
+        for (idx = 0; idx < CPU_TLB_SIZE; idx++) {
+            CPUIOTLBEntry* entry = &env->iotlb[mmu_idx][idx];
+            target_ulong vaddr = lookup_virt_addr(entry);
+            if (entry->phys >= start && entry->phys < end && vaddr != -1)
+                tlb_flush_page(cpu, vaddr);
+        }
+
         for (idx = 0; idx < CPU_VTLB_SIZE; idx++) {
-            CPUTLBEntry* entry = &env->tlb_v_table[mmu_idx][idx];
-            if (tlb_hit_range(entry->addr_code, start, end) ||
-                tlb_hit_range(entry->addr_read, start, end) ||
-                tlb_hit_range(entry->addr_write, start, end)) {
-                tb_flush_jmp_cache(cpu, entry->addr_code & TARGET_PAGE_MASK);
-                entry->addr_read  |= TLB_MMIO;
-                entry->addr_write |= TLB_MMIO;
-                entry->addr_code  |= TLB_MMIO;
-                entry->addend = 0;
-            }
+            CPUIOTLBEntry* entry = &env->iotlb_v[mmu_idx][idx];
+            target_ulong vaddr = lookup_virt_addr(entry);
+            if (entry->phys >= start && entry->phys < end && vaddr != -1)
+                tlb_flush_page(cpu, vaddr);
         }
     }
 }
