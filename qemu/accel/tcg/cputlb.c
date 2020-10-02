@@ -835,7 +835,7 @@ static void dmi_invalidate_page(CPUState *cpu, target_ulong page_addr)
 static target_ulong lookup_virt_addr(CPUIOTLBEntry* iotlbe);
 static target_ulong lookup_virt_addr(CPUIOTLBEntry* iotlbe) {
     CPUTLBEntry* tlbe = iotlbe->p2v;
-    if (tlbe == NULL)
+    if (iotlbe->phys == -1 || tlbe == NULL)
         return -1;
 
     if (tlbe->addr_read != -1)
