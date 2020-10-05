@@ -65,17 +65,10 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
         //                       last_tb->tc.ptr, last_tb->pc,
         //                       lookup_symbol(last_tb->pc));
         if (cc->synchronize_from_tb) {
-            // avoid sync twice when helper_uc_tracecode() already did this.
-            if (env->uc->emu_counter <= env->uc->emu_count &&
-                    !env->uc->stop_request && !env->uc->quit_request) {
-                cc->synchronize_from_tb(cpu, last_tb);
-            }
+            cc->synchronize_from_tb(cpu, last_tb);
         } else {
             assert(cc->set_pc);
-            // avoid sync twice when helper_uc_tracecode() already did this.
-            if (env->uc->emu_counter <= env->uc->emu_count && !env->uc->quit_request) {
-                cc->set_pc(cpu, last_tb->pc);
-            }
+            cc->set_pc(cpu, last_tb->pc);
         }
     }
 
