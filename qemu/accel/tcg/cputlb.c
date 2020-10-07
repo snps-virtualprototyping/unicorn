@@ -108,7 +108,7 @@ static void tlb_flush_one_mmu(CPUState *cpu, int mmu_idx)
     cpu_tb_jmp_cache_clear(cpu);
 }
 
-void tlb_flush_page(CPUState *cpu, uint64_t addr)
+bool tlb_flush_page(CPUState *cpu, uint64_t addr)
 {
     CPUArchState *env = cpu->env_ptr;
     int mmu_idx;
@@ -124,7 +124,7 @@ void tlb_flush_page(CPUState *cpu, uint64_t addr)
                       TARGET_FMT_lx "/" TARGET_FMT_lx ")\n",
                       flush_addr, flush_mask);
             tlb_flush(cpu); // full flush of all TLBs
-            return;
+            return true;
         }
     }
 
@@ -142,6 +142,7 @@ void tlb_flush_page(CPUState *cpu, uint64_t addr)
     }
 
     tb_flush_jmp_cache(cpu, addr);
+    return false;
 }
 
 // JHW these need to execute on all cores belonging to a cluster
@@ -861,15 +862,21 @@ void dmi_invalidate(CPUState *cpu, uint64_t start, uint64_t end) {
         for (idx = 0; idx < CPU_TLB_SIZE; idx++) {
             CPUIOTLBEntry* entry = &env->iotlb[mmu_idx][idx];
             target_ulong vaddr = lookup_virt_addr(entry);
-            if (entry->phys >= start && entry->phys < end && vaddr != -1)
-                tlb_flush_page(cpu, vaddr);
+            if (entry->phys >= start && entry->phys < end && vaddr != -1) {
+                if (tlb_flush_page(cpu, vaddr))
+                    // that caused a full flush - we are done here
+                    return;
+            }
         }
 
         for (idx = 0; idx < CPU_VTLB_SIZE; idx++) {
             CPUIOTLBEntry* entry = &env->iotlb_v[mmu_idx][idx];
             target_ulong vaddr = lookup_virt_addr(entry);
-            if (entry->phys >= start && entry->phys < end && vaddr != -1)
-                tlb_flush_page(cpu, vaddr);
+            if (entry->phys >= start && entry->phys < end && vaddr != -1) {
+                if (tlb_flush_page(cpu, vaddr))
+                    // that caused a full flush - we are done here
+                    return;
+            }
         }
     }
 }

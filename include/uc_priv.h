@@ -67,7 +67,7 @@ typedef void (*tb_flush_page_t)(CPUState*, uint64_t,  uint64_t); // JHW
 typedef void (*dmi_invalidate_t)(CPUState*, uint64_t, uint64_t); // JHW
 
 typedef void (*tlb_flush_t)(CPUState*); // JHW
-typedef void (*tlb_flush_page_t)(CPUState*, uint64_t); // JHW
+typedef bool (*tlb_flush_page_t)(CPUState*, uint64_t); // JHW
 typedef void (*tlb_flush_mmuidx_t)(CPUState*, uint16_t); // JHW
 typedef void (*tlb_flush_page_mmuidx_t)(CPUState*, uint64_t, uint16_t); // JHW
 
