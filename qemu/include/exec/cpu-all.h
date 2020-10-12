@@ -366,11 +366,13 @@ CPUArchState *cpu_copy(CPUArchState *env);
 /* Set if TLB entry must have MMU lookup repeated for every access */
 #define TLB_RECHECK         (1 << (TARGET_PAGE_BITS - 4))
 
+#define TLB_NOTPROTECTED    (1 << (TARGET_PAGE_BITS - 5))
+
 /* Use this mask to check interception with an alignment mask
  * in a TCG backend.
  */
 #define TLB_FLAGS_MASK  (TLB_INVALID_MASK | TLB_NOTDIRTY | TLB_MMIO \
-                         | TLB_RECHECK)
+                         | TLB_RECHECK | TLB_NOTPROTECTED)
 
 /**
  * tlb_hit_page: return true if page aligned @addr is a hit against the

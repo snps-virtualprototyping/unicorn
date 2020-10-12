@@ -121,6 +121,10 @@ WORD_TYPE helper_le_ld_name(CPUArchState *env, target_ulong addr,
     DATA_TYPE res;
     int error_code;
 
+#ifdef SOFTMMU_CODE_ACCESS
+    int need_to_protect = 0;
+#endif
+
     if (addr & ((1 << a_bits) - 1)) {
         cpu_unaligned_access(ENV_GET_CPU(env), addr, READ_ACCESS_TYPE,
                              mmu_idx, retaddr);
@@ -136,6 +140,12 @@ WORD_TYPE helper_le_ld_name(CPUArchState *env, target_ulong addr,
         }
         tlb_addr = entry->ADDR_READ;
     }
+
+#ifdef SOFTMMU_CODE_ACCESS
+    need_to_protect = entry->ADDR_READ & TLB_NOTPROTECTED;
+    entry->ADDR_READ &= ~TLB_NOTPROTECTED;
+    tlb_addr = entry->ADDR_READ;
+#endif
 
     /* Handle an IO access.  */
     if (unlikely(tlb_addr & ~TARGET_PAGE_MASK)) {
@@ -172,6 +182,17 @@ WORD_TYPE helper_le_ld_name(CPUArchState *env, target_ulong addr,
     }
 
     haddr = (uintptr_t)(addr + entry->addend);
+
+#ifdef SOFTMMU_CODE_ACCESS
+    if (need_to_protect && env->uc->protect_dmi_ptr != NULL) {
+        CPUIOTLBEntry *iotlbentry = &env->iotlb[mmu_idx][index];
+        //uint64_t phys = (iotlbentry->addr & TARGET_PAGE_MASK) + addr;
+        uint64_t phys = iotlbentry->phys & TARGET_PAGE_MASK;
+        unsigned char* dmi = (unsigned char*)(haddr & TARGET_PAGE_MASK);
+        env->uc->protect_dmi_ptr(env->uc->dmi_opaque, dmi, phys);
+    }
+#endif
+
 #if DATA_SIZE == 1
     res = glue(glue(ld, LSUFFIX), _p)((uint8_t *)haddr);
 #else

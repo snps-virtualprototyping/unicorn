@@ -1852,11 +1852,13 @@ uc_err uc_clear_excl(uc_engine *uc) {
 }
 
 UNICORN_EXPORT
-uc_err uc_setup_dmi(uc_engine *uc, void *opaque, uc_cb_dmiptr_t dmifn) {
-    if (uc == NULL || dmifn == NULL)
+uc_err uc_setup_dmi(uc_engine *uc, void *opaque, uc_cb_dmiptr_t dmifn,
+                    uc_cb_pgprot_t protfn) {
+    if (uc == NULL || dmifn == NULL) // protfn may be NULL
         return UC_ERR_ARG;
 
     uc->get_dmi_ptr = dmifn;
+    uc->protect_dmi_ptr = protfn;
     uc->dmi_opaque = opaque;
 
     return UC_ERR_OK;

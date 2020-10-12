@@ -350,8 +350,11 @@ typedef enum uc_dmi_prot {
     UC_DMI_PROT_EXEC  = 1 << 2,
 } uc_dmi_prot_t;
 
-typedef bool (*uc_cb_dmiptr_t)(uc_engine* uc, void* opaque, uint64_t page_addr,
+typedef bool (*uc_cb_dmiptr_t)(void* opaque, uint64_t page_addr,
                                unsigned char** dmiptr, int* prot);
+
+typedef void (*uc_cb_pgprot_t)(void* opaque, unsigned char* dmiptr,
+                               uint64_t page_addr);
 
 typedef uint64_t (*uc_timer_timefunc_t)(void* opaque, uint64_t clock);
 typedef void     (*uc_timer_irqfunc_t )(void* opaque, int idx, int set);
@@ -973,7 +976,8 @@ uc_err uc_clear_excl(uc_engine *uc);
  * Set callback to provide unicorn with per-page DMI pointers
  */
 UNICORN_EXPORT
-uc_err uc_setup_dmi(uc_engine *uc, void *opaque, uc_cb_dmiptr_t dmifn);
+uc_err uc_setup_dmi(uc_engine *uc, void *opaque, uc_cb_dmiptr_t dmifn,
+                    uc_cb_pgprot_t protfn);
 
 /*
  * Clears previously handed out DMI pointers

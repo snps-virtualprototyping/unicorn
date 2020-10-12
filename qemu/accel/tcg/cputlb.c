@@ -285,8 +285,7 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
 
     newprot = prot;
     if (env->uc->get_dmi_ptr != NULL &&
-        env->uc->get_dmi_ptr(env->uc, env->uc->dmi_opaque, paddr_page, &dmiptr,
-                              &newprot)) {
+        env->uc->get_dmi_ptr(env->uc->dmi_opaque, paddr_page, &dmiptr, &newprot)) {
         address &= ~TLB_MMIO;
         addend = (uintptr_t)dmiptr;
         prot = prot & newprot; // don't take more than we're allowed to
@@ -338,7 +337,7 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
     }
 
     if (prot & PAGE_EXEC) {
-        te->addr_code = code_address;
+        te->addr_code = code_address | TLB_NOTPROTECTED;
     } else {
         te->addr_code = -1;
     }

@@ -210,6 +210,7 @@ struct uc_struct {
     void*        uc_portio_opaque;
 
     uc_cb_dmiptr_t   get_dmi_ptr;
+    uc_cb_pgprot_t   protect_dmi_ptr;
     dmi_invalidate_t inv_dmi_ptr;
     void*            dmi_opaque;
 
