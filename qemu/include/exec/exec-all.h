@@ -122,7 +122,7 @@ void tlb_init(CPUState *cpu);
  * Flush one page from the TLB of the specified CPU, for all
  * MMU indexes.
  */
-void tlb_flush_page(CPUState *cpu, uint64_t addr);
+bool tlb_flush_page(CPUState *cpu, uint64_t addr);
 /**
  * tlb_flush:
  * @cpu: CPU whose TLB should be flushed
