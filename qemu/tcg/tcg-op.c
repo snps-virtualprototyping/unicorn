@@ -3221,42 +3221,17 @@ static void do_atomic_op_i64(TCGContext *s,
     }
 }
 
-#ifdef HOST_WORDS_BIGENDIAN
-#define GEN_ATOMIC_TABLE(NAME) \
-static void * const table_##NAME[16] = {    \
-    gen_helper_atomic_##NAME##b,            \
-    gen_helper_atomic_##NAME##w_be,         \
-    gen_helper_atomic_##NAME##l_be,         \
-    gen_helper_atomic_##NAME##q_be,         \
-    NULL,                                   \
-    NULL,                                   \
-    NULL,                                   \
-    NULL,                                   \
-    NULL,                                   \
-    gen_helper_atomic_##NAME##w_le,         \
-    gen_helper_atomic_##NAME##l_le,         \
-    gen_helper_atomic_##NAME##q_le,         \
-};
-#else
-#define GEN_ATOMIC_TABLE(NAME) \
-static void * const table_##NAME[16] = {    \
-    gen_helper_atomic_##NAME##b,            \
-    gen_helper_atomic_##NAME##w_le,         \
-    gen_helper_atomic_##NAME##w_be,         \
-    gen_helper_atomic_##NAME##l_le,         \
-    NULL,                                   \
-    NULL,                                   \
-    NULL,                                   \
-    NULL,                                   \
-    NULL,                                   \
-    gen_helper_atomic_##NAME##l_be,         \
-    gen_helper_atomic_##NAME##q_le,         \
-    gen_helper_atomic_##NAME##q_be,         \
-};
-#endif
 
 #define GEN_ATOMIC_HELPER(NAME, OP, NEW)                                \
-GEN_ATOMIC_TABLE(NAME)                                                  \
+static void * const table_##NAME[16] = {                                \
+    [MO_8] = gen_helper_atomic_##NAME##b,                               \
+    [MO_16 | MO_LE] = gen_helper_atomic_##NAME##w_le,                   \
+    [MO_16 | MO_BE] = gen_helper_atomic_##NAME##w_be,                   \
+    [MO_32 | MO_LE] = gen_helper_atomic_##NAME##l_le,                   \
+    [MO_32 | MO_BE] = gen_helper_atomic_##NAME##l_be,                   \
+    WITH_ATOMIC64([MO_64 | MO_LE] = gen_helper_atomic_##NAME##q_le)     \
+    WITH_ATOMIC64([MO_64 | MO_BE] = gen_helper_atomic_##NAME##q_be)     \
+};                                                                      \
 void tcg_gen_atomic_##NAME##_i32                                        \
     (TCGContext *s, TCGv_i32 ret, TCGv addr, TCGv_i32 val, TCGArg idx, TCGMemOp memop) \
 {                                                                       \
