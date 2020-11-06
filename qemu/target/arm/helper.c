@@ -4039,6 +4039,18 @@ static void ic_ivau_write(CPUARMState *env, const ARMCPRegInfo *ri,
 }
 #endif
 
+
+static uint64_t aa64_pan_read(CPUARMState *env, const ARMCPRegInfo *ri)
+{
+    return env->pstate & PSTATE_PAN;
+}
+
+static void aa64_pan_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                           uint64_t value)
+{
+    env->pstate = (env->pstate & ~PSTATE_PAN) | (value & PSTATE_PAN);
+}
+
 static const ARMCPRegInfo v8_cp_reginfo[] = {
     /* Minimal set of EL0-visible registers. This will need to be expanded
      * significantly for system emulation of AArch64 CPUs.
@@ -6597,6 +6609,18 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             REGINFO_SENTINEL
         };
         define_arm_cp_regs(cpu, lor_reginfo);
+    }
+
+    if (cpu_isar_feature(aa64_pan, cpu)) {
+        printf("Adding PAN register\n");
+        static const ARMCPRegInfo pan_reginfo[] = {
+            { .name = "PAN", .state = ARM_CP_STATE_AA64,
+             .opc0 = 3, .opc1 = 0, .crn = 4, .crm = 2, .opc2 = 3,
+              .type = ARM_CP_NO_RAW, .access = PL1_RW,
+              .readfn = aa64_pan_read, .writefn = aa64_pan_write, },
+            REGINFO_SENTINEL
+        };
+        define_arm_cp_regs(cpu, pan_reginfo);
     }
 
     if (cpu_isar_feature(aa64_sve, cpu)) {

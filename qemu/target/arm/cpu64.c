@@ -301,6 +301,7 @@ static void aarch64_max_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     t = cpu->isar.id_aa64mmfr1;
     t = FIELD_DP64(t, ID_AA64MMFR1, HPDS, 1); /* HPD */
     t = FIELD_DP64(t, ID_AA64MMFR1, LO, 1);
+    t = FIELD_DP64(t, ID_AA64MMFR1, PAN, 1); /* PAN */
     cpu->isar.id_aa64mmfr1 = t;
 
     /* Replicate the same data to the 32-bit id registers.  */
@@ -320,6 +321,10 @@ static void aarch64_max_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     u = FIELD_DP32(u, ID_ISAR6, SB, 1);
     u = FIELD_DP32(u, ID_ISAR6, SPECRES, 1);
     cpu->isar.id_isar6 = u;
+
+    u = cpu->isar.id_mmfr3;
+    u = FIELD_DP32(u, ID_MMFR3, PAN, 1); /* PAN */
+    cpu->isar.id_mmfr3 = u;
 
     // Unicorn: we lie and enable them anyway
     /*

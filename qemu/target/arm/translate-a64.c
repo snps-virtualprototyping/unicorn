@@ -1815,6 +1815,20 @@ static void handle_msr_i(DisasContext *s, uint32_t insn,
         s->base.is_jmp = DISAS_NEXT;
         break;
 
+    case 0x04: /* PAN */
+        if (!dc_isar_feature(aa64_pan, s) || s->current_el == 0) {
+           goto do_unallocated;
+        }
+        if (crm & 1) {
+            set_pstate_bits(s, PSTATE_PAN);
+        } else {
+            clear_pstate_bits(s, PSTATE_PAN);
+        }
+        //t1 = tcg_const_i32(tcg_ctx, s->current_el);
+        //gen_helper_rebuild_hflags_a64(tcg_ctx, cpu_env, t1);
+        //tcg_temp_free_i32(tcg_ctx, t1);
+        break;
+
     case 0x05: /* SPSel */
         if (s->current_el == 0) {
             goto do_unallocated;
