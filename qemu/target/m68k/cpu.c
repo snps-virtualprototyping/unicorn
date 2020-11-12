@@ -110,11 +110,9 @@ static void m68000_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     m68k_set_feature(env, M68K_FEATURE_MOVEP);
 }
 
-static void m68020_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
+/* common features for 68020, 68030 and 68040 */
+static void m680x0_cpu_common(CPUM68KState *env)
 {
-    M68kCPU *cpu = M68K_CPU(uc, obj);
-    CPUM68KState *env = &cpu->env;
-
     m68k_set_feature(env, M68K_FEATURE_M68000);
     m68k_set_feature(env, M68K_FEATURE_USP);
     m68k_set_feature(env, M68K_FEATURE_WORD_INDEX);
@@ -132,14 +130,31 @@ static void m68020_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     m68k_set_feature(env, M68K_FEATURE_CHK2);
     m68k_set_feature(env, M68K_FEATURE_MOVEP);
 }
-#define m68030_cpu_initfn m68020_cpu_initfn
+
+static void m68020_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
+{
+    M68kCPU *cpu = M68K_CPU(uc, obj);
+    CPUM68KState *env = &cpu->env;
+
+    m680x0_cpu_common(env);
+    m68k_set_feature(env, M68K_FEATURE_M68020);
+}
+
+static void m68030_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
+{
+    M68kCPU *cpu = M68K_CPU(uc, obj);
+    CPUM68KState *env = &cpu->env;
+
+    m680x0_cpu_common(env);
+    m68k_set_feature(env, M68K_FEATURE_M68030);
+}
 
 static void m68040_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
 {
     M68kCPU *cpu = M68K_CPU(uc, obj);
     CPUM68KState *env = &cpu->env;
 
-    m68020_cpu_initfn(uc, obj, opaque);
+    m680x0_cpu_common(env);
     m68k_set_feature(env, M68K_FEATURE_M68040);
 }
 
@@ -162,6 +177,7 @@ static void m68060_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     m68k_set_feature(env, M68K_FEATURE_BKPT);
     m68k_set_feature(env, M68K_FEATURE_RTD);
     m68k_set_feature(env, M68K_FEATURE_CHK2);
+    m68k_set_feature(env, M68K_FEATURE_M68060);
 }
 
 static void m5208_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
@@ -199,8 +215,10 @@ static void any_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     m68k_set_feature(env, M68K_FEATURE_CF_ISA_APLUSC);
     m68k_set_feature(env, M68K_FEATURE_BRAL);
     m68k_set_feature(env, M68K_FEATURE_CF_FPU);
-    /* MAC and EMAC are mututally exclusive, so pick EMAC.
-       It's mostly backwards compatible.  */
+    /*
+     * MAC and EMAC are mututally exclusive, so pick EMAC.
+     * It's mostly backwards compatible.
+     */
     m68k_set_feature(env, M68K_FEATURE_CF_EMAC);
     m68k_set_feature(env, M68K_FEATURE_CF_EMAC_B);
     m68k_set_feature(env, M68K_FEATURE_USP);
@@ -228,9 +246,8 @@ static void m68k_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
 {
     CPUState *cs = CPU(obj);
     M68kCPU *cpu = M68K_CPU(uc, obj);
-    CPUM68KState *env = &cpu->env;
 
-    cs->env_ptr = env;
+    cpu_set_cpustate_pointers(cpu);
     cpu_exec_init(cs, &error_abort, opaque);
 }
 
@@ -251,9 +268,9 @@ static void m68k_cpu_class_init(struct uc_struct *uc, ObjectClass *c, void *data
     cc->do_interrupt = m68k_cpu_do_interrupt;
     cc->cpu_exec_interrupt = m68k_cpu_exec_interrupt;
     cc->set_pc = m68k_cpu_set_pc;
-    cc->handle_mmu_fault = m68k_cpu_handle_mmu_fault;
+    cc->tlb_fill = m68k_cpu_tlb_fill;
 #if defined(CONFIG_SOFTMMU)
-    cc->do_unassigned_access = m68k_cpu_unassigned_access;
+    cc->do_transaction_failed = m68k_cpu_transaction_failed;
     cc->get_phys_page_debug = m68k_cpu_get_phys_page_debug;
 #endif
     cc->tcg_initialize = m68k_tcg_init;

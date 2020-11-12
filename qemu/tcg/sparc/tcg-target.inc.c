@@ -410,12 +410,13 @@ static void tcg_out_arithc(TCGContext *s, TCGReg rd, TCGReg rs1,
               | (val2const ? INSN_IMM13(val2) : INSN_RS2(val2)));
 }
 
-static inline void tcg_out_mov(TCGContext *s, TCGType type,
+static inline bool tcg_out_mov(TCGContext *s, TCGType type,
                                TCGReg ret, TCGReg arg)
 {
     if (ret != arg) {
         tcg_out_arith(s, ret, arg, TCG_REG_G0, ARITH_OR);
     }
+    return true;
 }
 
 static inline void tcg_out_sethi(TCGContext *s, TCGReg ret, uint32_t arg)
@@ -1078,7 +1079,7 @@ static void tcg_out_nop_fill(tcg_insn_unit *p, int count)
    is in the returned register, maybe %o0.  The TLB addend is in %o1.  */
 
 static TCGReg tcg_out_tlb_load(TCGContext *s, TCGReg addr, int mem_index,
-                               TCGMemOp opc, int which)
+                               MemOp opc, int which)
 {
     const TCGReg r0 = TCG_REG_O0;
     const TCGReg r1 = TCG_REG_O1;
@@ -1168,7 +1169,7 @@ static const int qemu_st_opc[16] = {
 static void tcg_out_qemu_ld(TCGContext *s, TCGReg data, TCGReg addr,
                             TCGMemOpIdx oi, bool is_64)
 {
-    TCGMemOp memop = get_memop(oi);
+    MemOp memop = get_memop(oi);
 #ifdef CONFIG_SOFTMMU
     unsigned memi = get_mmuidx(oi);
     TCGReg addrz, param;
@@ -1250,7 +1251,7 @@ static void tcg_out_qemu_ld(TCGContext *s, TCGReg data, TCGReg addr,
 static void tcg_out_qemu_st(TCGContext *s, TCGReg data, TCGReg addr,
                             TCGMemOpIdx oi)
 {
-    TCGMemOp memop = get_memop(oi);
+    MemOp memop = get_memop(oi);
 #ifdef CONFIG_SOFTMMU
     unsigned memi = get_mmuidx(oi);
     TCGReg addrz, param;

@@ -81,8 +81,6 @@ void *qemu_oom_check(void *ptr)
     return ptr;
 }
 
-void *memalign(size_t alignment, size_t size);
-
 void *qemu_try_memalign(size_t alignment, size_t size)
 {
     void *ptr;

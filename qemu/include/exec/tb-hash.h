@@ -59,9 +59,10 @@ static inline unsigned int tb_jmp_cache_hash_func(target_ulong pc)
 }
 
 static inline
-uint32_t tb_hash_func(tb_page_addr_t phys_pc, target_ulong pc, uint32_t flags)
+uint32_t tb_hash_func(tb_page_addr_t phys_pc, target_ulong pc, uint32_t flags,
+                      uint32_t cf_mask)
 {
-    return qemu_xxhash7(phys_pc, pc, flags, 0, 0) & (CODE_GEN_PHYS_HASH_SIZE - 1);
+    return qemu_xxhash7(phys_pc, pc, flags, cf_mask, 0) & (CODE_GEN_PHYS_HASH_SIZE - 1);
 }
 
 #endif

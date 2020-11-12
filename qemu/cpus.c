@@ -148,6 +148,7 @@ static bool tcg_exec_all(struct uc_struct* uc)
     int r;
     bool finish = false;
 
+    // SNPS added
     CPUState *cpu = uc->cpu;
     CPUArchState *env = cpu->env_ptr;
 
@@ -183,7 +184,7 @@ static bool tcg_exec_all(struct uc_struct* uc)
 
             if (r == EXCP_DEBUG) {
                 cpu_handle_guest_debug(cpu);
-                finish = true;
+                finish = true; // SNPS added
                 break;
             }
             if (r == EXCP_HLT) {
@@ -192,13 +193,13 @@ static bool tcg_exec_all(struct uc_struct* uc)
             } else if (r == EXCP_ATOMIC) {
                 cpu_exec_step_atomic(uc, cpu);
             }
-        } else if (cpu->stop || cpu->stopped) {
-            finish = true;
+        } else if (cpu->stop || cpu->stopped) { // SNPS changed
+            finish = true; // SNPS added
             break;
         }
     }
 
-    if (uc->cpu->exit_request) {
+    if (uc->cpu && uc->cpu->exit_request) {
         atomic_mb_set(&uc->cpu->exit_request, 0);
     }
 

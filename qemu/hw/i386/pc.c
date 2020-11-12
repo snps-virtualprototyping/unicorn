@@ -62,9 +62,9 @@ void cpu_smm_register(cpu_set_smm_t callback, void *arg)
 
 void cpu_smm_update(CPUX86State *env)
 {
-    struct uc_struct *uc = x86_env_get_cpu(env)->parent_obj.uc;
+    struct uc_struct *uc = env_archcpu(env)->parent_obj.uc;
 
-    if (smm_set && smm_arg && CPU(x86_env_get_cpu(env)) == uc->cpu) {
+    if (smm_set && smm_arg && env_cpu(env) == uc->cpu) {
         smm_set(!!(env->hflags & HF_SMM_MASK), smm_arg);
     }
 }
@@ -72,7 +72,7 @@ void cpu_smm_update(CPUX86State *env)
 /* IRQ handling */
 int cpu_get_pic_interrupt(CPUX86State *env)
 {
-    X86CPU *cpu = x86_env_get_cpu(env);
+    X86CPU *cpu = env_archcpu(env);
     int intno;
 
     intno = apic_get_interrupt(cpu->apic_state);
@@ -194,7 +194,7 @@ uint32_t x86_cpu_apic_id_from_index(unsigned int cpu_index)
 {
     uint32_t correct_id;
 
-    correct_id = x86_apicid_from_cpu_idx(smp_cores, smp_threads, cpu_index);
+    correct_id = x86_apicid_from_cpu_idx(1, smp_cores, smp_threads, cpu_index);
     if (compat_apic_id_mode) {
         if (cpu_index != correct_id) {
             //error_report("APIC IDs set in compatibility mode, "

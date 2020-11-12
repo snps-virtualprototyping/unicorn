@@ -251,7 +251,7 @@ typedef union {
  *   f    : float access
  *
  * sign is:
- * (empty): for floats or 32 bit size
+ * (empty): for 32 or 64 bit sizes (including floats and doubles)
  *   u    : unsigned
  *   s    : signed
  *
@@ -265,8 +265,16 @@ typedef union {
  *   he   : host endian
  *   be   : big endian
  *   le   : little endian
+ *   te   : target endian
  * (except for byte accesses, which have no endian infix).
  *
+ * The target endian accessors are obviously only available to source
+ * files which are built per-target; they are defined in cpu-all.h.
+ *
+ * In all cases these functions take a host pointer.
+ * For accessors that take a guest address rather than a
+ * host address, see the cpu_{ld,st}_* accessors defined in
+ * cpu_ldst.h.
  * The target endian accessors are obviously only available to source
  * files which are built per-target; they are defined in cpu-all.h.
  *
@@ -300,51 +308,57 @@ static inline void stb_p(void *ptr, uint8_t v)
     *(uint8_t *)ptr = v;
 }
 
-/* Any compiler worth its salt will turn these memcpy into native unaligned
-   operations.  Thus we don't need to play games with packed attributes, or
-   inline byte-by-byte stores.  */
+/*
+ * Any compiler worth its salt will turn these memcpy into native unaligned
+ * operations.  Thus we don't need to play games with packed attributes, or
+ * inline byte-by-byte stores.
+ * Some compilation environments (eg some fortify-source implementations)
+ * may intercept memcpy() in a way that defeats the compiler optimization,
+ * though, so we use __builtin_memcpy() to give ourselves the best chance
+ * of good performance.
+ */
 
 static inline int lduw_he_p(const void *ptr)
 {
     uint16_t r;
-    memcpy(&r, ptr, sizeof(r));
+    __builtin_memcpy(&r, ptr, sizeof(r));
     return r;
 }
 
 static inline int ldsw_he_p(const void *ptr)
 {
     int16_t r;
-    memcpy(&r, ptr, sizeof(r));
+    __builtin_memcpy(&r, ptr, sizeof(r));
     return r;
 }
 
 static inline void stw_he_p(void *ptr, uint16_t v)
 {
-    memcpy(ptr, &v, sizeof(v));
+    __builtin_memcpy(ptr, &v, sizeof(v));
 }
 
 static inline int ldl_he_p(const void *ptr)
 {
     int32_t r;
-    memcpy(&r, ptr, sizeof(r));
+    __builtin_memcpy(&r, ptr, sizeof(r));
     return r;
 }
 
 static inline void stl_he_p(void *ptr, uint32_t v)
 {
-    memcpy(ptr, &v, sizeof(v));
+    __builtin_memcpy(ptr, &v, sizeof(v));
 }
 
 static inline uint64_t ldq_he_p(const void *ptr)
 {
     uint64_t r;
-    memcpy(&r, ptr, sizeof(r));
+    __builtin_memcpy(&r, ptr, sizeof(r));
     return r;
 }
 
 static inline void stq_he_p(void *ptr, uint64_t v)
 {
-    memcpy(ptr, &v, sizeof(v));
+    __builtin_memcpy(ptr, &v, sizeof(v));
 }
 
 static inline int lduw_le_p(const void *ptr)

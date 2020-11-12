@@ -1481,18 +1481,18 @@ static inline void g_hash_table_maybe_resize (GHashTable *hash_table)
  * @value (and perhaps the new @key).  If it is not found, create a
  * new node.
  */
-static void g_hash_table_insert_internal (GHashTable *hash_table,
-                              gpointer    key,
-                              gpointer    value,
-                              gboolean    keep_new_key)
+static gboolean g_hash_table_insert_internal (GHashTable *hash_table,
+                                              gpointer    key,
+                                              gpointer    value,
+                                              gboolean    keep_new_key)
 {
   GHashNode *node;
   guint node_index;
   guint key_hash;
   guint old_hash;
 
-  if (hash_table == NULL) return;
-  if (hash_table->ref_count == 0) return;
+  if (hash_table == NULL) return false;
+  if (hash_table->ref_count == 0) return false;
 
   node_index = g_hash_table_lookup_node_for_insertion (hash_table, key, &key_hash);
   node = &hash_table->nodes [node_index];
@@ -1500,39 +1500,63 @@ static void g_hash_table_insert_internal (GHashTable *hash_table,
   old_hash = node->key_hash;
 
   if (old_hash > 1)
-    {
+  {
       if (keep_new_key)
-        {
-          if (hash_table->key_destroy_func)
-            hash_table->key_destroy_func (node->key);
-          node->key = key;
-        }
+      {
+        if (hash_table->key_destroy_func)
+          hash_table->key_destroy_func (node->key);
+        node->key = key;
+      }
       else
-        {
-          if (hash_table->key_destroy_func)
-            hash_table->key_destroy_func (key);
-        }
+      {
+        if (hash_table->key_destroy_func)
+          hash_table->key_destroy_func (key);
+      }
 
       if (hash_table->value_destroy_func)
         hash_table->value_destroy_func (node->value);
 
       node->value = value;
-    }
+      return false;
+  }
   else
+  {
+    node->key = key;
+    node->value = value;
+    node->key_hash = key_hash;
+
+    hash_table->nnodes++;
+
+    if (old_hash == 0)
     {
-      node->key = key;
-      node->value = value;
-      node->key_hash = key_hash;
-
-      hash_table->nnodes++;
-
-      if (old_hash == 0)
-        {
-          /* We replaced an empty node, and not a tombstone */
-          hash_table->noccupied++;
-          g_hash_table_maybe_resize (hash_table);
-        }
+        /* We replaced an empty node, and not a tombstone */
+        hash_table->noccupied++;
+        g_hash_table_maybe_resize (hash_table);
     }
+    return true;
+  }
+}
+
+GList *
+g_hash_table_get_keys (GHashTable *hash_table)
+{
+  gint i;
+  GList *retval;
+
+  if (hash_table == NULL) {
+    return NULL;
+  }
+
+  retval = NULL;
+  for (i = 0; i < hash_table->size; i++)
+    {
+      GHashNode *node = &hash_table->nodes [i];
+
+      if (node->key_hash > 1)
+        retval = g_list_prepend (retval, node->key);
+    }
+
+  return retval;
 }
 
 /**
@@ -1549,11 +1573,11 @@ static void g_hash_table_insert_internal (GHashTable *hash_table,
  * a @key_destroy_func when creating the #GHashTable, the passed key is freed
  * using that function.
  **/
-void g_hash_table_insert (GHashTable *hash_table,
-                     gpointer    key,
-                     gpointer    value)
+gboolean g_hash_table_insert (GHashTable *hash_table,
+                              gpointer    key,
+                              gpointer    value)
 {
-  g_hash_table_insert_internal (hash_table, key, value, FALSE);
+  return g_hash_table_insert_internal (hash_table, key, value, FALSE);
 }
 
 /**
@@ -2104,8 +2128,10 @@ char *g_strdup_vprintf(const char *format, va_list ap)
        return NULL;
    vsnprintf(str_res, len+1, format, ap);
 #else
-   if (vasprintf(&str_res, format, ap) < 0)
-       str_res = NULL;
+    int ret = vasprintf(&str_res, format, ap);
+    if (ret == -1) {
+        return NULL;
+    }
 #endif
    return str_res;
 }

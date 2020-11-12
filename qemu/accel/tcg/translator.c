@@ -41,23 +41,11 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
     db->pc_next = db->pc_first;
     db->is_jmp = DISAS_NEXT;
     db->num_insns = 0;
+    db->max_insns = max_insns;
     db->singlestep_enabled = cpu->singlestep_enabled;
     db->uc = cpu->uc;
 
     db->uc->block_full = false;
-
-    /* Instruction counting */
-    db->max_insns = db->tb->cflags & CF_COUNT_MASK;
-    if (db->max_insns == 0) {
-        db->max_insns = CF_COUNT_MASK;
-    }
-    if (db->max_insns > TCG_MAX_INSNS) {
-        db->max_insns = TCG_MAX_INSNS;
-    }
-    // Unicorn: commented out
-    if (db->singlestep_enabled /*|| singlestep*/) {
-        db->max_insns = 1;
-    }
 
     ops->init_disas_context(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
@@ -69,6 +57,9 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
      * the "run until" address. */
     if (tb->pc == cpu->uc->addr_end) {
         gen_tb_start(tcg_ctx, tb);
+        // This should catch that instruction is at the end
+        // and generate appropriate halting code. 
+        ops->translate_insn(db, cpu);
         goto tb_end;
     }
 
@@ -99,13 +90,13 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
         tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
         /* Pass breakpoint hits to target for further processing */
-        if (/*!db->singlestep_enabled // JHW: always generate breakpoints, even in single step
-            &&*/ unlikely(!QTAILQ_EMPTY(&cpu->breakpoints))) {
+        if (/*!db->singlestep_enabled*/ 1 // SNPS changed
+            && unlikely(!QTAILQ_EMPTY(&cpu->breakpoints))) {
             CPUBreakpoint *bp;
             QTAILQ_FOREACH(bp, &cpu->breakpoints, entry) {
                 if (bp->pc == db->pc_next) {
                     if (ops->breakpoint_check(db, cpu, bp)) {
-                        bp_insn = (bp->flags & BP_CALL) ? 0 : 1;
+                        bp_insn = 1;
                         break;
                     }
                 }
@@ -124,7 +115,7 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
            done next -- either exiting this loop or locate the start of
            the next instruction.  */
         if (db->num_insns == db->max_insns
-            && (db->tb->cflags & CF_LAST_IO)) {
+            && (tb_cflags(db->tb) & CF_LAST_IO)) {
             /* Accept I/O on the last instruction.  */
             //gen_io_start();
             ops->translate_insn(db, cpu);

@@ -28,6 +28,9 @@
  * Operands may completely, but not partially, overlap.
  */
 
+#ifndef TCG_TCG_OP_GVEC_H
+#define TCG_TCG_OP_GVEC_H
+
 /* Expand a call to a gvec-style helper, with pointers to two vector
    operands, and a descriptor (see tcg-gvec-desc.h).  */
 typedef void gen_helper_gvec_2(TCGContext *, TCGv_ptr, TCGv_ptr, TCGv_i32);
@@ -80,6 +83,13 @@ void tcg_gen_gvec_4_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
                         uint32_t maxsz, int32_t data,
                         gen_helper_gvec_4_ptr *fn);
 
+typedef void gen_helper_gvec_5_ptr(TCGContext *, TCGv_ptr, TCGv_ptr, TCGv_ptr, TCGv_ptr,
+                                   TCGv_ptr, TCGv_ptr, TCGv_i32);
+void tcg_gen_gvec_5_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bofs,
+                        uint32_t cofs, uint32_t eofs, TCGv_ptr ptr,
+                        uint32_t oprsz, uint32_t maxsz, int32_t data,
+                        gen_helper_gvec_5_ptr *fn);
+
 /* Expand a gvec operation.  Either inline or out-of-line depending on
    the actual vector size and the operations supported by the host.  */
 typedef struct {
@@ -91,14 +101,16 @@ typedef struct {
     void (*fniv)(TCGContext *, unsigned, TCGv_vec, TCGv_vec);
     /* Expand out-of-line helper w/descriptor.  */
     gen_helper_gvec_2 *fno;
-    /* The opcode, if any, to which this corresponds.  */
-    TCGOpcode opc;
+    /* The optional opcodes, if any, utilized by .fniv.  */
+    const TCGOpcode *opt_opc;
     /* The data argument to the out-of-line helper.  */
     int32_t data;
     /* The vector element size, if applicable.  */
     uint8_t vece;
     /* Prefer i64 to v64.  */
     bool prefer_i64;
+    /* Load dest as a 2nd source operand.  */
+    bool load_dest;
 } GVecGen2;
 
 typedef struct {
@@ -112,8 +124,8 @@ typedef struct {
     gen_helper_gvec_2 *fno;
     /* Expand out-of-line helper w/descriptor, data as argument.  */
     gen_helper_gvec_2i *fnoi;
-    /* The opcode, if any, to which this corresponds.  */
-    TCGOpcode opc;
+    /* The optional opcodes, if any, utilized by .fniv.  */
+    const TCGOpcode *opt_opc;
     /* The vector element size, if applicable.  */
     uint8_t vece;
     /* Prefer i64 to v64.  */
@@ -131,8 +143,8 @@ typedef struct {
     void (*fniv)(TCGContext *, unsigned, TCGv_vec, TCGv_vec, TCGv_vec);
     /* Expand out-of-line helper w/descriptor.  */
     gen_helper_gvec_2i *fno;
-    /* The opcode, if any, to which this corresponds.  */
-    TCGOpcode opc;
+    /* The optional opcodes, if any, utilized by .fniv.  */
+    const TCGOpcode *opt_opc;
     /* The data argument to the out-of-line helper.  */
     uint32_t data;
     /* The vector element size, if applicable.  */
@@ -152,8 +164,8 @@ typedef struct {
     void (*fniv)(TCGContext *, unsigned, TCGv_vec, TCGv_vec, TCGv_vec);
     /* Expand out-of-line helper w/descriptor.  */
     gen_helper_gvec_3 *fno;
-    /* The opcode, if any, to which this corresponds.  */
-    TCGOpcode opc;
+    /* The optional opcodes, if any, utilized by .fniv.  */
+    const TCGOpcode *opt_opc;
     /* The data argument to the out-of-line helper.  */
     int32_t data;
     /* The vector element size, if applicable.  */
@@ -165,6 +177,27 @@ typedef struct {
 } GVecGen3;
 
 typedef struct {
+    /*
+     * Expand inline as a 64-bit or 32-bit integer. Only one of these will be
+     * non-NULL.
+     */
+    void (*fni8)(TCGContext *, TCGv_i64, TCGv_i64, TCGv_i64, int64_t);
+    void (*fni4)(TCGContext *, TCGv_i32, TCGv_i32, TCGv_i32, int32_t);
+    /* Expand inline with a host vector type.  */
+    void (*fniv)(TCGContext *, unsigned, TCGv_vec, TCGv_vec, TCGv_vec, int64_t);
+    /* Expand out-of-line helper w/descriptor, data in descriptor.  */
+    gen_helper_gvec_3 *fno;
+    /* The optional opcodes, if any, utilized by .fniv.  */
+    const TCGOpcode *opt_opc;
+    /* The vector element size, if applicable.  */
+    uint8_t vece;
+    /* Prefer i64 to v64.  */
+    bool prefer_i64;
+    /* Load dest as a 3rd source operand.  */
+    bool load_dest;
+} GVecGen3i;
+
+typedef struct {
     /* Expand inline as a 64-bit or 32-bit integer.
        Only one of these will be non-NULL.  */
     void (*fni8)(TCGContext *s, TCGv_i64, TCGv_i64, TCGv_i64, TCGv_i64);
@@ -173,8 +206,8 @@ typedef struct {
     void (*fniv)(TCGContext *s, unsigned, TCGv_vec, TCGv_vec, TCGv_vec, TCGv_vec);
     /* Expand out-of-line helper w/descriptor.  */
     gen_helper_gvec_4 *fno;
-    /* The opcode, if any, to which this corresponds.  */
-    TCGOpcode opc;
+    /* The optional opcodes, if any, utilized by .fniv.  */
+    const TCGOpcode *opt_opc;
     /* The data argument to the out-of-line helper.  */
     int32_t data;
     /* The vector element size, if applicable.  */
@@ -193,6 +226,9 @@ void tcg_gen_gvec_2s(TCGContext *, uint32_t dofs, uint32_t aofs, uint32_t oprsz,
                      uint32_t maxsz, TCGv_i64 c, const GVecGen2s *);
 void tcg_gen_gvec_3(TCGContext *, uint32_t dofs, uint32_t aofs, uint32_t bofs,
                     uint32_t oprsz, uint32_t maxsz, const GVecGen3 *);
+void tcg_gen_gvec_3i(TCGContext *, uint32_t dofs, uint32_t aofs, uint32_t bofs,
+                     uint32_t oprsz, uint32_t maxsz, int64_t c,
+                     const GVecGen3i *);
 void tcg_gen_gvec_4(TCGContext *, uint32_t dofs, uint32_t aofs, uint32_t bofs, uint32_t cofs,
                     uint32_t oprsz, uint32_t maxsz, const GVecGen4 *);
 
@@ -203,6 +239,8 @@ void tcg_gen_gvec_mov(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
 void tcg_gen_gvec_not(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
                       uint32_t oprsz, uint32_t maxsz);
 void tcg_gen_gvec_neg(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
+                      uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_abs(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
                       uint32_t oprsz, uint32_t maxsz);
 
 void tcg_gen_gvec_add(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
@@ -277,10 +315,18 @@ void tcg_gen_gvec_ors(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs
 
 void tcg_gen_gvec_dup_mem(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
                           uint32_t s, uint32_t m);
+void tcg_gen_gvec_dup_imm(TCGContext *, unsigned vece, uint32_t dofs, uint32_t s,
+                          uint32_t m, uint64_t imm);
 void tcg_gen_gvec_dup_i32(TCGContext *, unsigned vece, uint32_t dofs, uint32_t s,
                           uint32_t m, TCGv_i32);
 void tcg_gen_gvec_dup_i64(TCGContext *, unsigned vece, uint32_t dofs, uint32_t s,
                           uint32_t m, TCGv_i64);
+
+#if TARGET_LONG_BITS == 64
+# define tcg_gen_gvec_dup_tl  tcg_gen_gvec_dup_i64
+#else
+# define tcg_gen_gvec_dup_tl  tcg_gen_gvec_dup_i32
+#endif
 
 void tcg_gen_gvec_shli(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
                        int64_t shift, uint32_t oprsz, uint32_t maxsz);
@@ -288,15 +334,45 @@ void tcg_gen_gvec_shri(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aof
                        int64_t shift, uint32_t oprsz, uint32_t maxsz);
 void tcg_gen_gvec_sari(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
                        int64_t shift, uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_rotli(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
+                        int64_t shift, uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_rotri(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
+                        int64_t shift, uint32_t oprsz, uint32_t maxsz);
+
+void tcg_gen_gvec_shls(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
+                       TCGv_i32 shift, uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_shrs(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
+                       TCGv_i32 shift, uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_sars(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
+                       TCGv_i32 shift, uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_rotls(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
+                        TCGv_i32 shift, uint32_t oprsz, uint32_t maxsz);
+
+/*
+ * Perform vector shift by vector element, modulo the element size.
+ * E.g.  D[i] = A[i] << (B[i] % (8 << vece)).
+ */
+void tcg_gen_gvec_shlv(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
+                       uint32_t bofs, uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_shrv(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
+                       uint32_t bofs, uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_sarv(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
+                       uint32_t bofs, uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_rotlv(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
+                        uint32_t bofs, uint32_t oprsz, uint32_t maxsz);
+void tcg_gen_gvec_rotrv(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
+                        uint32_t bofs, uint32_t oprsz, uint32_t maxsz);
 
 void tcg_gen_gvec_cmp(TCGContext *s, TCGCond cond, unsigned vece, uint32_t dofs,
                       uint32_t aofs, uint32_t bofs,
                       uint32_t oprsz, uint32_t maxsz);
 
-void tcg_gen_gvec_dup8i(TCGContext *, uint32_t dofs, uint32_t s, uint32_t m, uint8_t x);
-void tcg_gen_gvec_dup16i(TCGContext *, uint32_t dofs, uint32_t s, uint32_t m, uint16_t x);
-void tcg_gen_gvec_dup32i(TCGContext *, uint32_t dofs, uint32_t s, uint32_t m, uint32_t x);
-void tcg_gen_gvec_dup64i(TCGContext *, uint32_t dofs, uint32_t s, uint32_t m, uint64_t x);
+/*
+ * Perform vector bit select: d = (b & a) | (c & ~a).
+ */
+void tcg_gen_gvec_bitsel(TCGContext *, unsigned vece, uint32_t dofs, uint32_t aofs,
+                         uint32_t bofs, uint32_t cofs,
+                         uint32_t oprsz, uint32_t maxsz);
 
 /*
  * 64-bit vector operations.  Use these when the register has been allocated
@@ -322,3 +398,7 @@ void tcg_gen_vec_shr8i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t);
 void tcg_gen_vec_shr16i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t);
 void tcg_gen_vec_sar8i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t);
 void tcg_gen_vec_sar16i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t);
+void tcg_gen_vec_rotl8i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t c);
+void tcg_gen_vec_rotl16i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t c);
+
+#endif

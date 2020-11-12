@@ -33,6 +33,12 @@ static void tosa_machine_init(struct uc_struct *uc, MachineClass *mc)
 
     if (uc->mode & UC_MODE_MCLASS) {
         mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m3");
+    } else if (uc->mode & UC_MODE_ARM926) {
+        mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
+    } else if (uc->mode & UC_MODE_ARM946) {
+        mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm946");
+    } else if (uc->mode & UC_MODE_ARM1176) {
+        mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm1176");
     } else {
         // Unicorn: Enable all CPU features
         mc->default_cpu_type = ARM_CPU_TYPE_NAME("max");

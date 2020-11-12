@@ -61,29 +61,29 @@ typedef void (*uc_args_uc_t)(struct uc_struct*);
 typedef int (*uc_args_int_uc_t)(struct uc_struct*);
 typedef void (*uc_cpu_exec_exit_t)(CPUState*);
 
-typedef void (*tb_flush_t)(CPUState*); // JHW
-typedef void (*tb_flush_page_t)(CPUState*, uint64_t,  uint64_t); // JHW
+typedef void (*tb_flush_t)(CPUState*); // SNPS added
+typedef void (*tb_flush_page_t)(CPUState*, uint64_t,  uint64_t); // SNPS added
 
-typedef void (*dmi_invalidate_t)(CPUState*, uint64_t, uint64_t); // JHW
+typedef void (*dmi_invalidate_t)(CPUState*, uint64_t, uint64_t); // SNPS added
 
-typedef void (*tlb_flush_t)(CPUState*); // JHW
-typedef bool (*tlb_flush_page_t)(CPUState*, uint64_t); // JHW
-typedef void (*tlb_flush_mmuidx_t)(CPUState*, uint16_t); // JHW
-typedef void (*tlb_flush_page_mmuidx_t)(CPUState*, uint64_t, uint16_t); // JHW
+typedef void (*tlb_flush_t)(CPUState*); // SNPS added
+typedef bool (*tlb_flush_page_t)(CPUState*, uint64_t); // SNPS added
+typedef void (*tlb_flush_mmuidx_t)(CPUState*, uint16_t); // SNPS added
+typedef void (*tlb_flush_page_mmuidx_t)(CPUState*, uint64_t, uint16_t); // SNPS added
 
-typedef void (*tlb_cluster_flush_t)(CPUState*); // JHW
-typedef void (*tlb_cluster_flush_page_t)(CPUState*, uint64_t); // JHW
-typedef void (*tlb_cluster_flush_mmuidx_t)(CPUState*, uint16_t); // JHW
-typedef void (*tlb_cluster_flush_page_mmuidx_t)(CPUState*, uint64_t, uint16_t); // JHW
+typedef void (*tlb_cluster_flush_t)(CPUState*); // SNPS added
+typedef void (*tlb_cluster_flush_page_t)(CPUState*, uint64_t); // SNPS added
+typedef void (*tlb_cluster_flush_mmuidx_t)(CPUState*, uint16_t); // SNPS added
+typedef void (*tlb_cluster_flush_page_mmuidx_t)(CPUState*, uint64_t, uint16_t); // SNPS added
 
-typedef int  (*cpu_breakpoint_insert_t)(CPUState*, vaddr, int, CPUBreakpoint**);
-typedef int  (*cpu_breakpoint_remove_t)(CPUState*, vaddr, int);
-typedef int  (*cpu_watchpoint_insert_t)(CPUState*, vaddr, vaddr, int, CPUWatchpoint**);
-typedef int  (*cpu_watchpoint_remove_t)(CPUState*, vaddr, vaddr, int);
+typedef int  (*cpu_breakpoint_insert_t)(CPUState*, vaddr, int, CPUBreakpoint**); // SNPS added
+typedef int  (*cpu_breakpoint_remove_t)(CPUState*, vaddr, int); // SNPS added
+typedef int  (*cpu_watchpoint_insert_t)(CPUState*, vaddr, vaddr, int, CPUWatchpoint**); // SNPS added
+typedef int  (*cpu_watchpoint_remove_t)(CPUState*, vaddr, vaddr, int); // SNPS added
 
-typedef void (*uc_timer_recalc_t)(CPUState*, int); // JHW
+typedef void (*uc_timer_recalc_t)(CPUState*, int); // SNPS added
 
-typedef void (*uc_setup_once_t)(CPUState*); // JHW
+typedef void (*uc_setup_once_t)(CPUState*); // SNPS added
 
 typedef bool (*uc_args_tcg_enable_t)(struct uc_struct*);
 
@@ -95,7 +95,7 @@ typedef MemoryRegion* (*uc_args_uc_ram_size_t)(struct uc_struct*,  hwaddr begin,
 
 typedef MemoryRegion* (*uc_args_uc_ram_size_ptr_t)(struct uc_struct*,  hwaddr begin, size_t size, uint32_t perms, void *ptr);
 
-typedef MemoryRegion* (*uc_args_uc_mmio_size_t)(struct uc_struct*, hwaddr begin, size_t size, void* opaque);
+typedef MemoryRegion* (*uc_args_uc_mmio_size_t)(struct uc_struct*, hwaddr begin, size_t size, void* opaque); // SNPS added
 
 typedef void (*uc_mem_unmap_t)(struct uc_struct*, MemoryRegion *mr);
 
@@ -136,6 +136,7 @@ enum uc_hook_idx {
     UC_HOOK_MEM_WRITE_IDX,
     UC_HOOK_MEM_FETCH_IDX,
     UC_HOOK_MEM_READ_AFTER_IDX,
+    UC_HOOK_INSN_INVALID_IDX,
 
     UC_HOOK_MAX,
 };
@@ -157,8 +158,8 @@ enum uc_hook_idx {
     ((((addr) >= (hh)->begin && (addr) <= (hh)->end) \
          || (hh)->begin > (hh)->end))
 
-#define HOOK_EXISTS(uc, idx) ((uc)->hook[idx##_IDX].head != NULL)
-#define HOOK_EXISTS_BOUNDED(uc, idx, addr) _hook_exists_bounded((uc)->hook[idx##_IDX].head, addr)
+#define HOOK_EXISTS(uc, idx) (0) // SNPS changed
+#define HOOK_EXISTS_BOUNDED(uc, idx, addr) (0) // SNPS changed
 
 static inline bool _hook_exists_bounded(struct list_item *cur, uint64_t addr)
 {

@@ -2,6 +2,7 @@
 #define QEMU_CUTILS_H
 
 #include "qemu/fprintf-fn.h"
+#include "uc_priv.h"
 
 /**
  * pstrcpy:
@@ -122,6 +123,10 @@ int qemu_strnlen(const char *s, int max_len);
  * Returns: the pointer originally in @input.
  */
 char *qemu_strsep(char **input, const char *delim);
+
+int qemu_fdatasync(int fd);
+int qemu_msync(struct uc_struct *uc, void *addr, size_t length, int fd);
+
 int qemu_strtoi(const char *nptr, const char **endptr, int base,
                 int *result);
 int qemu_strtoui(const char *nptr, const char **endptr, int base,

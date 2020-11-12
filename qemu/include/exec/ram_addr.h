@@ -65,6 +65,14 @@ void qemu_ram_free(struct uc_struct *c, ram_addr_t addr);
 
 int qemu_ram_resize(struct uc_struct *c, RAMBlock *block, ram_addr_t newsize, Error **errp);
 
+void qemu_ram_writeback(struct uc_struct *uc, RAMBlock *block, ram_addr_t start, ram_addr_t length);
+
+/* Clear whole block of mem */
+static inline void qemu_ram_block_writeback(struct uc_struct *uc, RAMBlock *block)
+{
+    qemu_ram_writeback(uc, block, 0, block->used_length);
+}
+
 #define DIRTY_CLIENTS_ALL     ((1 << DIRTY_MEMORY_NUM) - 1)
 #define DIRTY_CLIENTS_NOCODE  (DIRTY_CLIENTS_ALL & ~(1 << DIRTY_MEMORY_CODE))
 

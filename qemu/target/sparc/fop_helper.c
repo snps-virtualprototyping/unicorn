@@ -53,7 +53,7 @@ static target_ulong do_check_ieee_exceptions(CPUSPARCState *env, uintptr_t ra)
         }
 
         if ((fsr & FSR_CEXC_MASK) & ((fsr & FSR_TEM_MASK) >> 23)) {
-            CPUState *cs = CPU(sparc_env_get_cpu(env));
+            CPUState *cs = env_cpu(env);
 
             /* Unmasked exception, generate a trap.  Note that while
                the helper is marked as NO_WG, we can get away with
@@ -264,7 +264,7 @@ void helper_fsqrtq(CPUSPARCState *env)
 #define GEN_FCMP(name, size, reg1, reg2, FS, E)                         \
     target_ulong glue(helper_, name) (CPUSPARCState *env)               \
     {                                                                   \
-        int ret;                                                        \
+        FloatRelation ret;                                              \
         target_ulong fsr;                                               \
         if (E) {                                                        \
             ret = glue(size, _compare)(reg1, reg2, &env->fp_status);    \
@@ -295,7 +295,7 @@ void helper_fsqrtq(CPUSPARCState *env)
 #define GEN_FCMP_T(name, size, FS, E)                                   \
     target_ulong glue(helper_, name)(CPUSPARCState *env, size src1, size src2)\
     {                                                                   \
-        int ret;                                                        \
+        FloatRelation ret;                                              \
         target_ulong fsr;                                               \
         if (E) {                                                        \
             ret = glue(size, _compare)(src1, src2, &env->fp_status);    \

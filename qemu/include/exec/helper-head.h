@@ -31,18 +31,10 @@
 #define dh_alias_f16 i32
 #define dh_alias_f32 i32
 #define dh_alias_f64 i64
-#ifdef TARGET_LONG_BITS
-# if TARGET_LONG_BITS == 32
-#  define dh_alias_tl i32
-# else
-#  define dh_alias_tl i64
-# endif
-#endif
 #define dh_alias_ptr ptr
 #define dh_alias_cptr ptr
 #define dh_alias_void void
 #define dh_alias_noreturn noreturn
-#define dh_alias_env ptr
 #define dh_alias(t) glue(dh_alias_, t)
 
 #define dh_ctype_i32 uint32_t
@@ -53,13 +45,24 @@
 #define dh_ctype_f16 uint32_t
 #define dh_ctype_f32 float32
 #define dh_ctype_f64 float64
-#define dh_ctype_tl target_ulong
 #define dh_ctype_ptr void *
 #define dh_ctype_cptr const void *
 #define dh_ctype_void void
 #define dh_ctype_noreturn void QEMU_NORETURN
-#define dh_ctype_env CPUArchState *
 #define dh_ctype(t) dh_ctype_##t
+
+#ifdef NEED_CPU_H
+# ifdef TARGET_LONG_BITS
+#  if TARGET_LONG_BITS == 32
+#   define dh_alias_tl i32
+#  else
+#   define dh_alias_tl i64
+#  endif
+# endif
+# define dh_alias_env ptr
+# define dh_ctype_tl target_ulong
+# define dh_ctype_env CPUArchState *
+#endif
 
 /* We can't use glue() here because it falls foul of C preprocessor
    recursive expansion rules.  */
@@ -147,6 +150,8 @@
     DEF_HELPER_FLAGS_5(name, 0, ret, t1, t2, t3, t4, t5)
 #define DEF_HELPER_6(name, ret, t1, t2, t3, t4, t5, t6) \
     DEF_HELPER_FLAGS_6(name, 0, ret, t1, t2, t3, t4, t5, t6)
+#define DEF_HELPER_7(name, ret, t1, t2, t3, t4, t5, t6, t7) \
+    DEF_HELPER_FLAGS_7(name, 0, ret, t1, t2, t3, t4, t5, t6, t7)
 
 /* MAX_OPC_PARAM_IARGS must be set to n if last entry is DEF_HELPER_FLAGS_n. */
 

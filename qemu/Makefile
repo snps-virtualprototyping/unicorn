@@ -1,5 +1,9 @@
 # Makefile for QEMU - modified for Unicorn engine.
 
+ifneq ($(words $(subst :, ,$(CURDIR))), 1)
+  $(error main directory cannot contain spaces nor colons)
+endif
+
 # Always point to the root of the build tree (needs GNU make).
 BUILD_DIR=$(CURDIR)
 
@@ -26,14 +30,7 @@ CONFIG_ALL=y
 
 config-host.mak: $(SRC_PATH)/configure
 	@echo $@ is out-of-date, running configure
-	@# TODO: The next lines include code which supports a smooth
-	@# transition from old configurations without config.status.
-	@# This code can be removed after QEMU 1.7.
-	@if test -x config.status; then \
-	    ./config.status; \
-        else \
-	    sed -n "/.*Configured with/s/[^:]*: //p" $@ | sh; \
-	fi
+	@./config.status
 else
 config-host.mak:
 ifneq ($(filter-out %clean,$(MAKECMDGOALS)),$(if $(MAKECMDGOALS),,fail))
@@ -70,10 +67,10 @@ SUBDIR_DEVICES_MAK=$(patsubst %, %/config-devices.mak, $(TARGET_DIRS))
 SUBDIR_DEVICES_MAK_DEP=$(patsubst %, %-config-devices.mak.d, $(TARGET_DIRS))
 
 ifeq ($(SUBDIR_DEVICES_MAK),)
-config-all-devices.mak:
+config-all-devices.mak: config-host.mak
 	$(call quiet-command,echo '# no devices' > $@,"  GEN   $@")
 else
-config-all-devices.mak: $(SUBDIR_DEVICES_MAK)
+config-all-devices.mak: $(SUBDIR_DEVICES_MAK) config-host.mak
 	$(call quiet-command, sed -n \
              's|^\([^=]*\)=\(.*\)$$|\1:=$$(findstring y,$$(\1)\2)|p' \
              $(SUBDIR_DEVICES_MAK) | sort -u > $@, \
@@ -123,15 +120,16 @@ all: $(TOOLS) $(HELPERS-y) recurse-all modules
 config-host.h: config-host.h-timestamp
 config-host.h-timestamp: config-host.mak
 
-SUBDIR_RULES=$(patsubst %,subdir-%, $(TARGET_DIRS))
-SOFTMMU_SUBDIR_RULES=$(filter %-softmmu,$(SUBDIR_RULES))
+SUBDIR_RULES=$(addsuffix /all, $(TARGET_DIRS))
+SOFTMMU_SUBDIR_RULES=$(filter %-softmmu/all,$(SUBDIR_RULES))
 
 $(SOFTMMU_SUBDIR_RULES): $(block-obj-y)
 $(SOFTMMU_SUBDIR_RULES): $(crypto-obj-y)
 $(SOFTMMU_SUBDIR_RULES): config-all-devices.mak
 
-subdir-%:
-	$(call quiet-command,$(MAKE) $(SUBDIR_MAKEFLAGS) -C $* V="$(V)" TARGET_DIR="$*/" all,)
+.PHONY: $(SUBDIR_RULES)
+$(SUBDIR_RULES):
+	$(call quiet-command,$(MAKE) $(SUBDIR_MAKEFLAGS) -C $(dir $@) V="$(V)" TARGET_DIR="$(dir $@)" all,)
 
 $(SUBDIR_RULES): qapi/qapi-types.c qapi/qapi-types.h qapi/qapi-visit.c qapi/qapi-visit.h $(common-obj-y) $(util-obj-y)
 

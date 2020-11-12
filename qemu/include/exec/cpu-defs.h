@@ -34,9 +34,30 @@
 #include "exec/hwaddr.h"
 #endif
 #include "exec/memattrs.h"
+#include "qom/cpu.h"
+
+#include "cpu-param.h"
 
 #ifndef TARGET_LONG_BITS
-#error TARGET_LONG_BITS must be defined before including this header
+# error TARGET_LONG_BITS must be defined in cpu-param.h
+#endif
+#ifndef NB_MMU_MODES
+# error NB_MMU_MODES must be defined in cpu-param.h
+#endif
+#ifndef TARGET_PHYS_ADDR_SPACE_BITS
+# error TARGET_PHYS_ADDR_SPACE_BITS must be defined in cpu-param.h
+#endif
+#ifndef TARGET_VIRT_ADDR_SPACE_BITS
+# error TARGET_VIRT_ADDR_SPACE_BITS must be defined in cpu-param.h
+#endif
+#ifndef TARGET_PAGE_BITS
+# ifdef TARGET_PAGE_BITS_VARY
+#  ifndef TARGET_PAGE_BITS_MIN
+#   error TARGET_PAGE_BITS_MIN must be defined in cpu-param.h
+#  endif
+# else
+#  error TARGET_PAGE_BITS must be defined in cpu-param.h
+# endif
 #endif
 
 #define TARGET_LONG_SIZE (TARGET_LONG_BITS / 8)
@@ -141,20 +162,30 @@ typedef struct CPUIOTLBEntry {
     hwaddr addr;
     MemTxAttrs attrs;
 
-    /* JHW: needed for phys to virt to dmi translation */
-    hwaddr phys;
-    CPUTLBEntry* p2v;
+    hwaddr phys; // SNPS added
+    CPUTLBEntry* p2v; // SNPS added
 } CPUIOTLBEntry;
+
+typedef struct CPUTLBDesc {
+    /*
+     * Describe a region covering all of the large pages allocated
+     * into the tlb.  When any page within this region is flushed,
+     * we must flush the entire tlb.  The region is matched if
+     * (addr & large_page_mask) == large_page_addr.
+     */
+    target_ulong large_page_addr;
+    target_ulong large_page_mask;
+    /* The next index to use in the tlb victim table.  */
+    size_t vindex;
+} CPUTLBDesc;
 
 #define CPU_COMMON_TLB \
     /* The meaning of the MMU modes is defined in the target code. */   \
+    CPUTLBDesc tlb_d[NB_MMU_MODES];                                     \
     CPUTLBEntry tlb_table[NB_MMU_MODES][CPU_TLB_SIZE];                  \
     CPUTLBEntry tlb_v_table[NB_MMU_MODES][CPU_VTLB_SIZE];               \
     CPUIOTLBEntry iotlb[NB_MMU_MODES][CPU_TLB_SIZE];                    \
-    CPUIOTLBEntry iotlb_v[NB_MMU_MODES][CPU_VTLB_SIZE];                 \
-    target_ulong tlb_flush_addr[NB_MMU_MODES];                          \
-    target_ulong tlb_flush_mask[NB_MMU_MODES];                          \
-    target_ulong vtlb_index;                                            \
+    CPUIOTLBEntry iotlb_v[NB_MMU_MODES][CPU_VTLB_SIZE];
 
 #else
 
@@ -170,4 +201,13 @@ typedef struct CPUIOTLBEntry {
     CPU_COMMON_TLB                                                      \
     uint64_t invalid_addr; \
     int invalid_error;
+
+/*
+ * This structure must be placed in ArchCPU immediately
+ * before CPUArchState, as a field named "neg".
+ */
+typedef struct CPUNegativeOffsetState {
+    IcountDecr icount_decr;
+} CPUNegativeOffsetState;
+
 #endif

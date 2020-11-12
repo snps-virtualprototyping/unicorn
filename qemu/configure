@@ -133,8 +133,15 @@ path_of() {
     return 1
 }
 
+# make source path absolute
+source_path=$(cd "$(dirname -- "$0")"; pwd)
+
+if printf %s\\n "$source_path" "$PWD" | grep -q "[[:space:]:]";
+then
+  error_exit "main directory cannot contain spaces nor colons"
+fi
+
 # default parameters
-source_path=$(dirname "$0")
 cpu=""
 static="no"
 cross_prefix=""
@@ -484,7 +491,18 @@ Linux)
 esac
 
 : ${make=${MAKE-make}}
-: ${python=${PYTHON-python}}
+# We prefer python 3.x. A bare 'python' is traditionally
+# python 2.x, but some distros have it as python 3.x, so
+# we check that too
+python=
+for binary in "${PYTHON-python3}" python
+do
+    if has "$binary"
+    then
+        python="$binary"
+        break
+    fi
+done
 
 # Default objcc to clang if available, otherwise use CC
 if has clang; then
@@ -538,7 +556,6 @@ for opt do
   ;;
   --static)
     static="yes"
-    LDFLAGS="-static $LDFLAGS"
   ;;
   --enable-debug-tcg) debug_tcg="yes"
   ;;
@@ -576,14 +593,18 @@ for opt do
   esac
 done
 
-if ! has $python; then
-  error_exit "Python not found. Use --python=/path/to/python"
+# Remove old dependency files to make sure that they get properly regenerated
+rm -f *-config-devices.mak.d
+
+if test -z "$python"
+then
+    error_exit "Python not found. Use --python=/path/to/python"
 fi
 
 # Note that if the Python conditional here evaluates True we will exit
 # with status 1 which is a shell 'false' value.
-if ! $python -c 'import sys; sys.exit(sys.version_info < (2,6))'; then
-  error_exit "Cannot use '$python', Python 2 >= 2.6 or Python 3 is required." \
+if ! $python -c 'import sys; sys.exit(sys.version_info < (3,5))'; then
+  error_exit "Cannot use '$python', Python >= 3.5 is required." \
       "Use --python=/path/to/python to specify a supported Python."
 fi
 
@@ -763,7 +784,7 @@ gcc_flags="-Wformat-security -Wformat-y2k -Winit-self -Wignored-qualifiers $gcc_
 gcc_flags="-Wmissing-include-dirs -Wempty-body -Wnested-externs $gcc_flags"
 gcc_flags="-Wendif-labels $gcc_flags"
 gcc_flags="-Wno-initializer-overrides -Wexpansion-to-defined $gcc_flags"
-gcc_flags="-Wno-string-plus-int $gcc_flags"
+gcc_flags="-Wno-string-plus-int -Wno-typedef-redefinition $gcc_flags"
 # Note that we do not add -Werror to gcc_flags here, because that would
 # enable it for all configure tests. If a configure test failed due
 # to -Werror this would just silently disable some features,
@@ -819,57 +840,57 @@ fi
 
 # Static linking is not possible with modules or PIE
 if test "$static" = "yes" ; then
-  if test "$pie" = "yes" ; then
-    error_exit "static and pie are mutually incompatible"
-  else
-    pie="no"
+  if test "$modules" = "yes" ; then
+    error_exit "static and modules are mutually incompatible"
   fi
 fi
 
-if test "$pie" = ""; then
-  case "$cpu-$targetos" in
-    i386-Linux|x86_64-Linux|x32-Linux|i386-OpenBSD|x86_64-OpenBSD)
-      ;;
-    *)
-      pie="no"
-      ;;
-  esac
-fi
-
-if test "$pie" != "no" ; then
-  cat > $TMPC << EOF
+cat > $TMPC << EOF
 
 #ifdef __linux__
 #  define THREAD __thread
 #else
 #  define THREAD
 #endif
-
 static THREAD int tls_var;
-
 int main(void) { return tls_var; }
-
 EOF
-  if compile_prog "-fPIE -DPIE" "-pie"; then
-    QEMU_CFLAGS="-fPIE -DPIE $QEMU_CFLAGS"
-    LDFLAGS="-pie $LDFLAGS"
-    pie="yes"
-    if compile_prog "" "-Wl,-z,relro -Wl,-z,now" ; then
-      LDFLAGS="-Wl,-z,relro -Wl,-z,now $LDFLAGS"
-    fi
-  else
-    if test "$pie" = "yes"; then
-      error_exit "PIE not available due to missing toolchain support"
-    else
-      echo "Disabling PIE due to missing toolchain support"
-      pie="no"
-    fi
-  fi
 
-  if compile_prog "-fno-pie" "-nopie"; then
-    CFLAGS_NOPIE="-fno-pie"
-    LDFLAGS_NOPIE="-nopie"
+# Check we support --no-pie first; we will need this for building ROMs.
+if compile_prog "-Werror -fno-pie" "-no-pie"; then
+  CFLAGS_NOPIE="-fno-pie"
+  LDFLAGS_NOPIE="-no-pie"
+fi
+
+if test "$static" = "yes"; then
+  if test "$pie" != "no" && compile_prog "-fPIE -DPIE" "-static-pie"; then
+    QEMU_CFLAGS="-fPIE -DPIE $QEMU_CFLAGS"
+    QEMU_LDFLAGS="-static-pie $QEMU_LDFLAGS"
+    pie="yes"
+  elif test "$pie" = "yes"; then
+    error_exit "-static-pie not available due to missing toolchain support"
+  else
+    QEMU_LDFLAGS="-static $QEMU_LDFLAGS"
+    pie="no"
   fi
+elif test "$pie" = "no"; then
+  QEMU_CFLAGS="$CFLAGS_NOPIE $QEMU_CFLAGS"
+  QEMU_LDFLAGS="$LDFLAGS_NOPIE $QEMU_LDFLAGS"
+elif compile_prog "-fPIE -DPIE" "-pie"; then
+  QEMU_CFLAGS="-fPIE -DPIE $QEMU_CFLAGS"
+  QEMU_LDFLAGS="-pie $QEMU_LDFLAGS"
+  pie="yes"
+elif test "$pie" = "yes"; then
+  error_exit "PIE not available due to missing toolchain support"
+else
+  echo "Disabling PIE due to missing toolchain support"
+  pie="no"
+fi
+
+# Detect support for PT_GNU_RELRO + DT_BIND_NOW.
+# The combination is known as "full relro", because .got.plt is read-only too.
+if compile_prog "" "-Wl,-z,relro -Wl,-z,now" ; then
+  QEMU_LDFLAGS="-Wl,-z,relro -Wl,-z,now $QEMU_LDFLAGS"
 fi
 
 ##########################################
@@ -1152,58 +1173,6 @@ if compile_prog "" "" ; then
     int128=yes
 fi
 
-########################################
-# See if 16-byte vector operations are supported.
-# Even without a vector unit the compiler may expand these.
-# There is a bug in old GCC for PPC that crashes here.
-# Unfortunately it's the system compiler for Centos 7.
-
-cat > $TMPC << EOF
-typedef unsigned char U1 __attribute__((vector_size(16)));
-typedef unsigned short U2 __attribute__((vector_size(16)));
-typedef unsigned int U4 __attribute__((vector_size(16)));
-typedef unsigned long long U8 __attribute__((vector_size(16)));
-typedef signed char S1 __attribute__((vector_size(16)));
-typedef signed short S2 __attribute__((vector_size(16)));
-typedef signed int S4 __attribute__((vector_size(16)));
-typedef signed long long S8 __attribute__((vector_size(16)));
-static U1 a1, b1;
-static U2 a2, b2;
-static U4 a4, b4;
-static U8 a8, b8;
-static S1 c1;
-static S2 c2;
-static S4 c4;
-static S8 c8;
-static int i;
-void helper(void *d, void *a, int shift, int i);
-void helper(void *d, void *a, int shift, int i)
-{
-  *(U1 *)(d + i) = *(U1 *)(a + i) << shift;
-  *(U2 *)(d + i) = *(U2 *)(a + i) << shift;
-  *(U4 *)(d + i) = *(U4 *)(a + i) << shift;
-  *(U8 *)(d + i) = *(U8 *)(a + i) << shift;
-}
-int main(void)
-{
-  a1 += b1; a2 += b2; a4 += b4; a8 += b8;
-  a1 -= b1; a2 -= b2; a4 -= b4; a8 -= b8;
-  a1 *= b1; a2 *= b2; a4 *= b4; a8 *= b8;
-  a1 &= b1; a2 &= b2; a4 &= b4; a8 &= b8;
-  a1 |= b1; a2 |= b2; a4 |= b4; a8 |= b8;
-  a1 ^= b1; a2 ^= b2; a4 ^= b4; a8 ^= b8;
-  a1 <<= i; a2 <<= i; a4 <<= i; a8 <<= i;
-  a1 >>= i; a2 >>= i; a4 >>= i; a8 >>= i;
-  c1 >>= i; c2 >>= i; c4 >>= i; c8 >>= i;
-  return 0;
-}
-EOF
-
-vector16=no
-if compile_prog "" "" ; then
-  vector16=yes
-fi
-
 ##########################################
 # check for usable membarrier system call
 if test "$membarrier" = "yes"; then
@@ -1412,9 +1381,6 @@ echo "target list       $target_list"
 echo "strip binaries    $strip_opt"
 echo "static build      $static"
 echo "mingw32 support   $mingw32"
-if test -n "$sparc_cpu"; then
-    echo "Target Sparc Arch $sparc_cpu"
-fi
 echo "PIE               $pie"
 echo "membarrier        $membarrier"
 echo "TCG support       $tcg"
@@ -1545,10 +1511,6 @@ if test "$atomic64" = "yes" ; then
   echo "CONFIG_ATOMIC64=y" >> $config_host_mak
 fi
 
-if test "$vector16" = "yes" ; then
-  echo "CONFIG_VECTOR16=y" >> $config_host_mak
-fi
-
 if test "$have_static_assert" = "yes" ; then
   echo "CONFIG_STATIC_ASSERT=y" >> $config_host_mak
 fi
@@ -1588,11 +1550,6 @@ echo "CFLAGS=$CFLAGS" >> $config_host_mak
 echo "CFLAGS_NOPIE=$CFLAGS_NOPIE" >> $config_host_mak
 echo "QEMU_CFLAGS=$QEMU_CFLAGS" >> $config_host_mak
 echo "QEMU_INCLUDES=$QEMU_INCLUDES" >> $config_host_mak
-if test "$cross_prefix" != ""; then
-  echo "AUTOCONF_HOST := --host=${cross_prefix%-}"     >> $config_host_mak
-else
-  echo "AUTOCONF_HOST := "                             >> $config_host_mak
-fi
 echo "LDFLAGS=$LDFLAGS" >> $config_host_mak
 echo "LDFLAGS_NOPIE=$LDFLAGS_NOPIE" >> $config_host_mak
 echo "LIBS+=$LIBS" >> $config_host_mak
@@ -1604,11 +1561,16 @@ for target in $target_list; do
 target_dir="$target"
 config_target_mak=$target_dir/config-target.mak
 target_name=$(echo $target | cut -d '-' -f 1)
+target_aligned_only="no"
+case "$target_name" in
+  alpha|hppa|mips64el|mips64|mipsel|mips|mipsn32|mipsn32el|sh4|sh4eb|sparc|sparc64|sparc32plus|xtensa|xtensaeb)
+  target_aligned_only="yes"
+  ;;
+esac
 target_bigendian="no"
-
 case "$target_name" in
   aarch64eb|armeb|lm32|m68k|microblaze|mips|mipsn32|mips64|moxie|or32|ppc|ppcemb|ppc64|ppc64abi32|s390x|sh4eb|sparc|sparc64|sparc32plus|xtensaeb)
-  target_bigendian=yes
+  target_bigendian="yes"
   ;;
 esac
 target_softmmu="yes"
@@ -1749,6 +1711,9 @@ target_arch_name="$(upper $TARGET_ARCH)"
 echo "TARGET_$target_arch_name=y" >> $config_target_mak
 echo "TARGET_NAME=$target_name" >> $config_target_mak
 echo "TARGET_BASE_ARCH=$TARGET_BASE_ARCH" >> $config_target_mak
+if test "$target_aligned_only" = "yes" ; then
+  echo "TARGET_ALIGNED_ONLY=y" >> $config_target_mak
+fi
 if test "$target_bigendian" = "yes" ; then
   echo "TARGET_WORDS_BIGENDIAN=y" >> $config_target_mak
 fi

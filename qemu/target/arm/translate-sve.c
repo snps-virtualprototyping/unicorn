@@ -51,35 +51,35 @@ typedef void gen_helper_gvec_mem_scatter(TCGContext *, TCGv_env, TCGv_ptr, TCGv_
 /* See e.g. ASR (immediate, predicated).
  * Returns -1 for unallocated encoding; diagnose later.
  */
-static int tszimm_esz(int x)
+static int tszimm_esz(DisasContext *s, int x)
 {
     x >>= 3;  /* discard imm3 */
     return 31 - clz32(x);
 }
 
-static int tszimm_shr(int x)
+static int tszimm_shr(DisasContext *s, int x)
 {
-    return (16 << tszimm_esz(x)) - x;
+    return (16 << tszimm_esz(s, x)) - x;
 }
 
 /* See e.g. LSL (immediate, predicated).  */
-static int tszimm_shl(int x)
+static int tszimm_shl(DisasContext *s, int x)
 {
-    return x - (8 << tszimm_esz(x));
+    return x - (8 << tszimm_esz(s, x));
 }
 
-static inline int plus1(int x)
+static inline int plus1(DisasContext *s, int x)
 {
     return x + 1;
 }
 
 /* The SH bit is in bit 8.  Extract the low 8 and shift.  */
-static inline int expand_imm_sh8s(int x)
+static inline int expand_imm_sh8s(DisasContext *s, int x)
 {
     return (int8_t)x << (x & 0x100 ? 8 : 0);
 }
 
-static inline int expand_imm_sh8u(int x)
+static inline int expand_imm_sh8u(DisasContext *s, int x)
 {
     return (uint8_t)x << (x & 0x100 ? 8 : 0);
 }
@@ -87,7 +87,7 @@ static inline int expand_imm_sh8u(int x)
 /* Convert a 2-bit memory size (msz) to a 4-bit data type (dtype)
  * with unsigned data.  C.f. SVE Memory Contiguous Load Group.
  */
-static inline int msz_dtype(int msz)
+static inline int msz_dtype(DisasContext *s, int msz)
 {
     static const uint8_t dtype[4] = { 0, 5, 10, 15 };
     return dtype[msz];
@@ -177,7 +177,7 @@ static void do_dupi_z(DisasContext *s, int rd, uint64_t word)
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     unsigned vsz = vec_full_reg_size(s);
-    tcg_gen_gvec_dup64i(tcg_ctx, vec_full_reg_offset(s, rd), vsz, vsz, word);
+    tcg_gen_gvec_dup_imm(tcg_ctx, MO_64, vec_full_reg_offset(s, rd), vsz, vsz, word);
 }
 
 /* Invoke a vector expander on two Pregs.  */
@@ -1024,7 +1024,7 @@ static bool trans_RDVL(DisasContext *s, arg_RDVL *a)
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         TCGv_i64 reg = cpu_reg(s, a->rd);
-        tcg_gen_movi_i64(tcg_ctx, reg, a->imm * (int64_t)vec_full_reg_size(s));
+        tcg_gen_movi_i64(tcg_ctx, reg, a->imm * vec_full_reg_size(s));
     }
     return true;
 }
@@ -1550,7 +1550,7 @@ static bool do_predset(DisasContext *s, int esz, int rd, int pat, bool setflag)
         unsigned oprsz = size_for_gvec(setsz / 8);
 
         if (oprsz * 8 == setsz) {
-            tcg_gen_gvec_dup64i(tcg_ctx, ofs, oprsz, maxsz, word);
+            tcg_gen_gvec_dup_imm(tcg_ctx, MO_64, ofs, oprsz, maxsz, word);
             goto done;
         }
     }
@@ -1841,7 +1841,7 @@ static bool trans_CNT_r(DisasContext *s, arg_CNT_r *a)
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned fullsz = vec_full_reg_size(s);
         unsigned numelem = decode_pred_count(fullsz, a->pat, a->esz);
-        tcg_gen_movi_i64(tcg_ctx, cpu_reg(s, a->rd), (int64_t)numelem * a->imm);
+        tcg_gen_movi_i64(tcg_ctx, cpu_reg(s, a->rd), numelem * a->imm);
     }
     return true;
 }
@@ -2159,7 +2159,11 @@ static bool trans_DUP_x(DisasContext *s, arg_DUP_x *a)
             unsigned nofs = vec_reg_offset(s, a->rn, index, esz);
             tcg_gen_gvec_dup_mem(tcg_ctx, esz, dofs, nofs, vsz, vsz);
         } else {
-            tcg_gen_gvec_dup64i(tcg_ctx, dofs, vsz, vsz, 0);
+            /*
+             * While dup_mem handles 128-bit elements, dup_imm does not.
+             * Thankfully element size doesn't matter for splatting zero.
+             */
+            tcg_gen_gvec_dup_imm(tcg_ctx, MO_64, dofs, vsz, vsz, 0);
         }
     }
     return true;
@@ -3415,9 +3419,8 @@ static bool trans_FDUP(DisasContext *s, arg_FDUP *a)
 
         /* Decode the VFP immediate.  */
         imm = vfp_expand_imm(a->esz, a->imm);
-        imm = dup_const(a->esz, imm);
 
-        tcg_gen_gvec_dup64i(tcg_ctx, dofs, vsz, vsz, imm);
+        tcg_gen_gvec_dup_imm(tcg_ctx, a->esz, dofs, vsz, vsz, imm);
     }
     return true;
 }
@@ -3432,7 +3435,7 @@ static bool trans_DUP_i(DisasContext *s, arg_DUP_i *a)
         unsigned vsz = vec_full_reg_size(s);
         int dofs = vec_full_reg_offset(s, a->rd);
 
-        tcg_gen_gvec_dup64i(tcg_ctx, dofs, vsz, vsz, dup_const(a->esz, a->imm));
+        tcg_gen_gvec_dup_imm(tcg_ctx, a->esz, dofs, vsz, vsz, a->imm);
     }
     return true;
 }
@@ -3459,51 +3462,33 @@ static bool trans_SUB_zzi(DisasContext *s, arg_rri_esz *a)
 
 static bool trans_SUBR_zzi(DisasContext *s, arg_rri_esz *a)
 {
+    static const TCGOpcode vecop_list[] = { INDEX_op_sub_vec, 0 };
     static const GVecGen2s op[4] = {
-        {
-            tcg_gen_vec_sub8_i64,
-            NULL,
-            tcg_gen_sub_vec,
-            gen_helper_sve_subri_b,
-            INDEX_op_sub_vec,
-            0,
-            MO_8,
-            false,
-            true
-        },
-        {
-            tcg_gen_vec_sub16_i64,
-            NULL,
-            tcg_gen_sub_vec,
-            gen_helper_sve_subri_h,
-            INDEX_op_sub_vec,
-            0,
-            MO_16,
-            false,
-            true
-        },
-        {
-            NULL,
-            tcg_gen_sub_i32,
-            tcg_gen_sub_vec,
-            gen_helper_sve_subri_s,
-            INDEX_op_sub_vec,
-            0,
-            MO_32,
-            false,
-            true
-        },
-        {
-            tcg_gen_sub_i64,
-            NULL,
-            tcg_gen_sub_vec,
-            gen_helper_sve_subri_d,
-            INDEX_op_sub_vec,
-            0,
-            MO_64,
-            TCG_TARGET_REG_BITS == 64,
-            true
-        }
+        { .fni8 = tcg_gen_vec_sub8_i64,
+          .fniv = tcg_gen_sub_vec,
+          .fno = gen_helper_sve_subri_b,
+          .opt_opc = vecop_list,
+          .vece = MO_8,
+          .scalar_first = true },
+        { .fni8 = tcg_gen_vec_sub16_i64,
+          .fniv = tcg_gen_sub_vec,
+          .fno = gen_helper_sve_subri_h,
+          .opt_opc = vecop_list,
+          .vece = MO_16,
+          .scalar_first = true },
+        { .fni4 = tcg_gen_sub_i32,
+          .fniv = tcg_gen_sub_vec,
+          .fno = gen_helper_sve_subri_s,
+          .opt_opc = vecop_list,
+          .vece = MO_32,
+          .scalar_first = true },
+        { .fni8 = tcg_gen_sub_i64,
+          .fniv = tcg_gen_sub_vec,
+          .fno = gen_helper_sve_subri_d,
+          .opt_opc = vecop_list,
+          .prefer_i64 = TCG_TARGET_REG_BITS == 64,
+          .vece = MO_64,
+          .scalar_first = true }
     };
 
     if (a->esz == 0 && extract32(s->insn, 13, 1)) {
@@ -3613,7 +3598,7 @@ static bool trans_FMLA_zzxz(DisasContext *s, arg_FMLA_zzxz *a)
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
         tcg_gen_gvec_4_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
                            vec_full_reg_offset(s, a->rn),
                            vec_full_reg_offset(s, a->rm),
@@ -3640,7 +3625,7 @@ static bool trans_FMUL_zzx(DisasContext *s, arg_FMUL_zzx *a)
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
         tcg_gen_gvec_3_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
                            vec_full_reg_offset(s, a->rn),
                            vec_full_reg_offset(s, a->rm),
@@ -3673,7 +3658,7 @@ static void do_reduce(DisasContext *s, arg_rpr_esz *a,
 
     tcg_gen_addi_ptr(tcg_ctx, t_zn, tcg_ctx->cpu_env, vec_full_reg_offset(s, a->rn));
     tcg_gen_addi_ptr(tcg_ctx, t_pg, tcg_ctx->cpu_env, pred_full_reg_offset(s, a->pg));
-    status = get_fpstatus_ptr(s, a->esz == MO_16);
+    status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
 
     fn(tcg_ctx, temp, t_zn, t_pg, status, t_desc);
     tcg_temp_free_ptr(tcg_ctx, t_zn);
@@ -3716,7 +3701,7 @@ static void do_zz_fp(DisasContext *s, arg_rr_esz *a, gen_helper_gvec_2_ptr *fn)
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     unsigned vsz = vec_full_reg_size(s);
-    TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+    TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
 
     tcg_gen_gvec_2_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
                        vec_full_reg_offset(s, a->rn),
@@ -3765,7 +3750,7 @@ static void do_ppz_fp(DisasContext *s, arg_rpr_esz *a,
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     unsigned vsz = vec_full_reg_size(s);
-    TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+    TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
 
     tcg_gen_gvec_3_ptr(tcg_ctx, pred_full_reg_offset(s, a->rd),
                        vec_full_reg_offset(s, a->rn),
@@ -3818,7 +3803,7 @@ static bool trans_FTMAD(DisasContext *s, arg_FTMAD *a)
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
         tcg_gen_gvec_3_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
                            vec_full_reg_offset(s, a->rn),
                            vec_full_reg_offset(s, a->rm),
@@ -3859,7 +3844,7 @@ static bool trans_FADDA(DisasContext *s, arg_rprr_esz *a)
     t_pg = tcg_temp_new_ptr(tcg_ctx);
     tcg_gen_addi_ptr(tcg_ctx, t_rm, tcg_ctx->cpu_env, vec_full_reg_offset(s, a->rm));
     tcg_gen_addi_ptr(tcg_ctx, t_pg, tcg_ctx->cpu_env, pred_full_reg_offset(s, a->pg));
-    t_fpst = get_fpstatus_ptr(s, a->esz == MO_16);
+    t_fpst = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
     t_desc = tcg_const_i32(tcg_ctx, simd_desc(vsz, vsz, 0));
 
     fns[a->esz - 1](tcg_ctx, t_val, t_val, t_rm, t_pg, t_fpst, t_desc);
@@ -3887,7 +3872,7 @@ static bool do_zzz_fp(DisasContext *s, arg_rrr_esz *a,
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
         tcg_gen_gvec_3_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
                            vec_full_reg_offset(s, a->rn),
                            vec_full_reg_offset(s, a->rm),
@@ -3930,7 +3915,7 @@ static bool do_zpzz_fp(DisasContext *s, arg_rprr_esz *a,
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
         tcg_gen_gvec_4_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
                            vec_full_reg_offset(s, a->rn),
                            vec_full_reg_offset(s, a->rm),
@@ -3983,7 +3968,7 @@ static void do_fp_scalar(DisasContext *s, int zd, int zn, int pg, bool is_fp16,
     tcg_gen_addi_ptr(tcg_ctx, t_zn, tcg_ctx->cpu_env, vec_full_reg_offset(s, zn));
     tcg_gen_addi_ptr(tcg_ctx, t_pg, tcg_ctx->cpu_env, pred_full_reg_offset(s, pg));
 
-    status = get_fpstatus_ptr(s, is_fp16);
+    status = get_fpstatus_ptr(tcg_ctx, is_fp16);
     desc = tcg_const_i32(tcg_ctx, simd_desc(vsz, vsz, 0));
     fn(tcg_ctx, t_zd, t_zn, t_pg, scalar, status, desc);
 
@@ -4049,7 +4034,7 @@ static bool do_fp_cmp(DisasContext *s, arg_rprr_esz *a,
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
         tcg_gen_gvec_4_ptr(tcg_ctx, pred_full_reg_offset(s, a->rd),
                            vec_full_reg_offset(s, a->rn),
                            vec_full_reg_offset(s, a->rm),
@@ -4094,7 +4079,7 @@ static bool trans_FCADD(DisasContext *s, arg_FCADD *a)
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
         tcg_gen_gvec_4_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
                            vec_full_reg_offset(s, a->rn),
                            vec_full_reg_offset(s, a->rm),
@@ -4105,43 +4090,33 @@ static bool trans_FCADD(DisasContext *s, arg_FCADD *a)
     return true;
 }
 
-typedef void gen_helper_sve_fmla(TCGContext *, TCGv_env, TCGv_ptr, TCGv_i32);
-
-static bool do_fmla(DisasContext *s, arg_rprrr_esz *a, gen_helper_sve_fmla *fn)
+static bool do_fmla(DisasContext *s, arg_rprrr_esz *a,
+                    gen_helper_gvec_5_ptr *fn)
 {
-    if (fn == NULL) {
+    if (a->esz == 0) {
         return false;
     }
-    if (!sve_access_check(s)) {
-        return true;
+
+    if (sve_access_check(s)) {
+        TCGContext *tcg_ctx = s->uc->tcg_ctx;
+        unsigned vsz = vec_full_reg_size(s);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
+        tcg_gen_gvec_5_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
+                           vec_full_reg_offset(s, a->rn),
+                           vec_full_reg_offset(s, a->rm),
+                           vec_full_reg_offset(s, a->ra),
+                           pred_full_reg_offset(s, a->pg),
+                           status, vsz, vsz, 0, fn);
+        tcg_temp_free_ptr(tcg_ctx, status);
     }
 
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    unsigned vsz = vec_full_reg_size(s);
-    unsigned desc;
-    TCGv_i32 t_desc;
-    TCGv_ptr pg = tcg_temp_new_ptr(tcg_ctx);
-
-    /* We would need 7 operands to pass these arguments "properly".
-     * So we encode all the register numbers into the descriptor.
-     */
-    desc = deposit32(a->rd, 5, 5, a->rn);
-    desc = deposit32(desc, 10, 5, a->rm);
-    desc = deposit32(desc, 15, 5, a->ra);
-    desc = simd_desc(vsz, vsz, desc);
-
-    t_desc = tcg_const_i32(tcg_ctx, desc);
-    tcg_gen_addi_ptr(tcg_ctx, pg, tcg_ctx->cpu_env, pred_full_reg_offset(s, a->pg));
-    fn(tcg_ctx, tcg_ctx->cpu_env, pg, t_desc);
-    tcg_temp_free_i32(tcg_ctx, t_desc);
-    tcg_temp_free_ptr(tcg_ctx, pg);
     return true;
 }
 
 #define DO_FMLA(NAME, name) \
 static bool trans_##NAME(DisasContext *s, arg_rprrr_esz *a)          \
 {                                                                    \
-    static gen_helper_sve_fmla * const fns[4] = {                    \
+    static gen_helper_gvec_5_ptr * const fns[4] = {                  \
         NULL, gen_helper_sve_##name##_h,                             \
         gen_helper_sve_##name##_s, gen_helper_sve_##name##_d         \
     };                                                               \
@@ -4157,7 +4132,8 @@ DO_FMLA(FNMLS_zpzzz, fnmls_zpzzz)
 
 static bool trans_FCMLA_zpzzz(DisasContext *s, arg_FCMLA_zpzzz *a)
 {
-    static gen_helper_sve_fmla * const fns[3] = {
+    static gen_helper_gvec_5_ptr * const fns[4] = {
+        NULL,
         gen_helper_sve_fcmla_zpzzz_h,
         gen_helper_sve_fcmla_zpzzz_s,
         gen_helper_sve_fcmla_zpzzz_d,
@@ -4169,25 +4145,14 @@ static bool trans_FCMLA_zpzzz(DisasContext *s, arg_FCMLA_zpzzz *a)
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        unsigned desc;
-        TCGv_i32 t_desc;
-        TCGv_ptr pg = tcg_temp_new_ptr(tcg_ctx);
-
-        /* We would need 7 operands to pass these arguments "properly".
-         * So we encode all the register numbers into the descriptor.
-         */
-        desc = deposit32(a->rd, 5, 5, a->rn);
-        desc = deposit32(desc, 10, 5, a->rm);
-        desc = deposit32(desc, 15, 5, a->ra);
-        desc = deposit32(desc, 20, 2, a->rot);
-        desc = sextract32(desc, 0, 22);
-        desc = simd_desc(vsz, vsz, desc);
-
-        t_desc = tcg_const_i32(tcg_ctx, desc);
-        tcg_gen_addi_ptr(tcg_ctx, pg, tcg_ctx->cpu_env, pred_full_reg_offset(s, a->pg));
-        fns[a->esz - 1](tcg_ctx, tcg_ctx->cpu_env, pg, t_desc);
-        tcg_temp_free_i32(tcg_ctx, t_desc);
-        tcg_temp_free_ptr(tcg_ctx, pg);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
+        tcg_gen_gvec_5_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
+                           vec_full_reg_offset(s, a->rn),
+                           vec_full_reg_offset(s, a->rm),
+                           vec_full_reg_offset(s, a->ra),
+                           pred_full_reg_offset(s, a->pg),
+                           status, vsz, vsz, a->rot, fns[a->esz]);
+        tcg_temp_free_ptr(tcg_ctx, status);
     }
     return true;
 }
@@ -4204,7 +4169,7 @@ static bool trans_FCMLA_zzxz(DisasContext *s, arg_FCMLA_zzxz *a)
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
         tcg_gen_gvec_3_ptr(tcg_ctx, vec_full_reg_offset(s, a->rd),
                            vec_full_reg_offset(s, a->rn),
                            vec_full_reg_offset(s, a->rm),
@@ -4226,7 +4191,7 @@ static bool do_zpz_ptr(DisasContext *s, int rd, int rn, int pg,
     if (sve_access_check(s)) {
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
-        TCGv_ptr status = get_fpstatus_ptr(s, is_fp16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, is_fp16);
         tcg_gen_gvec_3_ptr(tcg_ctx, vec_full_reg_offset(s, rd),
                            vec_full_reg_offset(s, rn),
                            pred_full_reg_offset(s, pg),
@@ -4373,7 +4338,7 @@ static bool do_frint_mode(DisasContext *s, arg_rpr_esz *a, int mode)
         TCGContext *tcg_ctx = s->uc->tcg_ctx;
         unsigned vsz = vec_full_reg_size(s);
         TCGv_i32 tmode = tcg_const_i32(tcg_ctx, mode);
-        TCGv_ptr status = get_fpstatus_ptr(s, a->esz == MO_16);
+        TCGv_ptr status = get_fpstatus_ptr(tcg_ctx, a->esz == MO_16);
 
         gen_helper_set_rmode(tcg_ctx, tmode, tmode, status);
 
@@ -4731,7 +4696,7 @@ static bool trans_STR_pri(DisasContext *s, arg_rri *a)
  */
 
 /* The memory mode of the dtype.  */
-static const TCGMemOp dtype_mop[16] = {
+static const MemOp dtype_mop[16] = {
     MO_UB, MO_UB, MO_UB, MO_UB,
     MO_SL, MO_UW, MO_UW, MO_UW,
     MO_SW, MO_SW, MO_UL, MO_UL,
@@ -5005,7 +4970,7 @@ static void do_ldrq(DisasContext *s, int zt, int pg, TCGv_i64 addr, int msz)
     int desc, poff;
 
     /* Load the first quadword using the normal predicated load helpers.  */
-    desc = sve_memopidx(s, msz_dtype(msz));
+    desc = sve_memopidx(s, msz_dtype(s, msz));
     desc |= zt << MEMOPIDX_SHIFT;
     desc = simd_desc(16, 16, desc);
     t_desc = tcg_const_i32(tcg_ctx, desc);
@@ -5190,7 +5155,7 @@ static void do_st_zpa(DisasContext *s, int zt, int pg, TCGv_i64 addr,
         fn = fn_multiple[be][nreg - 1][msz];
     }
     assert(fn != NULL);
-    do_mem_zpa(s, zt, pg, addr, msz_dtype(msz), fn);
+    do_mem_zpa(s, zt, pg, addr, msz_dtype(s, msz), fn);
 }
 
 static bool trans_ST_zprr(DisasContext *s, arg_rprr_store *a)
@@ -5242,7 +5207,7 @@ static void do_mem_zpz(DisasContext *s, int zt, int pg, int zm,
     TCGv_i32 t_desc;
     int desc;
 
-    desc = sve_memopidx(s, msz_dtype(msz));
+    desc = sve_memopidx(s, msz_dtype(s, msz));
     desc |= scale << MEMOPIDX_SHIFT;
     desc = simd_desc(vsz, vsz, desc);
     t_desc = tcg_const_i32(tcg_ctx, desc);

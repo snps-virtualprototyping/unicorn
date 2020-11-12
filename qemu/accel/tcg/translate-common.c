@@ -26,6 +26,7 @@
 static void tcg_handle_interrupt(CPUState *cpu, int mask)
 {
     cpu->interrupt_request |= mask;
+
     cpu->tcg_exit_req = 1;
 }
 

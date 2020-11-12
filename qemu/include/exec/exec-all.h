@@ -23,6 +23,8 @@
 #include "qemu-common.h"
 #include "exec/tb-context.h"
 
+#include "uc_priv.h"
+
 /* allow to see translation results - the slowdown should be negligible, so we leave it */
 #define DEBUG_DISAS
 
@@ -39,7 +41,7 @@ typedef ram_addr_t tb_page_addr_t;
 
 #include "qemu/log.h"
 
-void gen_intermediate_code(CPUState *cpu, struct TranslationBlock *tb);
+void gen_intermediate_code(CPUState *cpu, TranslationBlock *tb, int max_insns);
 void restore_state_to_opc(CPUArchState *env, struct TranslationBlock *tb,
                           target_ulong *data);
 
@@ -122,7 +124,7 @@ void tlb_init(CPUState *cpu);
  * Flush one page from the TLB of the specified CPU, for all
  * MMU indexes.
  */
-bool tlb_flush_page(CPUState *cpu, uint64_t addr);
+void tlb_flush_page(CPUState *cpu, target_ulong addr);
 /**
  * tlb_flush:
  * @cpu: CPU whose TLB should be flushed
@@ -135,9 +137,7 @@ bool tlb_flush_page(CPUState *cpu, uint64_t addr);
 void tlb_flush(CPUState *cpu);
 
 
-/**
- * JHW: multicore variants of tlb_flush functions
- */
+// SNPS added
 void tlb_flush_all_cpus_synced(CPUState *cpu);
 void tlb_flush_page_all_cpus_synced(CPUState *cpu, target_ulong addr);
 void tlb_flush_by_mmuidx_all_cpus_synced(CPUState *cpu, uint16_t idxmap);
@@ -151,7 +151,7 @@ void tlb_flush_page_by_mmuidx_all_cpus_synced(CPUState *cpu, target_ulong addr, 
  * Flush one page from the TLB of the specified CPU, for the specified
  * MMU indexes.
  */
-void tlb_flush_page_by_mmuidx(CPUState *cpu, uint64_t addr,
+void tlb_flush_page_by_mmuidx(CPUState *cpu, target_ulong addr,
                               uint16_t idxmap);
 /**
  * tlb_flush_by_mmuidx:
@@ -198,9 +198,6 @@ void tlb_set_page(CPUState *cpu, target_ulong vaddr,
                   int mmu_idx, target_ulong size);
 
 void tb_invalidate_phys_addr(AddressSpace *as, hwaddr addr);
-void probe_write(CPUArchState *env, target_ulong addr, int size, int mmu_idx,
-                 uintptr_t retaddr);
-
 #else
 static inline void tlb_flush_page(CPUState *cpu, target_ulong addr)
 {
@@ -222,6 +219,37 @@ static inline void tb_invalidate_phys_addr(AddressSpace *as, hwaddr addr)
 {
 }
 #endif
+/**
+ * probe_access:
+ * @env: CPUArchState
+ * @addr: guest virtual address to look up
+ * @size: size of the access
+ * @access_type: read, write or execute permission
+ * @mmu_idx: MMU index to use for lookup
+ * @retaddr: return address for unwinding
+ *
+ * Look up the guest virtual address @addr.  Raise an exception if the
+ * page does not satisfy @access_type.  Raise an exception if the
+ * access (@addr, @size) hits a watchpoint.  For writes, mark a clean
+ * page as dirty.
+ *
+ * Finally, return the host address for a page that is backed by RAM,
+ * or NULL if the page requires I/O.
+ */
+void *probe_access(CPUArchState *env, target_ulong addr, int size,
+                   MMUAccessType access_type, int mmu_idx, uintptr_t retaddr);
+
+static inline void *probe_write(CPUArchState *env, target_ulong addr, int size,
+                                int mmu_idx, uintptr_t retaddr)
+{
+    return probe_access(env, addr, size, MMU_DATA_STORE, mmu_idx, retaddr);
+}
+
+static inline void *probe_read(CPUArchState *env, target_ulong addr, int size,
+                               int mmu_idx, uintptr_t retaddr)
+{
+    return probe_access(env, addr, size, MMU_DATA_LOAD, mmu_idx, retaddr);
+}
 
 #define CODE_GEN_ALIGN           16 /* must be >= of the size of a icache line */
 
@@ -251,12 +279,15 @@ struct TranslationBlock {
                            size <= TARGET_PAGE_SIZE) */
     uint16_t icount;
     uint32_t cflags;    /* compile flags */
-#define CF_COUNT_MASK  0x7fff
-#define CF_LAST_IO     0x8000 /* Last insn may be an IO access.  */
-#define CF_NOCACHE     0x10000 /* To be freed after execution */
-#define CF_USE_ICOUNT  0x20000
-#define CF_IGNORE_ICOUNT 0x40000 /* Do not generate icount code */
-#define CF_INVALID     0x80000 /* TB is stale. Setters must acquire tb_lock */
+#define CF_COUNT_MASK  0x00007fff
+#define CF_LAST_IO     0x00008000 /* Last insn may be an IO access.  */
+#define CF_NOCACHE     0x00010000 /* To be freed after execution */
+#define CF_USE_ICOUNT  0x00020000
+#define CF_INVALID     0x00040000 /* TB is stale. Setters need tb_lock */
+#define CF_PARALLEL    0x00080000 /* Generate code for a parallel context */
+/* cflags' mask for hashing/comparison */
+#define CF_HASH_MASK   \
+    (CF_COUNT_MASK | CF_LAST_IO | CF_USE_ICOUNT | CF_PARALLEL)
 
     struct tb_tc tc;
     /* next matching tb for physical address. */
@@ -295,12 +326,25 @@ struct TranslationBlock {
     uintptr_t jmp_list_first;
 };
 
+/* Hide the atomic_read to make code a little easier on the eyes */
+static inline uint32_t tb_cflags(const TranslationBlock *tb)
+{
+    return atomic_read(&tb->cflags);
+}
+
+/* current cflags for hashing/comparison */
+static inline uint32_t curr_cflags(struct uc_struct *uc)
+{
+    return uc->parallel_cpus ? CF_PARALLEL : 0;
+}
+
 void tb_free(struct uc_struct *uc, TranslationBlock *tb);
 void tb_flush(CPUState *cpu);
 void tb_phys_invalidate(struct uc_struct *uc,
     TranslationBlock *tb, tb_page_addr_t page_addr);
 TranslationBlock *tb_htable_lookup(CPUState *cpu, target_ulong pc,
-                                   target_ulong cs_base, uint32_t flags);
+                                   target_ulong cs_base, uint32_t flags,
+                                   uint32_t cf_mask);
 
 void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr);
 
@@ -344,14 +388,6 @@ void phys_mem_set_alloc(void *(*alloc)(size_t, uint64_t *align));
  */
 struct MemoryRegionSection *iotlb_to_section(CPUState *cpu,
                                              hwaddr index, MemTxAttrs attrs);
-
-/*
- * Note: tlb_fill() can trigger a resize of the TLB. This means that all of the
- * caller's prior references to the TLB table (e.g. CPUTLBEntry pointers) must
- * be discarded and looked up again (e.g. via tlb_entry()).
- */
-void tlb_fill(CPUState *cpu, target_ulong addr, int size,
-              MMUAccessType access_type, int mmu_idx, uintptr_t retaddr);
 #endif
 
 #if defined(CONFIG_USER_ONLY)
@@ -407,6 +443,7 @@ static inline bool cpu_can_do_io(CPUState *cpu)
 // Unicorn: Prototype place here
 void page_size_init(struct uc_struct *uc);
 
+// SNPS added
 void dmi_invalidate(CPUState *cpu, uint64_t start, uint64_t end);
 
 #endif

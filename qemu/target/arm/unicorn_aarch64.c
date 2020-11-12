@@ -16,7 +16,7 @@ static void arm64_set_pc(struct uc_struct *uc, uint64_t address)
 {
     CPUArchState *state = uc->cpu->env_ptr;
 
-    if (uc->is_memcb) {
+    if (uc->is_memcb) { // SNPS added
         fprintf(stderr, "cannot set PC during memory callback\n");
         abort();
     }
@@ -49,6 +49,7 @@ void arm64_reg_reset(struct uc_struct *uc)
     env->pc = 0;
 }
 
+// SNPS added
 #ifdef UNICORN_HAS_ARM
 // defined in unicorn_arm.c
 int arm_reg_read_arm(struct uc_struct *uc, unsigned int *regs, void **vals, int count);
@@ -77,7 +78,7 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
         unsigned int regid = regs[i];
         void *value = vals[i];
 
-#ifdef UNICORN_HAS_ARM
+#ifdef UNICORN_HAS_ARM // SNPS added
         if (regid < UC_ARM64_REG_INVALID) {
             int res = arm_reg_read_arm(uc, &regid, &value, 1);
             if (res != 0)
@@ -496,7 +497,7 @@ int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals,
     return 0;
 }
 
-// JHW
+// SNPS added
 void arm64_timer_recalc(CPUState *cpu, int timeridx);
 
 void arm64_timer_recalc(CPUState *cpu, int timeridx)
@@ -542,6 +543,6 @@ void arm64_uc_init(struct uc_struct* uc)
     uc->release = arm64_release;
     uc_common_init(uc);
 
-    // JHW
+    // SNPS added
     uc->timer_recalc = arm64_timer_recalc;
 }

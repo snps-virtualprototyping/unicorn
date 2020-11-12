@@ -138,7 +138,7 @@ typedef struct subpage_t {
 #define PHYS_SECTION_UNASSIGNED 0
 #define PHYS_SECTION_NOTDIRTY 1
 #define PHYS_SECTION_ROM 2
-#define PHYS_SECTION_WATCH 3
+#define PHYS_SECTION_WATCH 3 // SNPS added
 
 static void memory_map_init(struct uc_struct *uc);
 static void tcg_commit(MemoryListener *listener);
@@ -150,8 +150,7 @@ static void tcg_commit(MemoryListener *listener);
 static void phys_map_node_reserve(struct uc_struct *uc, PhysPageMap *map, unsigned nodes)
 {
     if (map->nodes_nb + nodes > map->nodes_nb_alloc) {
-        map->nodes_nb_alloc = MAX(map->nodes_nb_alloc, uc->phys_map_node_alloc_hint);
-        map->nodes_nb_alloc = MAX(map->nodes_nb_alloc, map->nodes_nb + nodes);
+        map->nodes_nb_alloc = MAX(uc->phys_map_node_alloc_hint, map->nodes_nb + nodes);
         map->nodes = g_renew(Node, map->nodes, map->nodes_nb_alloc);
         uc->phys_map_node_alloc_hint = map->nodes_nb_alloc;
     }
@@ -178,7 +177,7 @@ static uint32_t phys_map_node_alloc(PhysPageMap *map, bool leaf)
 }
 
 static void phys_page_set_level(PhysPageMap *map, PhysPageEntry *lp,
-        hwaddr *index, hwaddr *nb, uint16_t leaf,
+        hwaddr *index, uint64_t *nb, uint16_t leaf,
         int level)
 {
     PhysPageEntry *p;
@@ -204,7 +203,7 @@ static void phys_page_set_level(PhysPageMap *map, PhysPageEntry *lp,
 }
 
 static void phys_page_set(AddressSpaceDispatch *d,
-                          hwaddr index, hwaddr nb,
+                          hwaddr index, uint64_t nb,
                           uint16_t leaf)
 {
     /* Wildly overreserve - it doesn't matter much. */
@@ -248,7 +247,8 @@ static void phys_page_compact(PhysPageEntry *lp, Node *nodes, unsigned long *com
     assert(valid_ptr < P_L2_SIZE);
 
     /* Don't compress if it won't fit in the # of bits we have. */
-    if (lp->skip + p[valid_ptr].skip >= (1 << 3)) {
+    if (P_L2_LEVELS >= (1 << 6) &&
+        lp->skip + p[valid_ptr].skip >= (1 << 6)) {
         return;
     }
 
@@ -313,10 +313,9 @@ static MemoryRegionSection *phys_page_find(AddressSpaceDispatch *d, hwaddr addr)
 
 bool memory_region_is_unassigned(struct uc_struct* uc, MemoryRegion *mr)
 {
-	return false; // JHW: cannot tell from within QEMU if memory is unassigned
-
-//    return mr != &uc->io_mem_rom && mr != &uc->io_mem_notdirty &&
-//        !mr->rom_device && mr != &uc->io_mem_watch;
+    return false; // SNPS added
+    return mr != &uc->io_mem_rom && mr != &uc->io_mem_notdirty &&
+        !mr->rom_device && mr != &uc->io_mem_watch;
 }
 
 static MemoryRegionSection *address_space_lookup_region(AddressSpaceDispatch *d,
@@ -705,11 +704,7 @@ static void breakpoint_invalidate(CPUState *cpu, target_ulong pc)
 #else
 static void breakpoint_invalidate(CPUState *cpu, target_ulong pc)
 {
-    /* Removing breakpoints is not performance critical, and by flushing the
-     * entire TB we can avoid going too deep into QEMU memory APIs.
-     */
-    tb_flush(cpu);
-#ifdef JHW
+    tb_flush(cpu); return; // SNPS added
     MemTxAttrs attrs;
     hwaddr phys = cpu_get_phys_page_attrs_debug(cpu, pc, &attrs);
     int asidx = cpu_asidx_from_attrs(cpu, attrs);
@@ -718,7 +713,6 @@ static void breakpoint_invalidate(CPUState *cpu, target_ulong pc)
         tb_invalidate_phys_addr(cpu->cpu_ases[asidx].as,
                                 phys | (pc & ~TARGET_PAGE_MASK));
     }
-#endif
 }
 #endif
 
@@ -743,13 +737,23 @@ int cpu_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len,
 {
     return -ENOSYS;
 }
+
+void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
+                          MemTxAttrs atr, int fl, uintptr_t ra)
+{
+}
+
+int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len)
+{
+    return 0;
+}
 #else
 /* Add a watchpoint.  */
 int cpu_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len,
         int flags, CPUWatchpoint **watchpoint)
 {
     CPUWatchpoint *wp;
-    int needs_tb_flush = QTAILQ_EMPTY(&cpu->watchpoints);
+    int needs_tb_flush = QTAILQ_EMPTY(&cpu->watchpoints); // SNPS added
 
     /* forbid ranges which are empty or run off the end of the address space */
     if (len == 0 || (addr + len - 1) < addr) {
@@ -770,6 +774,7 @@ int cpu_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len,
 
     tlb_flush_page(cpu, addr);
 
+    // SNPS added
     if (needs_tb_flush)
         tb_flush(cpu);
 
@@ -788,11 +793,6 @@ int cpu_watchpoint_remove(CPUState *cpu, vaddr addr, vaddr len,
         if (addr == wp->vaddr && len == wp->len
                 && flags == (wp->flags & ~BP_WATCHPOINT_HIT)) {
             cpu_watchpoint_remove_by_ref(cpu, wp);
-            /* JHW: if there are no more watchpoints around, we could replace
-             * the existing TBs with code that does not sync the PC before
-             * every load/store. But I am not sure if its worth throwing it all
-             * away at this point.
-             */
             return 0;
         }
     }
@@ -826,9 +826,8 @@ void cpu_watchpoint_remove_all(CPUState *cpu, int mask)
  * partially or completely with the address range covered by the
  * access).
  */
-static inline bool cpu_watchpoint_address_matches(CPUWatchpoint *wp,
-        vaddr addr,
-        vaddr len)
+static inline bool watchpoint_address_matches(CPUWatchpoint *wp,
+                                              vaddr addr, vaddr len)
 {
     /* We know the lengths are non-zero, but a little caution is
      * required to avoid errors in the case where the range ends
@@ -841,7 +840,81 @@ static inline bool cpu_watchpoint_address_matches(CPUWatchpoint *wp,
     return !(addr > wpend || wp->vaddr > addrend);
 }
 
+/* Return flags for watchpoints that match addr + prot.  */
+int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len)
+{
+    CPUWatchpoint *wp;
+    int ret = 0;
+
+    QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
+        if (watchpoint_address_matches(wp, addr, TARGET_PAGE_SIZE)) {
+            ret |= wp->flags;
+        }
+    }
+    return ret;
+}
 #endif
+
+/* Generate a debug exception if a watchpoint has been hit.  */
+void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
+                          MemTxAttrs attrs, int flags, uintptr_t ra)
+{
+    CPUClass *cc = CPU_GET_CLASS(cpu->uc, cpu);
+    CPUWatchpoint *wp;
+
+    assert(tcg_enabled(cpu->uc));
+    if (cpu->watchpoint_hit) {
+        /*
+         * We re-entered the check after replacing the TB.
+         * Now raise the debug interrupt so that it will
+         * trigger after the current instruction.
+         */
+        //qemu_mutex_lock_iothread();
+        cpu_interrupt(cpu, CPU_INTERRUPT_DEBUG);
+        //qemu_mutex_unlock_iothread();
+        return;
+    }
+
+    addr = cc->adjust_watchpoint_address(cpu, addr, len);
+    QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
+        if (watchpoint_address_matches(wp, addr, len)
+            && (wp->flags & flags)) {
+            if (flags == BP_MEM_READ) {
+                wp->flags |= BP_WATCHPOINT_HIT_READ;
+            } else {
+                wp->flags |= BP_WATCHPOINT_HIT_WRITE;
+            }
+            wp->hitaddr = MAX(addr, wp->vaddr);
+            wp->hitattrs = attrs;
+            if (!cpu->watchpoint_hit) {
+                if (wp->flags & BP_CPU &&
+                    !cc->debug_check_watchpoint(cpu, wp)) {
+                    wp->flags &= ~BP_WATCHPOINT_HIT;
+                    continue;
+                }
+                cpu->watchpoint_hit = wp;
+
+                mmap_lock();
+                tb_check_watchpoint(cpu);
+                if (wp->flags & BP_STOP_BEFORE_ACCESS) {
+                    cpu->exception_index = EXCP_DEBUG;
+                    mmap_unlock();
+                    cpu_loop_exit_restore(cpu, ra);
+                } else {
+                    /* Force execution of one insn next time.  */
+                    cpu->cflags_next_tb = 1 | curr_cflags(cpu->uc);
+                    mmap_unlock();
+                    if (ra) {
+                        cpu_restore_state(cpu, ra, true);
+                    }
+                    cpu_loop_exit_noexc(cpu);
+                }
+            }
+        } else {
+            wp->flags &= ~BP_WATCHPOINT_HIT;
+        }
+    }
+}
 
 /* Add a breakpoint.  */
 int cpu_breakpoint_insert(CPUState *cpu, vaddr pc, int flags,
@@ -982,7 +1055,7 @@ hwaddr memory_region_section_get_iotlb(CPUState *cpu,
         target_ulong *address)
 {
     hwaddr iotlb;
-    CPUWatchpoint *wp;
+    CPUWatchpoint *wp; // SNPS added
 
     if (memory_region_is_ram(section->mr)) {
         /* Normal RAM.  */
@@ -1001,8 +1074,7 @@ hwaddr memory_region_section_get_iotlb(CPUState *cpu,
         iotlb += xlat;
     }
 
-    /* Make accesses to pages with watchpoints go via the
-       watchpoint trap routines.  */
+    // SNPS added
     QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
         if (cpu_watchpoint_address_matches(wp, vaddr, TARGET_PAGE_SIZE)) {
             /* Avoid trapping reads of pages with a write breakpoint. */
@@ -1020,8 +1092,8 @@ hwaddr memory_region_section_get_iotlb(CPUState *cpu,
 
 #if !defined(CONFIG_USER_ONLY)
 
-static int subpage_register (subpage_t *mmio, uint32_t start, uint32_t end,
-        uint16_t section);
+static int subpage_register(subpage_t *mmio, uint32_t start, uint32_t end,
+                            uint16_t section);
 static subpage_t *subpage_init(FlatView *fv, hwaddr base);
 
 static void *(*phys_mem_alloc)(size_t size, uint64_t *align) =
@@ -1288,6 +1360,40 @@ int qemu_ram_resize(struct uc_struct *uc, RAMBlock *block, ram_addr_t newsize, E
         block->resized(block->idstr, newsize, block->host);
     }
     return 0;
+}
+
+/*
+ * Trigger sync on the given ram block for range [start, start + length]
+ * with the backing store if one is available.
+ * Otherwise no-op.
+ * @Note: this is supposed to be a synchronous op.
+ */
+void qemu_ram_writeback(struct uc_struct *uc, RAMBlock *block, ram_addr_t start, ram_addr_t length)
+{
+    void *addr = ramblock_ptr(block, start);
+
+    /* The requested range should fit in within the block range */
+    g_assert((start + length) <= block->used_length);
+
+#ifdef CONFIG_LIBPMEM
+    /* The lack of support for pmem should not block the sync */
+    if (ramblock_is_pmem(block)) {
+        pmem_persist(addr, length);
+        return;
+    }
+#endif
+    if (block->fd >= 0) {
+        /**
+         * Case there is no support for PMEM or the memory has not been
+         * specified as persistent (or is not one) - use the msync.
+         * Less optimal but still achieves the same goal
+         */
+        if (qemu_msync(uc, addr, length, block->fd)) {
+            //warn_report("%s: failed to sync memory range: start: "
+            //        RAM_ADDR_FMT " length: " RAM_ADDR_FMT,
+            //        __func__, start, length);
+        }
+    }
 }
 
 static void ram_block_add(struct uc_struct *uc, RAMBlock *new_block, Error **errp)
@@ -1692,8 +1798,8 @@ static const MemoryRegionOps subpage_ops = {
     }
 };
 
-static int subpage_register (subpage_t *mmio, uint32_t start, uint32_t end,
-        uint16_t section)
+static int subpage_register(subpage_t *mmio, uint32_t start, uint32_t end,
+                            uint16_t section)
 {
     int idx, eidx;
 
@@ -1747,6 +1853,7 @@ static const MemoryRegionOps notdirty_mem_ops = {
     },
 };
 
+// SNPS added
 static int check_watchpoint_cb(struct uc_struct* uc, int offset, int len,
                                MemTxAttrs attrs, int flags, uint64_t data) {
     CPUState *cpu = uc->cpu;
@@ -1919,14 +2026,14 @@ static const MemoryRegionOps watch_mem_ops = {
 
 static void io_mem_init(struct uc_struct* uc)
 {
-    memory_region_init_io(uc, &uc->io_mem_rom, NULL, &unassigned_mem_ops,
-                          NULL, "io_mem_rom", UINT64_MAX);
-    memory_region_init_io(uc, &uc->io_mem_unassigned, NULL, &unassigned_mem_ops,
-                          NULL, "io_mem_unassigned", UINT64_MAX);
-    memory_region_init_io(uc, &uc->io_mem_notdirty, NULL, &notdirty_mem_ops,
-                          NULL, "io_mem_notdirty", UINT64_MAX);
-    memory_region_init_io(uc, &uc->io_mem_watch, NULL, &watch_mem_ops,
-                          NULL, "io_mem_watch", UINT64_MAX);
+    memory_region_init_io(uc, &uc->io_mem_rom, NULL, &unassigned_mem_ops, NULL, NULL, UINT64_MAX);
+    memory_region_init_io(uc, &uc->io_mem_unassigned, NULL, &unassigned_mem_ops, NULL,
+                          NULL, UINT64_MAX);
+    memory_region_init_io(uc, &uc->io_mem_notdirty, NULL, &notdirty_mem_ops, NULL,
+                          NULL, UINT64_MAX);
+
+    // SNPS added
+    memory_region_init_io(uc, &uc->io_mem_watch, NULL, &watch_mem_ops, NULL, NULL, UINT64_MAX);
 }
 
 static subpage_t *subpage_init(FlatView *fv, hwaddr base)
@@ -1934,6 +2041,7 @@ static subpage_t *subpage_init(FlatView *fv, hwaddr base)
     AddressSpaceDispatch *d = flatview_to_dispatch(fv);
     subpage_t *mmio;
 
+    /* mmio->sub_section is set to PHYS_SECTION_UNASSIGNED with g_malloc0 */
     mmio = g_malloc0(sizeof(subpage_t) + TARGET_PAGE_SIZE * sizeof(uint16_t));
 
     mmio->fv = fv;
@@ -1945,7 +2053,6 @@ static subpage_t *subpage_init(FlatView *fv, hwaddr base)
     printf("%s: %p base " TARGET_FMT_plx " len %08x\n", __func__,
             mmio, base, TARGET_PAGE_SIZE);
 #endif
-    subpage_register(mmio, 0, TARGET_PAGE_SIZE-1, PHYS_SECTION_UNASSIGNED);
 
     return mmio;
 }
@@ -1991,8 +2098,10 @@ AddressSpaceDispatch *address_space_dispatch_new(struct uc_struct *uc, FlatView 
     assert(n == PHYS_SECTION_NOTDIRTY);
     n = dummy_section(&d->map, fv, &uc->io_mem_rom);
     assert(n == PHYS_SECTION_ROM);
-     n = dummy_section(&d->map, fv, &uc->io_mem_watch);
-     assert(n == PHYS_SECTION_WATCH);
+
+    // SNPS added
+    n = dummy_section(&d->map, fv, &uc->io_mem_watch);
+    assert(n == PHYS_SECTION_WATCH);
 
     d->phys_map = ppe;
 
@@ -2145,10 +2254,9 @@ static MemTxResult flatview_write_continue(FlatView *fv, hwaddr addr,
             // Unicorn: commented out
             //release_lock |= prepare_mmio_access(mr);
             l = memory_access_size(mr, l, addr1);
-            /* XXX: could force current_cpu to NULL to avoid
-               potential bugs */
-            val = ldn_p(buf, l);
-            result |= memory_region_dispatch_write(mr, addr1, val, l, attrs);
+            val = ldn_he_p(buf, l);
+            result |= memory_region_dispatch_write(mr, addr1, val,
+                                                   size_memop(l), attrs);
         } else {
             /* RAM case */
             ptr = qemu_map_ram_ptr(mr->uc, mr->ram_block, addr1);
@@ -2224,8 +2332,9 @@ MemTxResult flatview_read_continue(FlatView *fv, hwaddr addr,
             // Unicorn: commented out
             //release_lock |= prepare_mmio_access(mr);
             l = memory_access_size(mr, l, addr1);
-            result |= memory_region_dispatch_read(mr, addr1, &val, l, attrs);
-            stn_p(buf, l, val);
+            result |= memory_region_dispatch_read(mr, addr1, &val,
+                                                  size_memop(l), attrs);
+            stn_he_p(buf, l, val);
         } else {
             /* RAM case */
             ptr = qemu_map_ram_ptr(mr->uc, mr->ram_block, addr1);
@@ -2417,9 +2526,6 @@ flatview_extend_translation(FlatView *fv, hwaddr addr,
             return done;
         }
     }
-
-    g_assert_not_reached();
-    return -1;
 }
 
 /* Map a physical memory region into a host virtual address.

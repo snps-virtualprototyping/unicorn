@@ -30,6 +30,9 @@
 #include "tcg-op.h"
 #include "tcg-mo.h"
 
+/* Unicorn: Necessary for check_exit_request */
+#include "exec/gen-icount.h"
+
 /* Reduce the number of ifdefs below.  This assumes that all uses of
    TCGV_HIGH and TCGV_LOW are properly protected by a conditional that
    the compiler can eliminate.  */
@@ -97,7 +100,7 @@ void tcg_gen_op6(TCGContext *ctx, TCGOpcode opc, TCGArg a1, TCGArg a2,
 
 void tcg_gen_mb(TCGContext *ctx, TCGBar mb_type)
 {
-    if (ctx->uc->parallel_cpus) {
+    if (ctx->tb_cflags & CF_PARALLEL) {
         tcg_gen_op1(ctx, INDEX_op_mb, mb_type);
     }
 }
@@ -540,9 +543,9 @@ void tcg_gen_rotl_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg1, TCGv_i32 arg2)
     }
 }
 
-void tcg_gen_rotli_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg1, unsigned arg2)
+void tcg_gen_rotli_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg1, int32_t arg2)
 {
-    tcg_debug_assert(arg2 < 32);
+    tcg_debug_assert(arg2 >= 0 && arg2 < 32);
     /* some cases can be optimized here */
     if (arg2 == 0) {
         tcg_gen_mov_i32(s, ret, arg1);
@@ -580,9 +583,9 @@ void tcg_gen_rotr_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg1, TCGv_i32 arg2)
     }
 }
 
-void tcg_gen_rotri_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg1, unsigned arg2)
+void tcg_gen_rotri_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg1, int32_t arg2)
 {
-    tcg_debug_assert(arg2 < 32);
+    tcg_debug_assert(arg2 >= 0 && arg2 < 32);
     /* some cases can be optimized here */
     if (arg2 == 0) {
         tcg_gen_mov_i32(s, ret, arg1);
@@ -611,9 +614,22 @@ void tcg_gen_deposit_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg1, TCGv_i32 ar
         return;
     }
 
-    mask = (1u << len) - 1;
     t1 = tcg_temp_new_i32(s);
 
+    if (TCG_TARGET_HAS_extract2_i32) {
+        if (ofs + len == 32) {
+            tcg_gen_shli_i32(s, t1, arg1, len);
+            tcg_gen_extract2_i32(s, ret, t1, arg2, len);
+            goto done;
+        }
+        if (ofs == 0) {
+            tcg_gen_extract2_i32(s, ret, arg1, arg2, len);
+            tcg_gen_rotli_i32(s, ret, ret, len);
+            goto done;
+        }
+    }
+
+    mask = (1u << len) - 1;
     if (ofs + len < 32) {
         tcg_gen_andi_i32(s, t1, arg2, mask);
         tcg_gen_shli_i32(s, t1, t1, ofs);
@@ -623,6 +639,7 @@ void tcg_gen_deposit_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg1, TCGv_i32 ar
     tcg_gen_andi_i32(s, ret, arg1, ~(mask << ofs));
     tcg_gen_or_i32(s, ret, ret, t1);
 
+ done:
     tcg_temp_free_i32(s, t1);
 }
 
@@ -814,6 +831,30 @@ void tcg_gen_sextract_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg,
 
     tcg_gen_shli_i32(s, ret, arg, 32 - len - ofs);
     tcg_gen_sari_i32(s, ret, ret, 32 - len);
+}
+
+/*
+ * Extract 32-bits from a 64-bit input, ah:al, starting from ofs.
+ * Unlike tcg_gen_extract_i32 above, len is fixed at 32.
+ */
+void tcg_gen_extract2_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 al, TCGv_i32 ah,
+                          unsigned int ofs)
+{
+    tcg_debug_assert(ofs <= 32);
+    if (ofs == 0) {
+        tcg_gen_mov_i32(s, ret, al);
+    } else if (ofs == 32) {
+        tcg_gen_mov_i32(s, ret, ah);
+    } else if (al == ah) {
+        tcg_gen_rotri_i32(s, ret, al, ofs);
+    } else if (TCG_TARGET_HAS_extract2_i32) {
+        tcg_gen_op4i_i32(s, INDEX_op_extract2_i32, ret, al, ah, ofs);
+    } else {
+        TCGv_i32 t0 = tcg_temp_new_i32(s);
+        tcg_gen_shri_i32(s, t0, al, ofs);
+        tcg_gen_deposit_i32(s, ret, t0, ah, 32 - ofs, ofs);
+        tcg_temp_free_i32(s, t0);
+    }
 }
 
 void tcg_gen_movcond_i32(TCGContext *s, TCGCond cond, TCGv_i32 ret, TCGv_i32 c1,
@@ -1061,6 +1102,16 @@ void tcg_gen_umax_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 a, TCGv_i32 b)
     tcg_gen_movcond_i32(s, TCG_COND_LTU, ret, a, b, b, a);
 }
 
+void tcg_gen_abs_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 a)
+{
+    TCGv_i32 t = tcg_temp_new_i32(s);
+
+    tcg_gen_sari_i32(s, t, a, 31);
+    tcg_gen_xor_i32(s, ret, a, t);
+    tcg_gen_sub_i32(s, ret, ret, t);
+    tcg_temp_free_i32(s, t);
+}
+
 /* 64-bit ops */
 
 #if TCG_TARGET_REG_BITS == 32
@@ -1124,7 +1175,7 @@ void tcg_gen_ld_i64(TCGContext *s, TCGv_i64 ret, TCGv_ptr arg2, tcg_target_long 
 {
     /* Since arg2 and ret have different types,
        they cannot be the same temporary */
-#ifdef TCG_TARGET_WORDS_BIGENDIAN
+#ifdef HOST_WORDS_BIGENDIAN
     tcg_gen_ld_i32(s, TCGV_HIGH(s, ret), arg2, offset);
     tcg_gen_ld_i32(s, TCGV_LOW(s, ret), arg2, offset + 4);
 #else
@@ -1135,7 +1186,7 @@ void tcg_gen_ld_i64(TCGContext *s, TCGv_i64 ret, TCGv_ptr arg2, tcg_target_long 
 
 void tcg_gen_st_i64(TCGContext *s, TCGv_i64 arg1, TCGv_ptr arg2, tcg_target_long offset)
 {
-#ifdef TCG_TARGET_WORDS_BIGENDIAN
+#ifdef HOST_WORDS_BIGENDIAN
     tcg_gen_st_i32(s, TCGV_HIGH(s, arg1), arg2, offset);
     tcg_gen_st_i32(s, TCGV_LOW(s, arg1), arg2, offset + 4);
 #else
@@ -1338,31 +1389,33 @@ static inline void tcg_gen_shifti_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg1
             tcg_gen_shli_i32(s, TCGV_HIGH(s, ret), TCGV_LOW(s, arg1), c);
             tcg_gen_movi_i32(s, TCGV_LOW(s, ret), 0);
         }
-    } else {
-        TCGv_i32 t0, t1;
-
-        t0 = tcg_temp_new_i32(s);
-        t1 = tcg_temp_new_i32(s);
-        if (right) {
-            tcg_gen_shli_i32(s, t0, TCGV_HIGH(s, arg1), 32 - c);
-            if (arith) {
-                tcg_gen_sari_i32(s, t1, TCGV_HIGH(s, arg1), c);
-            } else {
-                tcg_gen_shri_i32(s, t1, TCGV_HIGH(s, arg1), c);
-            }
-            tcg_gen_shri_i32(s, TCGV_LOW(s, ret), TCGV_LOW(s, arg1), c);
-            tcg_gen_or_i32(s, TCGV_LOW(s, ret), TCGV_LOW(s, ret), t0);
-            tcg_gen_mov_i32(s, TCGV_HIGH(s, ret), t1);
+    } else if (right) {
+        if (TCG_TARGET_HAS_extract2_i32) {
+            tcg_gen_extract2_i32(s, TCGV_LOW(s, ret),
+                                 TCGV_LOW(s, arg1), TCGV_HIGH(s, arg1), c);
         } else {
-            tcg_gen_shri_i32(s, t0, TCGV_LOW(s, arg1), 32 - c);
-            /* Note: ret can be the same as arg1, so we use t1 */
-            tcg_gen_shli_i32(s, t1, TCGV_LOW(s, arg1), c);
-            tcg_gen_shli_i32(s, TCGV_HIGH(s, ret), TCGV_HIGH(s, arg1), c);
-            tcg_gen_or_i32(s, TCGV_HIGH(s, ret), TCGV_HIGH(s, ret), t0);
-            tcg_gen_mov_i32(s, TCGV_LOW(s, ret), t1);
+            tcg_gen_shri_i32(s, TCGV_LOW(s, ret), TCGV_LOW(s, arg1), c);
+            tcg_gen_deposit_i32(s, TCGV_LOW(s, ret), TCGV_LOW(s, ret),
+                                TCGV_HIGH(s, arg1), 32 - c, c);
         }
-        tcg_temp_free_i32(s, t0);
-        tcg_temp_free_i32(s, t1);
+        if (arith) {
+            tcg_gen_sari_i32(s, TCGV_HIGH(s, ret), TCGV_HIGH(s, arg1), c);
+        } else {
+            tcg_gen_shri_i32(s, TCGV_HIGH(s, ret), TCGV_HIGH(s, arg1), c);
+        }
+    } else {
+        if (TCG_TARGET_HAS_extract2_i32) {
+            tcg_gen_extract2_i32(s, TCGV_HIGH(s, ret),
+                                 TCGV_LOW(s, arg1), TCGV_HIGH(s, arg1), 32 - c);
+        } else {
+            TCGv_i32 t0 = tcg_temp_new_i32(s);
+
+            tcg_gen_shri_i32(s, t0, TCGV_LOW(s, arg1), 32 - c);
+            tcg_gen_deposit_i32(s, TCGV_HIGH(s, ret), t0,
+                                TCGV_HIGH(s, arg1), c, 32 - c);
+            tcg_temp_free_i32(s, t0);
+        }
+        tcg_gen_shli_i32(s, TCGV_LOW(s, ret), TCGV_LOW(s, arg1), c);
     }
 }
 
@@ -1921,9 +1974,9 @@ void tcg_gen_rotl_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg1, TCGv_i64 arg2)
     }
 }
 
-void tcg_gen_rotli_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg1, unsigned arg2)
+void tcg_gen_rotli_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg1, int64_t arg2)
 {
-    tcg_debug_assert(arg2 < 64);
+    tcg_debug_assert(arg2 >= 0 && arg2 < 64);
     /* some cases can be optimized here */
     if (arg2 == 0) {
         tcg_gen_mov_i64(s, ret, arg1);
@@ -1960,9 +2013,9 @@ void tcg_gen_rotr_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg1, TCGv_i64 arg2)
     }
 }
 
-void tcg_gen_rotri_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg1, unsigned arg2)
+void tcg_gen_rotri_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg1, int64_t arg2)
 {
-    tcg_debug_assert(arg2 < 64);
+    tcg_debug_assert(arg2 >= 0 && arg2 < 64);
     /* some cases can be optimized here */
     if (arg2 == 0) {
         tcg_gen_mov_i64(s, ret, arg1);
@@ -2006,9 +2059,22 @@ void tcg_gen_deposit_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg1, TCGv_i64 ar
         }
     }
 
-    mask = (1ull << len) - 1;
     t1 = tcg_temp_new_i64(s);
 
+    if (TCG_TARGET_HAS_extract2_i64) {
+        if (ofs + len == 64) {
+            tcg_gen_shli_i64(s, t1, arg1, len);
+            tcg_gen_extract2_i64(s, ret, t1, arg2, len);
+            goto done;
+        }
+        if (ofs == 0) {
+            tcg_gen_extract2_i64(s, ret, arg1, arg2, len);
+            tcg_gen_rotli_i64(s, ret, ret, len);
+            goto done;
+        }
+    }
+
+    mask = (1ull << len) - 1;
     if (ofs + len < 64) {
         tcg_gen_andi_i64(s, t1, arg2, mask);
         tcg_gen_shli_i64(s, t1, t1, ofs);
@@ -2018,6 +2084,7 @@ void tcg_gen_deposit_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg1, TCGv_i64 ar
     tcg_gen_andi_i64(s, ret, arg1, ~(mask << ofs));
     tcg_gen_or_i64(s, ret, ret, t1);
 
+ done:
     tcg_temp_free_i64(s, t1);
 }
 
@@ -2311,6 +2378,30 @@ void tcg_gen_sextract_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg,
     tcg_gen_sari_i64(s, ret, ret, 64 - len);
 }
 
+/*
+ * Extract 64 bits from a 128-bit input, ah:al, starting from ofs.
+ * Unlike tcg_gen_extract_i64 above, len is fixed at 64.
+ */
+void tcg_gen_extract2_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 al, TCGv_i64 ah,
+                          unsigned int ofs)
+{
+    tcg_debug_assert(ofs <= 64);
+    if (ofs == 0) {
+        tcg_gen_mov_i64(s, ret, al);
+    } else if (ofs == 64) {
+        tcg_gen_mov_i64(s, ret, ah);
+    } else if (al == ah) {
+        tcg_gen_rotri_i64(s, ret, al, ofs);
+    } else if (TCG_TARGET_HAS_extract2_i64) {
+        tcg_gen_op4i_i64(s, INDEX_op_extract2_i64, ret, al, ah, ofs);
+    } else {
+        TCGv_i64 t0 = tcg_temp_new_i64(s);
+        tcg_gen_shri_i64(s, t0, al, ofs);
+        tcg_gen_deposit_i64(s, ret, t0, ah, 64 - ofs, ofs);
+        tcg_temp_free_i64(s, t0);
+    }
+}
+
 void tcg_gen_movcond_i64(TCGContext *s, TCGCond cond, TCGv_i64 ret, TCGv_i64 c1,
                          TCGv_i64 c2, TCGv_i64 v1, TCGv_i64 v2)
 {
@@ -2487,6 +2578,16 @@ void tcg_gen_umax_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 a, TCGv_i64 b)
     tcg_gen_movcond_i64(s, TCG_COND_LTU, ret, a, b, b, a);
 }
 
+void tcg_gen_abs_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 a)
+{
+    TCGv_i64 t = tcg_temp_new_i64(s);
+
+    tcg_gen_sari_i64(s, t, a, 63);
+    tcg_gen_xor_i64(s, ret, a, t);
+    tcg_gen_sub_i64(s, ret, ret, t);
+    tcg_temp_free_i64(s, t);
+}
+
 /* Size changing operations.  */
 
 void tcg_gen_extrl_i64_i32(TCGContext *s, TCGv_i32 ret, TCGv_i64 arg)
@@ -2634,7 +2735,7 @@ void tcg_gen_lookup_and_goto_ptr(TCGContext *s)
     }
 }
 
-static inline TCGMemOp tcg_canonicalize_memop(TCGMemOp op, bool is64, bool st)
+static inline MemOp tcg_canonicalize_memop(MemOp op, bool is64, bool st)
 {
     /* Trigger the asserts within as early as possible.  */
     (void)get_alignment_bits(op);
@@ -2663,7 +2764,7 @@ static inline TCGMemOp tcg_canonicalize_memop(TCGMemOp op, bool is64, bool st)
 }
 
 static void gen_ldst_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 val, TCGv addr,
-                         TCGMemOp memop, TCGArg idx)
+                         MemOp memop, TCGArg idx)
 {
     TCGMemOpIdx oi = make_memop_idx(memop, idx);
 #if TARGET_LONG_BITS == 32
@@ -2678,7 +2779,7 @@ static void gen_ldst_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 val, TCGv addr,
 }
 
 static void gen_ldst_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 val, TCGv addr,
-                         TCGMemOp memop, TCGArg idx)
+                         MemOp memop, TCGArg idx)
 {
     TCGMemOpIdx oi = make_memop_idx(memop, idx);
 #if TARGET_LONG_BITS == 32
@@ -2706,7 +2807,7 @@ void check_exit_request(TCGContext *tcg_ctx)
 
     flag = tcg_temp_new_i32(tcg_ctx);
     tcg_gen_ld_i32(tcg_ctx, flag, tcg_ctx->cpu_env,
-            offsetof(CPUState, tcg_exit_req) - ENV_OFFSET);
+            offsetof(CPUState, tcg_exit_req) - offsetof(ArchCPU, env));
     tcg_gen_brcondi_i32(tcg_ctx, TCG_COND_NE, flag, 0, tcg_ctx->exitreq_label);
     tcg_temp_free_i32(tcg_ctx, flag);
 }
@@ -2723,9 +2824,9 @@ static void tcg_gen_req_mo(TCGContext *s, TCGBar type)
     }
 }
 
-void tcg_gen_qemu_ld_i32(struct uc_struct *uc, TCGv_i32 val, TCGv addr, TCGArg idx, TCGMemOp memop)
+void tcg_gen_qemu_ld_i32(struct uc_struct *uc, TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
 {
-    TCGMemOp orig_memop;
+    MemOp orig_memop;
     TCGContext *tcg_ctx = uc->tcg_ctx;
 
     tcg_gen_req_mo(tcg_ctx, TCG_MO_LD_LD | TCG_MO_ST_LD);
@@ -2758,10 +2859,10 @@ void tcg_gen_qemu_ld_i32(struct uc_struct *uc, TCGv_i32 val, TCGv addr, TCGArg i
         }
     }
 
-    //check_exit_request(tcg_ctx);
+    // SNPS removed: check_exit_request(tcg_ctx);
 }
 
-void tcg_gen_qemu_st_i32(struct uc_struct *uc, TCGv_i32 val, TCGv addr, TCGArg idx, TCGMemOp memop)
+void tcg_gen_qemu_st_i32(struct uc_struct *uc, TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
 {
     TCGv_i32 swap = NULL;
     TCGContext *tcg_ctx = uc->tcg_ctx;
@@ -2793,13 +2894,13 @@ void tcg_gen_qemu_st_i32(struct uc_struct *uc, TCGv_i32 val, TCGv addr, TCGArg i
         tcg_temp_free_i32(tcg_ctx, swap);
     }
 
-    //check_exit_request(tcg_ctx);
+    // SNPS removed: check_exit_request(tcg_ctx);
 }
 
-void tcg_gen_qemu_ld_i64(struct uc_struct *uc, TCGv_i64 val, TCGv addr, TCGArg idx, TCGMemOp memop)
+void tcg_gen_qemu_ld_i64(struct uc_struct *uc, TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
 {
     TCGContext *tcg_ctx = uc->tcg_ctx;
-    TCGMemOp orig_memop;
+    MemOp orig_memop;
 
     if (TCG_TARGET_REG_BITS == 32 && (memop & MO_SIZE) < MO_64) {
         tcg_gen_qemu_ld_i32(uc, TCGV_LOW(tcg_ctx, val), addr, idx, memop);
@@ -2809,7 +2910,7 @@ void tcg_gen_qemu_ld_i64(struct uc_struct *uc, TCGv_i64 val, TCGv addr, TCGArg i
             tcg_gen_movi_i32(tcg_ctx, TCGV_HIGH(tcg_ctx, val), 0);
         }
 
-        //check_exit_request(tcg_ctx);
+        // SNPS removed: check_exit_request(tcg_ctx);
         return;
     }
 
@@ -2849,17 +2950,17 @@ void tcg_gen_qemu_ld_i64(struct uc_struct *uc, TCGv_i64 val, TCGv addr, TCGArg i
         }
     }
 
-    //check_exit_request(tcg_ctx);
+    // SNPS removed: check_exit_request(tcg_ctx);
 }
 
-void tcg_gen_qemu_st_i64(struct uc_struct *uc, TCGv_i64 val, TCGv addr, TCGArg idx, TCGMemOp memop)
+void tcg_gen_qemu_st_i64(struct uc_struct *uc, TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
 {
     TCGContext *tcg_ctx = uc->tcg_ctx;
     TCGv_i64 swap = NULL;
 
     if (TCG_TARGET_REG_BITS == 32 && (memop & MO_SIZE) < MO_64) {
         tcg_gen_qemu_st_i32(uc, TCGV_LOW(tcg_ctx, val), addr, idx, memop);
-        //check_exit_request(tcg_ctx);
+        // SNPS removed: check_exit_request(tcg_ctx);
         return;
     }
 
@@ -2893,10 +2994,10 @@ void tcg_gen_qemu_st_i64(struct uc_struct *uc, TCGv_i64 val, TCGv addr, TCGArg i
         tcg_temp_free_i64(tcg_ctx, swap);
     }
 
-    //check_exit_request(tcg_ctx);
+    // SNPS removed: check_exit_request(tcg_ctx);
 }
 
-static void tcg_gen_ext_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 val, TCGMemOp opc)
+static void tcg_gen_ext_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 val, MemOp opc)
 {
     switch (opc & MO_SSIZE) {
     case MO_SB:
@@ -2917,7 +3018,7 @@ static void tcg_gen_ext_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 val, TCGMemOp 
     }
 }
 
-static void tcg_gen_ext_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 val, TCGMemOp opc)
+static void tcg_gen_ext_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 val, MemOp opc)
 {
     switch (opc & MO_SSIZE) {
     case MO_SB:
@@ -2967,48 +3068,26 @@ typedef void (*gen_atomic_op_i64)(TCGContext *, TCGv_i64, TCGv_env, TCGv, TCGv_i
 #ifdef CONFIG_ATOMIC64
 # define WITH_ATOMIC64(X) X,
 #else
-# define WITH_ATOMIC64(X) NULL,
+# define WITH_ATOMIC64(X)
 #endif
 
-#ifdef HOST_WORDS_BIGENDIAN
 static void * const table_cmpxchg[16] = {
-    gen_helper_atomic_cmpxchgb,
-    gen_helper_atomic_cmpxchgw_be,
-    gen_helper_atomic_cmpxchgl_be,
-    WITH_ATOMIC64(gen_helper_atomic_cmpxchgq_be)
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    gen_helper_atomic_cmpxchgw_le,
-    gen_helper_atomic_cmpxchgl_le,
-    WITH_ATOMIC64(gen_helper_atomic_cmpxchgq_le)
-}
-#else
-static void * const table_cmpxchg[16] = {
-    gen_helper_atomic_cmpxchgb,
-    gen_helper_atomic_cmpxchgw_le,
-    gen_helper_atomic_cmpxchgl_le,
-    WITH_ATOMIC64(gen_helper_atomic_cmpxchgq_le)
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    gen_helper_atomic_cmpxchgw_be,
-    gen_helper_atomic_cmpxchgl_be,
-    WITH_ATOMIC64(gen_helper_atomic_cmpxchgq_be)
+    [MO_8] = gen_helper_atomic_cmpxchgb,
+    [MO_16 | MO_LE] = gen_helper_atomic_cmpxchgw_le,
+    [MO_16 | MO_BE] = gen_helper_atomic_cmpxchgw_be,
+    [MO_32 | MO_LE] = gen_helper_atomic_cmpxchgl_le,
+    [MO_32 | MO_BE] = gen_helper_atomic_cmpxchgl_be,
+    WITH_ATOMIC64([MO_64 | MO_LE] = gen_helper_atomic_cmpxchgq_le)
+    WITH_ATOMIC64([MO_64 | MO_BE] = gen_helper_atomic_cmpxchgq_be)
 };
-#endif
 
 void tcg_gen_atomic_cmpxchg_i32(TCGContext *s,
                                 TCGv_i32 retv, TCGv addr, TCGv_i32 cmpv,
-                                TCGv_i32 newv, TCGArg idx, TCGMemOp memop)
+                                TCGv_i32 newv, TCGArg idx, MemOp memop)
 {
     memop = tcg_canonicalize_memop(memop, 0, 0);
 
-    if (!s->uc->parallel_cpus) {
+    if (!(s->tb_cflags & CF_PARALLEL)) {
         TCGv_i32 t1 = tcg_temp_new_i32(s);
         TCGv_i32 t2 = tcg_temp_new_i32(s);
 
@@ -3049,11 +3128,11 @@ void tcg_gen_atomic_cmpxchg_i32(TCGContext *s,
 
 void tcg_gen_atomic_cmpxchg_i64(TCGContext *s,
                                 TCGv_i64 retv, TCGv addr, TCGv_i64 cmpv,
-                                TCGv_i64 newv, TCGArg idx, TCGMemOp memop)
+                                TCGv_i64 newv, TCGArg idx, MemOp memop)
 {
     memop = tcg_canonicalize_memop(memop, 1, 0);
 
-    if (!s->uc->parallel_cpus) {
+    if (!(s->tb_cflags & CF_PARALLEL)) {
         TCGv_i64 t1 = tcg_temp_new_i64(s);
         TCGv_i64 t2 = tcg_temp_new_i64(s);
 
@@ -3114,7 +3193,7 @@ void tcg_gen_atomic_cmpxchg_i64(TCGContext *s,
 
 static void do_nonatomic_op_i32(TCGContext *s,
                                 TCGv_i32 ret, TCGv addr, TCGv_i32 val,
-                                TCGArg idx, TCGMemOp memop, bool new_val,
+                                TCGArg idx, MemOp memop, bool new_val,
                                 void (*gen)(TCGContext *, TCGv_i32, TCGv_i32, TCGv_i32))
 {
     TCGv_i32 t1 = tcg_temp_new_i32(s);
@@ -3133,7 +3212,7 @@ static void do_nonatomic_op_i32(TCGContext *s,
 
 static void do_atomic_op_i32(TCGContext *s,
                              TCGv_i32 ret, TCGv addr, TCGv_i32 val,
-                             TCGArg idx, TCGMemOp memop, void * const table[])
+                             TCGArg idx, MemOp memop, void * const table[])
 {
     gen_atomic_op_i32 gen;
 
@@ -3159,7 +3238,7 @@ static void do_atomic_op_i32(TCGContext *s,
 
 static void do_nonatomic_op_i64(TCGContext *s,
                                 TCGv_i64 ret, TCGv addr, TCGv_i64 val,
-                                TCGArg idx, TCGMemOp memop, bool new_val,
+                                TCGArg idx, MemOp memop, bool new_val,
                                 void (*gen)(TCGContext *, TCGv_i64, TCGv_i64, TCGv_i64))
 {
     TCGv_i64 t1 = tcg_temp_new_i64(s);
@@ -3178,7 +3257,7 @@ static void do_nonatomic_op_i64(TCGContext *s,
 
 static void do_atomic_op_i64(TCGContext *s,
                              TCGv_i64 ret, TCGv addr, TCGv_i64 val,
-                             TCGArg idx, TCGMemOp memop, void * const table[])
+                             TCGArg idx, MemOp memop, void * const table[])
 {
     memop = tcg_canonicalize_memop(memop, 1, 0);
 
@@ -3221,7 +3300,6 @@ static void do_atomic_op_i64(TCGContext *s,
     }
 }
 
-
 #define GEN_ATOMIC_HELPER(NAME, OP, NEW)                                \
 static void * const table_##NAME[16] = {                                \
     [MO_8] = gen_helper_atomic_##NAME##b,                               \
@@ -3233,9 +3311,9 @@ static void * const table_##NAME[16] = {                                \
     WITH_ATOMIC64([MO_64 | MO_BE] = gen_helper_atomic_##NAME##q_be)     \
 };                                                                      \
 void tcg_gen_atomic_##NAME##_i32                                        \
-    (TCGContext *s, TCGv_i32 ret, TCGv addr, TCGv_i32 val, TCGArg idx, TCGMemOp memop) \
+    (TCGContext *s, TCGv_i32 ret, TCGv addr, TCGv_i32 val, TCGArg idx, MemOp memop) \
 {                                                                       \
-    if (s->uc->parallel_cpus) {                                         \
+    if (s->tb_cflags & CF_PARALLEL) {                                   \
         do_atomic_op_i32(s, ret, addr, val, idx, memop, table_##NAME);  \
     } else {                                                            \
         do_nonatomic_op_i32(s, ret, addr, val, idx, memop, NEW,         \
@@ -3243,9 +3321,9 @@ void tcg_gen_atomic_##NAME##_i32                                        \
     }                                                                   \
 }                                                                       \
 void tcg_gen_atomic_##NAME##_i64                                        \
-    (TCGContext *s, TCGv_i64 ret, TCGv addr, TCGv_i64 val, TCGArg idx, TCGMemOp memop) \
+    (TCGContext *s, TCGv_i64 ret, TCGv addr, TCGv_i64 val, TCGArg idx, MemOp memop) \
 {                                                                       \
-    if (s->uc->parallel_cpus) {                                         \
+    if (s->tb_cflags & CF_PARALLEL) {                                   \
         do_atomic_op_i64(s, ret, addr, val, idx, memop, table_##NAME);  \
     } else {                                                            \
         do_nonatomic_op_i64(s, ret, addr, val, idx, memop, NEW,         \
@@ -3282,7 +3360,5 @@ static void tcg_gen_mov2_i64(TCGContext *s, TCGv_i64 r, TCGv_i64 a, TCGv_i64 b)
 }
 
 GEN_ATOMIC_HELPER(xchg, mov2, 0)
-
-#undef GEN_ATOMIC_TABLE
 
 #undef GEN_ATOMIC_HELPER

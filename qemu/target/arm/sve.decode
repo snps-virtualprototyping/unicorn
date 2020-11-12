@@ -92,14 +92,14 @@
 
 # Two operand with unused vector element size
 @pd_pn_e0       ........ ........ ....... rn:4 . rd:4           &rr_esz esz=0
+
+# Two operand
+@pd_pn          ........ esz:2 .. .... ....... rn:4 . rd:4      &rr_esz
 @rd_rn          ........ esz:2 ...... ...... rn:5 rd:5          &rr_esz
 
 # Two operand with governing predicate, flags setting
 @pd_pg_pn_s     ........ . s:1 ...... .. pg:4 . rn:4 . rd:4     &rpr_s
 @pd_pg_pn_s0    ........ . .   ...... .. pg:4 . rn:4 . rd:4     &rpr_s s=0
-
-# Two operand
-@pd_pn          ........ esz:2 .. .... ....... rn:4 . rd:4      &rr_esz
 
 # Three operand with unused vector element size
 @rd_rn_rm_e0    ........ ... rm:5 ... ... rn:5 rd:5             &rrr_esz esz=0
@@ -130,14 +130,6 @@
 @rd_pg4_rn_rm   ........ esz:2 . rm:5  .. pg:4  rn:5 rd:5       &rprr_esz
 @pd_pg_rn_rm    ........ esz:2 . rm:5 ... pg:3 rn:5 . rd:4      &rprr_esz
 
-# One register operand, with governing predicate, vector element size
-@rd_pg_rn       ........ esz:2 ... ... ... pg:3 rn:5 rd:5       &rpr_esz
-@rd_pg4_pn      ........ esz:2 ... ... .. pg:4 . rn:4 rd:5      &rpr_esz
-@pd_pg_rn       ........ esz:2 ... ... ... pg:3 rn:5 . rd:4     &rpr_esz
-
-# One register operand, with governing predicate, no vector element size
-@rd_pg_rn_e0    ........ .. ... ... ... pg:3 rn:5 rd:5          &rpr_esz esz=0
-
 # Three register operand, with governing predicate, vector element size
 @rda_pg_rn_rm   ........ esz:2 . rm:5  ... pg:3 rn:5 rd:5 \
                 &rprrr_esz ra=%reg_movprfx
@@ -145,6 +137,14 @@
                 &rprrr_esz rn=%reg_movprfx
 @rdn_pg_rm_ra   ........ esz:2 . ra:5  ... pg:3 rm:5 rd:5 \
                 &rprrr_esz rn=%reg_movprfx
+
+# One register operand, with governing predicate, vector element size
+@rd_pg_rn       ........ esz:2 ... ... ... pg:3 rn:5 rd:5       &rpr_esz
+@rd_pg4_pn      ........ esz:2 ... ... .. pg:4 . rn:4 rd:5      &rpr_esz
+@pd_pg_rn       ........ esz:2 ... ... ... pg:3 rn:5 . rd:4     &rpr_esz
+
+# One register operand, with governing predicate, no vector element size
+@rd_pg_rn_e0    ........ .. ... ... ... pg:3 rn:5 rd:5          &rpr_esz esz=0
 
 # Two register operands with a 6-bit signed immediate.
 @rd_rn_i6       ........ ... rn:5 ..... imm:s6 rd:5             &rri
@@ -345,16 +345,6 @@ FCMNE_ppzz      01100101 .. 0 ..... 011 ... ..... 1 ....        @pd_pg_rn_rm
 FCMUO_ppzz      01100101 .. 0 ..... 110 ... ..... 0 ....        @pd_pg_rn_rm
 FACGE_ppzz      01100101 .. 0 ..... 110 ... ..... 1 ....        @pd_pg_rn_rm
 FACGT_ppzz      01100101 .. 0 ..... 111 ... ..... 1 ....        @pd_pg_rn_rm
-
-# SVE floating-point arithmetic with immediate (predicated)
-FADD_zpzi       01100101 .. 011 000 100 ... 0000 . .....        @rdn_i1
-FSUB_zpzi       01100101 .. 011 001 100 ... 0000 . .....        @rdn_i1
-FMUL_zpzi       01100101 .. 011 010 100 ... 0000 . .....        @rdn_i1
-FSUBR_zpzi      01100101 .. 011 011 100 ... 0000 . .....        @rdn_i1
-FMAXNM_zpzi     01100101 .. 011 100 100 ... 0000 . .....        @rdn_i1
-FMINNM_zpzi     01100101 .. 011 101 100 ... 0000 . .....        @rdn_i1
-FMAX_zpzi       01100101 .. 011 110 100 ... 0000 . .....        @rdn_i1
-FMIN_zpzi       01100101 .. 011 111 100 ... 0000 . .....        @rdn_i1
 
 ### SVE Integer Multiply-Add Group
 
@@ -831,6 +821,16 @@ FMULX           01100101 .. 00 1010 100 ... ..... .....    @rdn_pg_rm
 FDIV            01100101 .. 00 1100 100 ... ..... .....    @rdm_pg_rn # FDIVR
 FDIV            01100101 .. 00 1101 100 ... ..... .....    @rdn_pg_rm
 
+# SVE floating-point arithmetic with immediate (predicated)
+FADD_zpzi       01100101 .. 011 000 100 ... 0000 . .....        @rdn_i1
+FSUB_zpzi       01100101 .. 011 001 100 ... 0000 . .....        @rdn_i1
+FMUL_zpzi       01100101 .. 011 010 100 ... 0000 . .....        @rdn_i1
+FSUBR_zpzi      01100101 .. 011 011 100 ... 0000 . .....        @rdn_i1
+FMAXNM_zpzi     01100101 .. 011 100 100 ... 0000 . .....        @rdn_i1
+FMINNM_zpzi     01100101 .. 011 101 100 ... 0000 . .....        @rdn_i1
+FMAX_zpzi       01100101 .. 011 110 100 ... 0000 . .....        @rdn_i1
+FMIN_zpzi       01100101 .. 011 111 100 ... 0000 . .....        @rdn_i1
+
 # SVE floating-point trig multiply-add coefficient
 FTMAD           01100101 esz:2 010 imm:3 100000 rm:5 rd:5       rn=%reg_movprfx
 
@@ -1017,16 +1017,16 @@ PRF             1100010 -- 00 ----- 111 --- ----- 0 ----
 
 ### SVE Memory Store Group
 
-# SVE contiguous store (scalar plus immediate)
-# ST1B, ST1H, ST1W, ST1D; require msz <= esz
-ST_zpri         1110010 .. esz:2  0.... 111 ... ..... ..... \
-                @rpri_store_msz nreg=0
-
 # SVE store predicate register
 STR_pri         1110010 11 0.     ..... 000 ... ..... 0 ....    @pd_rn_i9
 
 # SVE store vector register
 STR_zri         1110010 11 0.     ..... 010 ... ..... .....     @rd_rn_i9
+
+# SVE contiguous store (scalar plus immediate)
+# ST1B, ST1H, ST1W, ST1D; require msz <= esz
+ST_zpri         1110010 .. esz:2  0.... 111 ... ..... ..... \
+                @rpri_store_msz nreg=0
 
 # SVE contiguous store (scalar plus scalar)
 # ST1B, ST1H, ST1W, ST1D; require msz <= esz

@@ -29,7 +29,7 @@
 #define TIMER_FREQ	100 * 1000 * 1000
 
 /* XXX: do not use a global */
-uint32_t cpu_mips_get_random (CPUMIPSState *env)
+uint32_t cpu_mips_get_random(CPUMIPSState *env)
 {
     static uint32_t lfsr = 1;
     static uint32_t prev_idx = 0;
@@ -70,7 +70,7 @@ static void cpu_mips_timer_expire(CPUMIPSState *env)
 }
 #endif
 
-uint32_t cpu_mips_get_count (CPUMIPSState *env)
+uint32_t cpu_mips_get_count(CPUMIPSState *env)
 {
     if (env->CP0_Cause & (1 << CP0Ca_DC)) {
         return env->CP0_Count;
@@ -89,7 +89,7 @@ uint32_t cpu_mips_get_count (CPUMIPSState *env)
     }
 }
 
-void cpu_mips_store_count (CPUMIPSState *env, uint32_t count)
+void cpu_mips_store_count(CPUMIPSState *env, uint32_t count)
 {
 #if 0
     /*
@@ -97,9 +97,9 @@ void cpu_mips_store_count (CPUMIPSState *env, uint32_t count)
      * So env->timer may be NULL, which is also the case with KVM enabled so
      * treat timer as disabled in that case.
      */
-    if (env->CP0_Cause & (1 << CP0Ca_DC) || !env->timer)
+    if (env->CP0_Cause & (1 << CP0Ca_DC) || !env->timer) {
         env->CP0_Count = count;
-    else {
+    } else {
         /* Store new count register */
         env->CP0_Count =
             count - (uint32_t)muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
@@ -110,13 +110,15 @@ void cpu_mips_store_count (CPUMIPSState *env, uint32_t count)
 #endif
 }
 
-void cpu_mips_store_compare (CPUMIPSState *env, uint32_t value)
+void cpu_mips_store_compare(CPUMIPSState *env, uint32_t value)
 {
     env->CP0_Compare = value;
-    if (!(env->CP0_Cause & (1 << CP0Ca_DC)))
+    if (!(env->CP0_Cause & (1 << CP0Ca_DC))) {
         cpu_mips_timer_update(env);
-    if (env->insn_flags & ISA_MIPS32R2)
+    }
+    if (env->insn_flags & ISA_MIPS32R2) {
         env->CP0_Cause &= ~(1 << CP0Ca_TI);
+    }
     //qemu_irq_lower(env->irq[(env->CP0_IntCtl >> CP0IntCtl_IPTI) & 0x7]);
 }
 

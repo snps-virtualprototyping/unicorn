@@ -171,26 +171,55 @@ static void cpu_gen_init(struct uc_struct *uc)
     tcg_context_init(uc->tcg_ctx);
 }
 
-static void tb_clean_internal(size_t lvl, size_t count, void** lp)
+static void tb_clean_internal(void **p, int x)
 {
-    for (size_t i = 0; i < count; ++i) {
-        if (lp[i] != NULL) {
-            if (lvl > 0) {
-                // recurse to next level - all but first level have V_L2_SIZE entries
-                tb_clean_internal(lvl-1, V_L2_SIZE, lp[i]);
-            } else {
-                // leaf - delete the PageDesc array
-                g_free(lp[i]);
+    if (x <= 1) {
+        for (int i = 0; i < V_L2_SIZE; i++) {
+            void **q = p[i];
+            if (q) {
+                g_free(q);
             }
         }
+        g_free(p);
+    } else {
+        for (int i = 0; i < V_L2_SIZE; i++) {
+            void **q = p[i];
+            if (q) {
+                tb_clean_internal(q, x - 1);
+            }
+        }
+        g_free(p);
     }
-
-    g_free(lp);
 }
 
 void tb_cleanup(struct uc_struct *uc)
 {
-    tb_clean_internal(uc->v_l2_levels, uc->l1_map_size, uc->l1_map);
+    if (!uc) {
+        return;
+    }
+
+    if (!uc->l1_map) {
+        return;
+    }
+
+    int x = uc->v_l1_shift / V_L2_BITS;
+    if (x <= 1) {
+        for (int i = 0; i < uc->v_l1_size; i++) {
+            void **p = uc->l1_map[i];
+            if (p) {
+                g_free(p);
+                uc->l1_map[i] = NULL;
+            }
+        }
+    } else {
+        for (int i = 0; i < uc->v_l1_size; i++) {
+            void **p = uc->l1_map[i];
+            if (p) {
+                tb_clean_internal(p, x - 1);
+                uc->l1_map[i] = NULL;
+            }
+        }
+    }
 }
 
 /* Encode VAL as a signed leb128 sequence at P.
@@ -317,13 +346,15 @@ static int cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
     return -1;
 
 found:
-    // UNICORN: Commented out
-    //if (reset_icount && (tb->cflags & CF_USE_ICOUNT)) {
-    //    assert(use_icount);
-    //    /* Reset the cycle counter to the start of the block
-    //       and shift if to the number of actually executed instructions */
-    //    cpu->icount_decr.u16.low += num_insns - i;
-    //}
+    // UNICORN: If'd out
+#if 0
+    if (reset_icount && (tb_cflags(tb) & CF_USE_ICOUNT)) {
+        assert(use_icount);
+        /* Reset the cycle counter to the start of the block
+           and shift if to the number of actually executed instructions */
+        cpu_neg(cpu)->icount_decr.u16.low += num_insns - i;
+    }
+#endif
     restore_state_to_opc(env, tb, data);
 
 #ifdef CONFIG_PROFILER
@@ -361,7 +392,7 @@ bool cpu_restore_state(CPUState *cpu, uintptr_t host_pc, bool will_exit)
         tb = tb_find_pc(env->uc, host_pc);
         if (tb) {
             cpu_restore_state_from_tb(cpu, tb, host_pc, will_exit);
-            if (tb->cflags & CF_NOCACHE) {
+            if (tb_cflags(tb) & CF_NOCACHE) {
                 /* one-shot translation, invalidate it immediately */
                 tb_phys_invalidate(cpu->uc, tb, -1);
                 tb_free(cpu->uc, tb);
@@ -369,6 +400,7 @@ bool cpu_restore_state(CPUState *cpu, uintptr_t host_pc, bool will_exit)
             r = true;
         }
     }
+
     return r;
 }
 
@@ -709,50 +741,20 @@ static inline void *alloc_code_gen_buffer(struct uc_struct *uc)
 {
     TCGContext *tcg_ctx = uc->tcg_ctx;
     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
-    uintptr_t start = 0;
     size_t size = tcg_ctx->code_gen_buffer_size;
     void *buf;
 
-    /* Constrain the position of the buffer based on the host cpu.
-       Note that these addresses are chosen in concert with the
-       addresses assigned in the relevant linker script file.  */
-# if defined(__PIE__) || defined(__PIC__)
-    /* Don't bother setting a preferred location if we're building
-       a position-independent executable.  We're more likely to get
-       an address near the main executable if we let the kernel
-       choose the address.  */
-# elif defined(__x86_64__) && defined(MAP_32BIT)
-    /* Force the memory down into low memory with the executable.
-       Leave the choice of exact location with the kernel.  */
-    flags |= MAP_32BIT;
-    /* Cannot expect to map more than 800MB in low memory.  */
-    if (size > 800u * 1024 * 1024) {
-        tcg_ctx->code_gen_buffer_size = size = 800u * 1024 * 1024;
-    }
-# elif defined(__sparc__)
-    start = 0x40000000ul;
-# elif defined(__s390x__)
-    start = 0x90000000ul;
-# elif defined(__mips__)
-#  if _MIPS_SIM == _ABI64
-    start = 0x68000000ul;
-#  elif _MIPS_SIM == _ABI64
-    start = 0x128000000ul;
-#  else
-    start = 0x08000000ul;
-#  endif
-# endif
-
-    buf = mmap((void *)start, size + uc->qemu_real_host_page_size,
-               PROT_NONE, flags, -1, 0);
+    buf = mmap(NULL, size + uc->qemu_real_host_page_size, PROT_NONE, flags, -1, 0);
     if (buf == MAP_FAILED) {
         return NULL;
     }
 
 #ifdef __mips__
     if (cross_256mb(buf, size)) {
-        /* Try again, with the original still mapped, to avoid re-acquiring
-           that 256mb crossing.  This time don't specify an address.  */
+        /*
+         * Try again, with the original still mapped, to avoid re-acquiring
+         * the same 256mb crossing.
+         */
         size_t size2;
         void *buf2 = mmap(NULL, size + uc->qemu_real_host_page_size,
                           PROT_NONE, flags, -1, 0);
@@ -1148,7 +1150,7 @@ void tb_phys_invalidate(struct uc_struct *uc,
 
     /* remove the TB from the hash list */
     phys_pc = tb->page_addr[0] + (tb->pc & ~TARGET_PAGE_MASK);
-    h = tb_hash_func(phys_pc, tb->pc, tb->flags);
+    h = tb_hash_func(phys_pc, tb->pc, tb->flags, tb->cflags & CF_HASH_MASK);
     tb_hash_remove(&tcg_ctx->tb_ctx.tb_phys_hash[h], tb);
 
     /* remove the TB from the page list */
@@ -1251,8 +1253,6 @@ static inline void tb_alloc_page(struct uc_struct *uc, TranslationBlock *tb,
     tb->page_next[n] = p->first_tb;
 #ifndef CONFIG_USER_ONLY
     page_already_protected = p->first_tb != NULL;
-    if (!page_already_protected)
-        tlb_reset_dirty(uc->cpu, page_addr, TARGET_PAGE_SIZE);
 #endif
     p->first_tb = (TranslationBlock *)((uintptr_t)tb | n);
     invalidate_page_bitmap(p);
@@ -1307,7 +1307,7 @@ static void tb_link_page(struct uc_struct *uc,
     }
 
     /* add in the hash table */
-    h = tb_hash_func(phys_pc, tb->pc, tb->flags);
+    h = tb_hash_func(phys_pc, tb->pc, tb->flags, tb->cflags & CF_HASH_MASK);
     ptb = &tcg_ctx->tb_ctx.tb_phys_hash[h];
     tb->phys_hash_next = *ptb;
     *ptb = tb;
@@ -1328,16 +1328,26 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     TranslationBlock *tb;
     tb_page_addr_t phys_pc, phys_page2;
     tcg_insn_unit *gen_code_buf;
-    int gen_code_size, search_size;
+    int gen_code_size, search_size, max_insns;
 #ifdef CONFIG_PROFILER
     int64_t ti;
 #endif
 
     phys_pc = get_page_addr_code(env, pc);
-    /* UNICORN: Commented out
-    if (use_icount) {
-        cflags |= CF_USE_ICOUNT;
-    }*/
+
+    /* Instruction counting */
+    max_insns = cflags & CF_COUNT_MASK;
+    if (max_insns == 0) {
+        max_insns = CF_COUNT_MASK;
+    }
+    if (max_insns > TCG_MAX_INSNS) {
+        max_insns = TCG_MAX_INSNS;
+    }
+    // Unicorn: commented out
+    if (cpu->singlestep_enabled /*|| singlestep*/) {
+        max_insns = 1;
+    }
+
     tb = tb_alloc(env->uc, pc);
     if (unlikely(!tb)) {
  buffer_overflow:
@@ -1353,6 +1363,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->cs_base = cs_base;
     tb->flags = flags;
     tb->cflags = cflags;
+    tcg_ctx->tb_cflags = cflags;
+ tb_overflow:
 
 #ifdef CONFIG_PROFILER
     tcg_ctx->tb_count1++; /* includes aborted translations because of
@@ -1362,8 +1374,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 
     tcg_func_start(tcg_ctx);
 
-    tcg_ctx->cpu = ENV_GET_CPU(env);
-    gen_intermediate_code(cpu, tb);
+    tcg_ctx->cpu = env_cpu(env);
+    gen_intermediate_code(cpu, tb, max_insns);
     tcg_ctx->cpu = NULL;
 
     // Unicorn: FIXME: Needs to be amended to work with new TCG
@@ -1399,14 +1411,39 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tcg_ctx->code_time -= profile_getclock();
 #endif
 
-    /* ??? Overflow could be handled better here.  In particular, we
-       don't need to re-do gen_intermediate_code, nor should we re-do
-       the tcg optimization currently hidden inside tcg_gen_code.  All
-       that should be required is to flush the TBs, allocate a new TB,
-       re-initialize it per above, and re-do the actual code generation.  */
     gen_code_size = tcg_gen_code(tcg_ctx, tb);
     if (unlikely(gen_code_size < 0)) {
-        goto buffer_overflow;
+        switch (gen_code_size) {
+        case -1:
+            /*
+             * Overflow of code_gen_buffer, or the current slice of it.
+             *
+             * TODO: We don't need to re-do gen_intermediate_code, nor
+             * should we re-do the tcg optimization currently hidden
+             * inside tcg_gen_code.  All that should be required is to
+             * flush the TBs, allocate a new TB, re-initialize it per
+             * above, and re-do the actual code generation.
+             */
+            goto buffer_overflow;
+
+        case -2:
+            /*
+             * The code generated for the TranslationBlock is too large.
+             * The maximum size allowed by the unwind info is 64k.
+             * There may be stricter constraints from relocations
+             * in the tcg backend.
+             *
+             * Try again with half as many insns as we attempted this time.
+             * If a single insn overflows, there's a bug somewhere...
+             */
+            max_insns = tb->icount;
+            assert(max_insns > 1);
+            max_insns /= 2;
+            goto tb_overflow;
+
+        default:
+            g_assert_not_reached();
+        }
     }
     search_size = encode_search(tcg_ctx, tb, (unsigned char *)gen_code_buf + gen_code_size);
     if (unlikely(search_size < 0)) {
@@ -1537,13 +1574,11 @@ void tb_invalidate_phys_page_range(struct uc_struct *uc, tb_page_addr_t start, t
                                    int is_cpu_write_access)
 {
     TranslationBlock *tb, *tb_next;
-#if defined(TARGET_HAS_PRECISE_SMC)
-    CPUArchState *env = NULL;
-#endif
     tb_page_addr_t tb_start, tb_end;
     PageDesc *p;
     int n;
 #ifdef TARGET_HAS_PRECISE_SMC
+    CPUArchState *env = NULL;
     int current_tb_not_found = is_cpu_write_access;
     TranslationBlock *current_tb = NULL;
     int current_tb_modified = 0;
@@ -1595,7 +1630,7 @@ void tb_invalidate_phys_page_range(struct uc_struct *uc, tb_page_addr_t start, t
                 }
             }
             if (current_tb == tb &&
-                (current_tb->cflags & CF_COUNT_MASK) != 1) {
+                (tb_cflags(current_tb) & CF_COUNT_MASK) != 1) {
                 /* If we are modifying the current TB, we must stop
                 its execution. We could be more precise by checking
                 that the modification is after the current PC, but it
@@ -1622,10 +1657,8 @@ void tb_invalidate_phys_page_range(struct uc_struct *uc, tb_page_addr_t start, t
 #endif
 #ifdef TARGET_HAS_PRECISE_SMC
     if (current_tb_modified) {
-        /* we generate a block containing just the instruction
-           modifying the memory. It will ensure that it cannot modify
-           itself */
-        tb_gen_code(uc->cpu, current_pc, current_cs_base, current_flags, 1);
+        /* Force execution of one insn next time.  */
+        uc->cpu->cflags_next_tb = 1 | curr_cflags(uc);
         cpu_loop_exit_noexc(uc->cpu);
     }
 #endif
@@ -1665,7 +1698,7 @@ void tb_invalidate_phys_page_fast(struct uc_struct* uc, tb_page_addr_t start, in
         unsigned long b;
 
         nr = start & ~TARGET_PAGE_MASK;
-        b = p->code_bitmap[BIT_WORD(nr)] >> (nr & (BITS_PER_LONG - 1));
+        b = p->code_bitmap[BIT_WORD(nr)] >> ((nr & (BITS_PER_LONG - 1)) & 0x1f);
         if (b & ((1 << len) - 1)) {
             goto do_invalidate;
         }
@@ -1681,7 +1714,7 @@ void tb_invalidate_phys_page_fast(struct uc_struct* uc, tb_page_addr_t start, in
  * TB (because it was modified by this store and the guest CPU has
  * precise-SMC semantics).
  */
-static bool tb_invalidate_phys_page(tb_page_addr_t addr, uintptr_t pc)
+static bool tb_invalidate_phys_page(struct uc_struct *uc, tb_page_addr_t addr, uintptr_t pc)
 {
     TranslationBlock *tb;
     PageDesc *p;
@@ -1715,7 +1748,7 @@ static bool tb_invalidate_phys_page(tb_page_addr_t addr, uintptr_t pc)
         tb = (TranslationBlock *)((uintptr_t)tb & ~3);
 #ifdef TARGET_HAS_PRECISE_SMC
         if (current_tb == tb &&
-            (current_tb->cflags & CF_COUNT_MASK) != 1) {
+            (tb_cflags(current_tb) & CF_COUNT_MASK) != 1) {
                 /* If we are modifying the current TB, we must stop
                    its execution. We could be more precise by checking
                    that the modification is after the current PC, but it
@@ -1734,10 +1767,8 @@ static bool tb_invalidate_phys_page(tb_page_addr_t addr, uintptr_t pc)
     p->first_tb = NULL;
 #ifdef TARGET_HAS_PRECISE_SMC
     if (current_tb_modified) {
-        /* we generate a block containing just the instruction
-           modifying the memory. It will ensure that it cannot modify
-           itself */
-        tb_gen_code(cpu, current_pc, current_cs_base, current_flags, 1);
+        /* Force execution of one insn next time.  */
+        cpu->cflags_next_tb = 1 | curr_cflags(uc);
         return true;
     }
 #endif
@@ -1801,6 +1832,7 @@ void tb_check_watchpoint(CPUState *cpu)
 {
     TranslationBlock *tb;
     CPUArchState *env = cpu->env_ptr;
+
     tb = tb_find_pc(env->uc, cpu->mem_io_pc);
     if (tb) {
         /* We can use retranslation to find the PC.  */
@@ -1815,9 +1847,11 @@ void tb_check_watchpoint(CPUState *cpu)
 
         cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
         addr = get_page_addr_code(env, pc);
-        if (addr != -1)
-            tb_invalidate_phys_range(cpu->uc, addr, addr + 1);
+        tb_invalidate_phys_range(cpu->uc, addr, addr + 1);
     }
+
+    cpu_restore_state_from_tb(cpu, tb, cpu->mem_io_pc, true);
+    tb_phys_invalidate(cpu->uc, tb, -1);
 }
 
 #ifndef CONFIG_USER_ONLY
@@ -1827,20 +1861,18 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 {
     CPUArchState *env = cpu->env_ptr;
     TranslationBlock *tb;
-    uint32_t n, cflags;
-    target_ulong pc, cs_base;
-    uint32_t flags;
+    uint32_t n;
 
     tb = tb_find_pc(env->uc, retaddr);
     if (!tb) {
         cpu_abort(cpu, "cpu_io_recompile: could not find TB for pc=%p",
                   (void *)retaddr);
     }
-    n = cpu->icount_decr.u16.low + tb->icount;
+    n = cpu_neg(cpu)->icount_decr.u16.low + tb->icount;
     cpu_restore_state_from_tb(cpu, tb, retaddr, true);
     /* Calculate how many instructions had been executed before the fault
        occurred.  */
-    n = n - cpu->icount_decr.u16.low;
+    n = n - cpu_neg(cpu)->icount_decr.u16.low;
     /* Generate a new TB ending on the I/O insn.  */
     n++;
     /* On MIPS and SH, delay slot instructions can only be restarted if
@@ -1850,14 +1882,14 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 #if defined(TARGET_MIPS)
     if ((env->hflags & MIPS_HFLAG_BMASK) != 0 && n > 1) {
         env->active_tc.PC -= (env->hflags & MIPS_HFLAG_B16 ? 2 : 4);
-        cpu->icount_decr.u16.low++;
+        cpu_neg(cpu)->icount_decr.u16.low++;
         env->hflags &= ~MIPS_HFLAG_BMASK;
     }
 #elif defined(TARGET_SH4)
     if ((env->flags & ((DELAY_SLOT | DELAY_SLOT_CONDITIONAL))) != 0
             && n > 1) {
         env->pc -= 2;
-        cpu->icount_decr.u16.low++;
+        cpu_neg(cpu)->icount_decr.u16.low++;
         env->flags &= ~(DELAY_SLOT | DELAY_SLOT_CONDITIONAL);
     }
 #endif
@@ -1866,12 +1898,10 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
         cpu_abort(cpu, "TB too big during recompile");
     }
 
-    cflags = n | CF_LAST_IO;
-    pc = tb->pc;
-    cs_base = tb->cs_base;
-    flags = tb->flags;
-    tb_phys_invalidate(cpu->uc, tb, -1);
-    if (tb->cflags & CF_NOCACHE) {
+    /* Adjust the execution state of the next TB.  */
+    cpu->cflags_next_tb = curr_cflags(cpu->uc) | CF_LAST_IO | n;
+
+    if (tb_cflags(tb) & CF_NOCACHE) {
         if (tb->orig_tb) {
             /* Invalidate original TB if this TB was generated in
              * cpu_exec_nocache() */
@@ -1879,9 +1909,7 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
         }
         tb_free(env->uc, tb);
     }
-    /* FIXME: In theory this could raise an exception.  In practice
-       we have already translated the block once so it's probably ok.  */
-    tb_gen_code(cpu, pc, cs_base, (int)flags, cflags);
+
     /* TODO: If env->pc != tb->pc (i.e. the faulting instruction was not
        the first in the TB) then we end up generating a whole new TB and
        repeating the fault, which is horribly inefficient.
@@ -1976,9 +2004,9 @@ void dump_exec_info(FILE *f, fprintf_function cpu_fprintf)
 
 void cpu_interrupt(CPUState *cpu, int mask)
 {
-    printf("cpu_interrupt\n");
     cpu->interrupt_request |= mask;
     cpu->tcg_exit_req = 1;
+    atomic_set(&cpu_neg(cpu)->icount_decr.u16.high, -1);
 }
 
 #if 0
@@ -2142,7 +2170,7 @@ static void page_set_flags(struct uc_struct *uc, target_ulong start, target_ulon
         if (!(p->flags & PAGE_WRITE) &&
             (flags & PAGE_WRITE) &&
             p->first_tb) {
-            tb_invalidate_phys_page(addr, 0);
+            tb_invalidate_phys_page(uc, addr, 0);
         }
         p->flags = flags;
     }
@@ -2242,7 +2270,7 @@ int page_unprotect(struct uc_struct *uc, target_ulong address, uintptr_t pc)
 
             /* and since the content will be modified, we must invalidate
                the corresponding translated code. */
-            current_tb_invalidated |= tb_invalidate_phys_page(addr, pc);
+            current_tb_invalidated |= tb_invalidate_phys_page(uc, addr, pc);
 #ifdef CONFIG_USER_ONLY
             if (DEBUG_TB_CHECK_GATE) {
                 tb_invalidate_check(addr);

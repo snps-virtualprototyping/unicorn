@@ -48,6 +48,15 @@ typedef struct ARMCPUClass {
     void (*parent_reset)(CPUState *cpu);
 } ARMCPUClass;
 
+typedef struct ARMCPUInfo {
+    const char *name;
+    void (*initfn)(struct uc_struct *uc, Object *obj, void *opaque);
+    void (*class_init)(struct uc_struct *uc, ObjectClass *oc, void *data);
+} ARMCPUInfo;
+
+void arm_cpu_register(struct uc_struct *uc, const ARMCPUInfo *info);
+void aarch64_cpu_register(struct uc_struct *uc, const ARMCPUInfo *info);
+
 typedef struct ARMCPU ARMCPU;
 
 #define TYPE_AARCH64_CPU "aarch64-cpu"
@@ -70,6 +79,7 @@ void arm_gt_ptimer_cb(void *opaque);
 void arm_gt_vtimer_cb(void *opaque);
 void arm_gt_htimer_cb(void *opaque);
 void arm_gt_stimer_cb(void *opaque);
+void arm_gt_hvtimer_cb(void *opaque);
 
 #define ARM_AFF0_SHIFT 0
 #define ARM_AFF0_MASK  (0xFFULL << ARM_AFF0_SHIFT)

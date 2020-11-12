@@ -18,7 +18,7 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-static inline bool gen_lr(DisasContext *ctx, arg_atomic *a, TCGMemOp mop)
+static inline bool gen_lr(DisasContext *ctx, arg_atomic *a, MemOp mop)
 {
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv src1 = tcg_temp_new(tcg_ctx);
@@ -38,7 +38,7 @@ static inline bool gen_lr(DisasContext *ctx, arg_atomic *a, TCGMemOp mop)
     return true;
 }
 
-static inline bool gen_sc(DisasContext *ctx, arg_atomic *a, TCGMemOp mop)
+static inline bool gen_sc(DisasContext *ctx, arg_atomic *a, MemOp mop)
 {
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv src1 = tcg_temp_new(tcg_ctx);
@@ -63,7 +63,7 @@ static inline bool gen_sc(DisasContext *ctx, arg_atomic *a, TCGMemOp mop)
 
     gen_set_label(tcg_ctx, l1);
     /*
-     * Address comparion failure.  However, we still need to
+     * Address comparison failure.  However, we still need to
      * provide the memory barrier implied by AQ/RL.
      */
     tcg_gen_mb(tcg_ctx, TCG_MO_ALL + a->aq * TCG_BAR_LDAQ + a->rl * TCG_BAR_STRL);
@@ -71,6 +71,12 @@ static inline bool gen_sc(DisasContext *ctx, arg_atomic *a, TCGMemOp mop)
     gen_set_gpr(ctx, a->rd, dat);
 
     gen_set_label(tcg_ctx, l2);
+    /*
+     * Clear the load reservation, since an SC must fail if there is
+     * an SC to any address, in between an LR and SC pair.
+     */
+    tcg_gen_movi_tl(tcg_ctx, tcg_ctx->load_res_risc, -1);
+
     tcg_temp_free(tcg_ctx, dat);
     tcg_temp_free(tcg_ctx, src1);
     tcg_temp_free(tcg_ctx, src2);
@@ -78,8 +84,8 @@ static inline bool gen_sc(DisasContext *ctx, arg_atomic *a, TCGMemOp mop)
 }
 
 static bool gen_amo(DisasContext *ctx, arg_atomic *a,
-                    void(*func)(TCGContext *, TCGv, TCGv, TCGv, TCGArg, TCGMemOp),
-                    TCGMemOp mop)
+                    void(*func)(TCGContext *, TCGv, TCGv, TCGv, TCGArg, MemOp),
+                    MemOp mop)
 {
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv src1 = tcg_temp_new(tcg_ctx);

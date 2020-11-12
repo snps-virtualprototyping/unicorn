@@ -20,6 +20,7 @@
 #include "exec/cpu-common.h"
 #include "exec/hwaddr.h"
 #include "exec/memattrs.h"
+#include "exec/memop.h"
 #include "qemu/queue.h"
 #include "qemu/int128.h"
 #include "qapi/error.h"
@@ -262,14 +263,26 @@ FlatView *address_space_to_flatview(AddressSpace *as);
  * @nonvolatile: this section is non-volatile
  */
 struct MemoryRegionSection {
+    Int128 size;
     MemoryRegion *mr;
     FlatView *fv;
     hwaddr offset_within_region;
-    Int128 size;
     hwaddr offset_within_address_space;
     bool readonly;
     bool nonvolatile;
 };
+
+static inline bool MemoryRegionSection_eq(MemoryRegionSection *a,
+                                          MemoryRegionSection *b)
+{
+    return a->mr == b->mr &&
+           a->fv == b->fv &&
+           a->offset_within_region == b->offset_within_region &&
+           a->offset_within_address_space == b->offset_within_address_space &&
+           int128_eq(a->size, b->size) &&
+           a->readonly == b->readonly &&
+           a->nonvolatile == b->nonvolatile;
+}
 
 static inline MemoryRegionSection MemoryRegionSection_make(MemoryRegion *mr, FlatView *fv,
     hwaddr offset_within_region, Int128 size, hwaddr offset_within_address_space, bool readonly)
@@ -281,7 +294,6 @@ static inline MemoryRegionSection MemoryRegionSection_make(MemoryRegion *mr, Fla
     section.size = size;
     section.offset_within_address_space = offset_within_address_space;
     section.readonly = readonly;
-    section.nonvolatile = false;
     return section;
 }
 
@@ -731,6 +743,13 @@ MemoryRegion *memory_region_from_host(struct uc_struct *uc, void *ptr, ram_addr_
 void *memory_region_get_ram_ptr(MemoryRegion *mr);
 
 /**
+ * memory_region_do_writeback: Trigger writeback for selected address range
+ * [addr, addr + size]
+ *
+ */
+void memory_region_do_writeback(MemoryRegion *mr, hwaddr addr, hwaddr size);
+
+/**
  * memory_region_set_readonly: Turn a memory region read-only (or read-write)
  *
  * Allows a memory region to be marked as read-only (turning it into a ROM).
@@ -974,13 +993,13 @@ void memory_listener_unregister(struct uc_struct* uc, MemoryListener *listener);
  * @mr: #MemoryRegion to access
  * @addr: address within that region
  * @pval: pointer to uint64_t which the data is written to
- * @size: size of the access in bytes
+ * @op: size, sign, and endianness of the memory operation
  * @attrs: memory transaction attributes to use for the access
  */
 MemTxResult memory_region_dispatch_read(MemoryRegion *mr,
                                         hwaddr addr,
                                         uint64_t *pval,
-                                        unsigned size,
+                                        MemOp op,
                                         MemTxAttrs attrs);
 /**
  * memory_region_dispatch_write: perform a write directly to the specified
@@ -989,13 +1008,13 @@ MemTxResult memory_region_dispatch_read(MemoryRegion *mr,
  * @mr: #MemoryRegion to access
  * @addr: address within that region
  * @data: data to write
- * @size: size of the access in bytes
+ * @op: size, sign, and endianness of the memory operation
  * @attrs: memory transaction attributes to use for the access
  */
 MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
                                          hwaddr addr,
                                          uint64_t data,
-                                         unsigned size,
+                                         MemOp op,
                                          MemTxAttrs attrs);
 
 /**
@@ -1312,7 +1331,7 @@ void memory_register_types(struct uc_struct *uc);
 
 MemoryRegion *memory_map(struct uc_struct *uc, hwaddr begin, size_t size, uint32_t perms);
 MemoryRegion *memory_map_ptr(struct uc_struct *uc, hwaddr begin, size_t size, uint32_t perms, void *ptr);
-MemoryRegion *memory_map_io(struct uc_struct *uc, hwaddr begin, size_t size, void *opaque); // JHW
+MemoryRegion *memory_map_io(struct uc_struct *uc, hwaddr begin, size_t size, void *opaque); // SNPS added
 void memory_unmap(struct uc_struct *uc, MemoryRegion *mr);
 int memory_free(struct uc_struct *uc);
 
@@ -1330,8 +1349,8 @@ void *qemu_map_ram_ptr(struct uc_struct *uc, RAMBlock *ram_block,
 static inline bool memory_access_is_direct(MemoryRegion *mr, bool is_write)
 {
     if (is_write) {
-        return memory_region_is_ram(mr) &&
-               !mr->readonly && !memory_region_is_ram_device(mr);
+        return memory_region_is_ram(mr) && !mr->readonly &&
+               !mr->rom_device && !memory_region_is_ram_device(mr);
     } else {
         return (memory_region_is_ram(mr) && !memory_region_is_ram_device(mr)) ||
                memory_region_is_romd(mr);

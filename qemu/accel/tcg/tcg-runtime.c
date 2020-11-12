@@ -146,85 +146,31 @@ uint64_t HELPER(ctpop_i64)(uint64_t arg)
 void *HELPER(lookup_tb_ptr)(CPUArchState *env)
 {
     TCGContext *tcg_ctx = env->uc->tcg_ctx;
-    CPUState *cpu = ENV_GET_CPU(env);
+    CPUState *cpu = env_cpu(env);
     TranslationBlock *tb;
     target_ulong cs_base, pc;
     uint32_t flags;
 
-    tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags);
+    tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, curr_cflags(env->uc));
     if (tb == NULL) {
         return tcg_ctx->code_gen_epilogue;
     }
 
-    // Unicorn: commented out
+    // Unicorn: Commented out
     //qemu_log_mask_and_addr(CPU_LOG_EXEC, pc,
-    //                       "Chain %p [%d: " TARGET_FMT_lx "] %s\n",
-    //                       tb->tc.ptr, cpu->cpu_index, pc,
+    //                       "Chain %d: %p ["
+    //                       TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
+    //                       cpu->cpu_index, tb->tc.ptr, cs_base, pc, flags,
     //                       lookup_symbol(pc));
     return tb->tc.ptr;
 }
 
 void HELPER(exit_atomic)(CPUArchState *env)
 {
-    cpu_loop_exit_atomic(ENV_GET_CPU(env), GETPC());
+    cpu_loop_exit_atomic(env_cpu(env), GETPC());
 }
 
-#ifndef CONFIG_SOFTMMU
-/* The softmmu versions of these helpers are in cputlb.c.  */
-
-/* Do not allow unaligned operations to proceed.  Return the host address.  */
-static void *atomic_mmu_lookup(CPUArchState *env, target_ulong addr,
-                               int size, uintptr_t retaddr)
-{
-    /* Enforce qemu required alignment.  */
-    if (unlikely(addr & (size - 1))) {
-        cpu_loop_exit_atomic(ENV_GET_CPU(env), retaddr);
-    }
-    return g2h(addr);
-}
-
-/* Macro to call the above, with local variables from the use context.  */
-#define ATOMIC_MMU_LOOKUP  atomic_mmu_lookup(env, addr, DATA_SIZE, GETPC())
-
-#define ATOMIC_NAME(X)   HELPER(glue(glue(atomic_ ## X, SUFFIX), END))
-#define EXTRA_ARGS
-
-#define DATA_SIZE 1
-#include "atomic_template.h"
-
-#define DATA_SIZE 2
-#include "atomic_template.h"
-
-#define DATA_SIZE 4
-#include "atomic_template.h"
-
-#ifdef CONFIG_ATOMIC64
-#define DATA_SIZE 8
-#include "atomic_template.h"
-#endif
-
-/* The following is only callable from other helpers, and matches up
-   with the softmmu version.  */
-
-#if HAVE_ATOMIC128 || HAVE_CMPXCHG128
-
-#undef EXTRA_ARGS
-#undef ATOMIC_NAME
-#undef ATOMIC_MMU_LOOKUP
-
-#define EXTRA_ARGS     , TCGMemOpIdx oi, uintptr_t retaddr
-#define ATOMIC_NAME(X) \
-    HELPER(glue(glue(glue(atomic_ ## X, SUFFIX), END), _mmu))
-#define ATOMIC_MMU_LOOKUP  atomic_mmu_lookup(env, addr, DATA_SIZE, retaddr)
-
-#define DATA_SIZE 16
-#include "atomic_template.h"
-#endif
-
-#endif /* !CONFIG_SOFTMMU */
-
-
-// JHW for basic block tracing
+// SNPS added
 void HELPER(trace_tb_entry)(CPUArchState *env, uint64_t pc)
 {
     uc_trace_basic_block_t trace_func = env->uc->uc_trace_bb_func;

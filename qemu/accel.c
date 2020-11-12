@@ -43,7 +43,7 @@ static void tcg_accel_class_init(struct uc_struct *uc, ObjectClass *oc, void *da
 
 static int tcg_init(MachineState *ms)
 {
-    ms->uc->tcg_exec_init(ms->uc, ms->uc->tb_size); // arch-dependent
+    ms->uc->tcg_exec_init(ms->uc, ms->uc->tb_size); // SNPS changed
     return 0;
 }
 

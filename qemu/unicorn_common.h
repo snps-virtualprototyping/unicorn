@@ -59,6 +59,7 @@ static inline void free_tcg_temp_names(TCGContext *s)
 #endif
 }
 
+// SNPS added
 void tb_invalidate_phys_page_range(struct uc_struct *uc, tb_page_addr_t start,
                                    tb_page_addr_t end, int is_cpu_write_access);
 
@@ -113,32 +114,32 @@ static inline void uc_common_init(struct uc_struct* uc)
     uc->cpu_exec_exit = cpu_exec_exit;
     uc->vm_start = vm_start;
 
-    uc->tb_flush = tb_flush;
-    uc->tb_flush_page = tb_flush_page;
+    uc->tb_flush = tb_flush; // SNPS added
+    uc->tb_flush_page = tb_flush_page; // SNPS added
 
-    uc->inv_dmi_ptr = dmi_invalidate;
+    uc->inv_dmi_ptr = dmi_invalidate; // SNPS added
 
-    uc->tlb_flush = tlb_flush;
-    uc->tlb_flush_page = tlb_flush_page;
-    uc->tlb_flush_mmuidx = tlb_flush_by_mmuidx;
-    uc->tlb_flush_page_mmuidx = tlb_flush_page_by_mmuidx;
+    uc->tlb_flush = tlb_flush; // SNPS added
+    uc->tlb_flush_page = tlb_flush_page; // SNPS added
+    uc->tlb_flush_mmuidx = tlb_flush_by_mmuidx; // SNPS added
+    uc->tlb_flush_page_mmuidx = tlb_flush_page_by_mmuidx; // SNPS added
 
-    uc->breakpoint_insert = cpu_breakpoint_insert;
-    uc->breakpoint_remove = cpu_breakpoint_remove;
-    uc->watchpoint_insert = cpu_watchpoint_insert;
-    uc->watchpoint_remove = cpu_watchpoint_remove;
+    uc->breakpoint_insert = cpu_breakpoint_insert; // SNPS added
+    uc->breakpoint_remove = cpu_breakpoint_remove; // SNPS added
+    uc->watchpoint_insert = cpu_watchpoint_insert; // SNPS added
+    uc->watchpoint_remove = cpu_watchpoint_remove; // SNPS added
 
     uc->memory_map = memory_map;
     uc->memory_map_ptr = memory_map_ptr;
-    uc->memory_map_mmio = memory_map_io; // JHW
+    uc->memory_map_mmio = memory_map_io; // SNPS added
     uc->memory_unmap = memory_unmap;
     uc->readonly_mem = memory_region_set_readonly;
 
     uc->target_page_size = TARGET_PAGE_SIZE;
     uc->target_page_align = TARGET_PAGE_SIZE - 1;
 
-    uc->is_running = false; // JHW
-    uc->is_memcb = false;
+    uc->is_running = false; // SNPS added
+    uc->is_memcb = false; // SNPS added
 
     if (!uc->release) {
         uc->release = release_common;

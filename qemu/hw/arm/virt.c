@@ -58,6 +58,7 @@ typedef struct {
 #define VIRT_MACHINE_CLASS(uc, klass) \
     OBJECT_CLASS_CHECK(uc, VirtMachineClass, klass, TYPE_VIRT_MACHINE)
 
+// SNPS added
 static const char *valid_cpus[] = {
     ARM_CPU_TYPE_NAME("Cortex-M0"),
     ARM_CPU_TYPE_NAME("Cortex-M3"),
@@ -143,10 +144,11 @@ static void virt_class_init(struct uc_struct *uc, ObjectClass *oc, void *data)
     MachineClass *mc = MACHINE_CLASS(uc, oc);
 
     mc->init = machvirt_init;
-    mc->max_cpus = 1;
+    mc->max_cpus = 1; // SNPS changed
     mc->is_default = 1;
-    mc->arch = uc->arch;
-    mc->default_cpu_type = uc->model; //ARM_CPU_TYPE_NAME("cortex-max");
+    mc->arch = uc->arch; // SNPS changed
+    // Unicorn: Enable all CPU features
+    mc->default_cpu_type = uc->model; // SNPS changed
 }
 
 static const TypeInfo machvirt_info = {

@@ -42,6 +42,7 @@ typedef struct DisasContext {
     /* pc_succ_insn points to the instruction following base.pc_next */
     target_ulong pc_succ_insn;
     target_ulong priv_ver;
+    bool virt_enabled;
     uint32_t opcode;
     uint32_t mstatus_fs;
     uint32_t misa;
@@ -52,6 +53,7 @@ typedef struct DisasContext {
        to any system register, which includes CSR_FRM, so we do not have
        to reset this known value.  */
     int frm;
+    bool ext_ifencei;
 
     // Unicorn engine
     struct uc_struct *uc;
@@ -116,6 +118,30 @@ static void gen_exception_debug(const DisasContext *ctx)
     tcg_temp_free_i32(tcg_ctx, helper_tmp);
 }
 
+/* Wrapper around tcg_gen_exit_tb that handles single stepping */
+static void exit_tb(DisasContext *ctx)
+{
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+
+    if (ctx->base.singlestep_enabled) {
+        gen_exception_debug(ctx);
+    } else {
+        tcg_gen_exit_tb(tcg_ctx, NULL, 0);
+    }
+}
+
+/* Wrapper around tcg_gen_lookup_and_goto_ptr that handles single stepping */
+static void lookup_and_goto_ptr(DisasContext *ctx)
+{
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+
+    if (ctx->base.singlestep_enabled) {
+        gen_exception_debug(ctx);
+    } else {
+        tcg_gen_lookup_and_goto_ptr(tcg_ctx);
+    }
+}
+
 static void gen_exception_illegal(DisasContext *ctx)
 {
     generate_exception(ctx, RISCV_EXCP_ILLEGAL_INST);
@@ -147,14 +173,14 @@ static void gen_goto_tb(DisasContext *ctx, int n, target_ulong dest)
         /* chaining is only allowed when the jump is to the same page */
         tcg_gen_goto_tb(tcg_ctx, n);
         tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, dest);
+
+        /* No need to check for single stepping here as use_goto_tb() will
+         * return false in case of single stepping.
+         */
         tcg_gen_exit_tb(tcg_ctx, ctx->base.tb, n);
     } else {
         tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, dest);
-        if (ctx->base.singlestep_enabled) {
-            gen_exception_debug(ctx);
-        } else {
-            tcg_gen_lookup_and_goto_ptr(tcg_ctx);
-        }
+        lookup_and_goto_ptr(ctx);
     }
 }
 
@@ -391,8 +417,14 @@ static void mark_fs_dirty(DisasContext *ctx)
 
     tmp = tcg_temp_new(tcg_ctx);
     tcg_gen_ld_tl(tcg_ctx, tmp, tcg_ctx->cpu_env, offsetof(CPURISCVState, mstatus));
-    tcg_gen_ori_tl(tcg_ctx, tmp, tmp, MSTATUS_FS);
+    tcg_gen_ori_tl(tcg_ctx, tmp, tmp, MSTATUS_FS | MSTATUS_SD);
     tcg_gen_st_tl(tcg_ctx, tmp, tcg_ctx->cpu_env, offsetof(CPURISCVState, mstatus));
+
+    if (ctx->virt_enabled) {
+        tcg_gen_ld_tl(tcg_ctx, tmp, tcg_ctx->cpu_env, offsetof(CPURISCVState, mstatus_hs));
+        tcg_gen_ori_tl(tcg_ctx, tmp, tmp, MSTATUS_FS | MSTATUS_SD);
+        tcg_gen_st_tl(tcg_ctx, tmp, tcg_ctx->cpu_env, offsetof(CPURISCVState, mstatus_hs));
+    }
     tcg_temp_free(tcg_ctx, tmp);
 }
 #else
@@ -536,7 +568,7 @@ static void decode_RV32_64C(DisasContext *ctx)
 }
 
 #define EX_SH(amount) \
-    static int ex_shift_##amount(int imm) \
+    static int ex_shift_##amount(DisasContext *ctx, int imm) \
     {                                         \
         return imm << amount;                 \
     }
@@ -552,17 +584,38 @@ EX_SH(12)
     }                              \
 } while (0)
 
-static int ex_rvc_register(int reg)
+static int ex_rvc_register(DisasContext *ctx, int reg)
 {
     return 8 + reg;
 }
 
-bool decode_insn32(DisasContext *ctx, uint32_t insn);
+static int ex_rvc_shifti(DisasContext *ctx, int imm)
+{
+    /* For RV128 a shamt of 0 means a shift by 64. */
+    return imm ? imm : 64;
+}
+
 /* Include the auto-generated decoder for 32 bit insn */
 #include "decode_insn32.inc.c"
 
-static bool gen_arith_imm(DisasContext *ctx, arg_i *a,
-                          void(*func)(TCGContext *, TCGv, TCGv, TCGv))
+static bool gen_arith_imm_fn(DisasContext *ctx, arg_i *a,
+                             void(*func)(TCGContext *, TCGv, TCGv, target_long))
+{
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+    TCGv source1;
+    source1 = tcg_temp_new(tcg_ctx);
+
+    gen_get_gpr(ctx, source1, a->rs1);
+
+    (*func)(tcg_ctx, source1, source1, a->imm);
+
+    gen_set_gpr(ctx, a->rd, source1);
+    tcg_temp_free(tcg_ctx, source1);
+    return true;
+}
+
+static bool gen_arith_imm_tl(DisasContext *ctx, arg_i *a,
+                             void (*func)(TCGContext *, TCGv, TCGv, TCGv))
 {
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv source1, source2;
@@ -620,6 +673,29 @@ static bool gen_arith_div_w(DisasContext *ctx, arg_r *a,
     tcg_temp_free(tcg_ctx, source2);
     return true;
 }
+
+static bool gen_arith_div_uw(DisasContext *ctx, arg_r *a,
+                            void(*func)(TCGContext *, TCGv, TCGv, TCGv))
+{
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+    TCGv source1, source2;
+    source1 = tcg_temp_new(tcg_ctx);
+    source2 = tcg_temp_new(tcg_ctx);
+
+    gen_get_gpr(ctx, source1, a->rs1);
+    gen_get_gpr(ctx, source2, a->rs2);
+    tcg_gen_ext32u_tl(tcg_ctx, source1, source1);
+    tcg_gen_ext32u_tl(tcg_ctx, source2, source2);
+
+    (*func)(tcg_ctx, source1, source1, source2);
+
+    tcg_gen_ext32s_tl(tcg_ctx, source1, source1);
+    gen_set_gpr(ctx, a->rd, source1);
+    tcg_temp_free(tcg_ctx, source1);
+    tcg_temp_free(tcg_ctx, source2);
+    return true;
+}
+
 #endif
 
 static bool gen_arith(DisasContext *ctx, arg_r *a,
@@ -668,10 +744,8 @@ static bool gen_shift(DisasContext *ctx, arg_r *a,
 #include "insn_trans/trans_rvd.inc.c"
 #include "insn_trans/trans_privileged.inc.c"
 
-bool decode_insn16(DisasContext *ctx, uint16_t insn);
-/* auto-generated decoder*/
+/* Include the auto-generated decoder for 16 bit insn */
 #include "decode_insn16.inc.c"
-#include "insn_trans/trans_rvc.inc.c"
 
 static void decode_opc(DisasContext *ctx)
 {
@@ -698,14 +772,35 @@ static void riscv_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
 {
     DisasContext *ctx = container_of(dcbase, DisasContext, base);
     CPURISCVState *env = cs->env_ptr;
+    RISCVCPU *cpu = RISCV_CPU(cs->uc, cs);
 
     ctx->uc = cs->uc;
     ctx->pc_succ_insn = ctx->base.pc_first;
     ctx->mem_idx = ctx->base.tb->flags & TB_FLAGS_MMU_MASK;
     ctx->mstatus_fs = ctx->base.tb->flags & TB_FLAGS_MSTATUS_FS;
     ctx->priv_ver = env->priv_ver;
+#if !defined(CONFIG_USER_ONLY)
+    if (riscv_has_ext(env, RVH)) {
+        ctx->virt_enabled = riscv_cpu_virt_enabled(env);
+        if (env->priv_ver == PRV_M &&
+            get_field(env->mstatus, MSTATUS_MPRV) &&
+            MSTATUS_MPV_ISSET(env)) {
+            ctx->virt_enabled = true;
+        } else if (env->priv == PRV_S &&
+                   !riscv_cpu_virt_enabled(env) &&
+                   get_field(env->hstatus, HSTATUS_SPRV) &&
+                   get_field(env->hstatus, HSTATUS_SPV)) {
+            ctx->virt_enabled = true;
+        }
+    } else {
+        ctx->virt_enabled = false;
+    }
+#else
+    ctx->virt_enabled = false;
+#endif
     ctx->misa = env->misa;
     ctx->frm = -1;  /* unknown rounding mode */
+    ctx->ext_ifencei = cpu->cfg.ext_ifencei;
 }
 
 static void riscv_tr_tb_start(DisasContextBase *db, CPUState *cpu)
@@ -799,11 +894,11 @@ static const TranslatorOps riscv_tr_ops = {
     .disas_log          = riscv_tr_disas_log,
 };
 
-void gen_intermediate_code(CPUState *cs, TranslationBlock *tb)
+void gen_intermediate_code(CPUState *cs, TranslationBlock *tb, int max_insns)
 {
     DisasContext ctx;
 
-    translator_loop(&riscv_tr_ops, &ctx.base, cs, tb);
+    translator_loop(&riscv_tr_ops, &ctx.base, cs, tb, max_insns);
 }
 
 void riscv_translate_init(struct uc_struct *uc)

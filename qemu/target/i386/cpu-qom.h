@@ -36,13 +36,7 @@
 #define X86_CPU_GET_CLASS(uc, obj) \
     OBJECT_GET_CLASS(uc, X86CPUClass, (obj), TYPE_X86_CPU)
 
-/**
- * X86CPUDefinition:
- *
- * CPU model definition data that was not converted to QOM per-subclass
- * property defaults yet.
- */
-typedef struct X86CPUDefinition X86CPUDefinition;
+typedef struct X86CPUModel X86CPUModel;
 
 /**
  * X86CPUClass:
@@ -59,7 +53,7 @@ typedef struct X86CPUClass {
     /*< public >*/
 
     /* Should be eventually replaced by subclass-specific property defaults. */
-    X86CPUDefinition *cpu_def;
+    X86CPUModel *model;
 
     bool kvm_required;
 

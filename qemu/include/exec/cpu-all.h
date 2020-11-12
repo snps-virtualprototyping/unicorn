@@ -117,43 +117,10 @@ static inline void tswap64s(uint64_t *s)
 #define bswaptls(s) bswap64s(s)
 #endif
 
-/* CPU memory access without any memory or io remapping */
-
-/*
- * the generic syntax for the memory accesses is:
- *
- * load: ld{type}{sign}{size}{endian}_{access_type}(ptr)
- *
- * store: st{type}{size}{endian}_{access_type}(ptr, val)
- *
- * type is:
- * (empty): integer access
- *   f    : float access
- *
- * sign is:
- * (empty): for floats or 32 bit size
- *   u    : unsigned
- *   s    : signed
- *
- * size is:
- *   b: 8 bits
- *   w: 16 bits
- *   l: 32 bits
- *   q: 64 bits
- *
- * endian is:
- * (empty): target cpu endianness or 8 bit access
- *   r    : reversed target cpu endianness (not implemented yet)
- *   be   : big endian (not implemented yet)
- *   le   : little endian (not implemented yet)
- *
- * access_type is:
- *   raw    : host memory access
- *   user   : user mode access using soft MMU
- *   kernel : kernel mode access using soft MMU
+/* Target-endianness CPU memory access functions. These fit into the
+ * {ld,st}{type}{sign}{size}{endian}_p naming scheme described in bswap.h.
  */
 
-/* target-endianness CPU memory access functions */
 #if defined(TARGET_WORDS_BIGENDIAN)
 #define lduw_p(p) lduw_be_p(p)
 #define ldsw_p(p) ldsw_be_p(p)
@@ -282,6 +249,9 @@ void address_space_stq_cached(MemoryRegionCache *cache, hwaddr addr, uint64_t va
 /* original state of the write flag (used when tracking self-modifying
    code */
 #define PAGE_WRITE_ORG 0x0010
+/* Invalidate the TLB entry immediately, helpful for s390x
+ * Low-Address-Protection. Used with PAGE_WRITE in tlb_set_page_with_attrs() */
+#define PAGE_WRITE_INV 0x0040
 #if defined(CONFIG_BSD) && defined(CONFIG_USER_ONLY)
 /* FIXME: Code that sets/uses this is broken and needs to go away.  */
 #define PAGE_RESERVED  0x0020
@@ -363,16 +333,17 @@ CPUArchState *cpu_copy(CPUArchState *env);
 #define TLB_NOTDIRTY        (1 << (TARGET_PAGE_BITS - 2))
 /* Set if TLB entry is an IO callback.  */
 #define TLB_MMIO            (1 << (TARGET_PAGE_BITS - 3))
-/* Set if TLB entry must have MMU lookup repeated for every access */
-#define TLB_RECHECK         (1 << (TARGET_PAGE_BITS - 4))
-
+/* Set if TLB entry contains a watchpoint.  */
+#define TLB_WATCHPOINT      (1 << (TARGET_PAGE_BITS - 4))
+/* SNPS added */
 #define TLB_NOTPROTECTED    (1 << (TARGET_PAGE_BITS - 5))
 
 /* Use this mask to check interception with an alignment mask
  * in a TCG backend.
  */
-#define TLB_FLAGS_MASK  (TLB_INVALID_MASK | TLB_NOTDIRTY | TLB_MMIO \
-                         | TLB_RECHECK | TLB_NOTPROTECTED)
+#define TLB_FLAGS_MASK \
+    (TLB_INVALID_MASK | TLB_NOTDIRTY | TLB_MMIO | TLB_WATCHPOINT |\
+     TLB_NOTPROTECTED) // SNPS changed
 
 /**
  * tlb_hit_page: return true if page aligned @addr is a hit against the
@@ -397,14 +368,7 @@ static inline bool tlb_hit(target_ulong tlb_addr, target_ulong addr)
     return tlb_hit_page(tlb_addr, addr & TARGET_PAGE_MASK);
 }
 
-/**
- * tlb_hit_range: return true if TLB entry @tlb_addr is inside the memory
- * range [@start, @end] (JHW)
- *
- * @tlb_addr: TLB entry address (a CPUTLBEntry addr_read/write/code value)
- * @start: start of physical memory range
- * @end: end of physical memory range
- */
+// SNPS added
 static inline bool tlb_hit_range(target_ulong tlb_addr, target_ulong start,
                                  target_ulong end) {
     target_ulong addr = tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK);
@@ -421,5 +385,67 @@ int cpu_memory_rw_debug(CPUState *cpu, target_ulong addr,
                         uint8_t *buf, int len, int is_write);
 
 int cpu_exec(struct uc_struct *uc, CPUState *cpu);
+
+/**
+ * cpu_set_cpustate_pointers(cpu)
+ * @cpu: The cpu object
+ *
+ * Set the generic pointers in CPUState into the outer object.
+ */
+static inline void cpu_set_cpustate_pointers(ArchCPU *cpu)
+{
+    cpu->parent_obj.env_ptr = &cpu->env;
+    cpu->parent_obj.icount_decr_ptr = &cpu->neg.icount_decr;
+}
+
+/**
+ * env_archcpu(env)
+ * @env: The architecture environment
+ *
+ * Return the ArchCPU associated with the environment.
+ */
+static inline ArchCPU *env_archcpu(CPUArchState *env)
+{
+    return container_of(env, ArchCPU, env);
+}
+
+/**
+ * env_cpu(env)
+ * @env: The architecture environment
+ *
+ * Return the CPUState associated with the environment.
+ */
+static inline CPUState *env_cpu(CPUArchState *env)
+{
+    return &env_archcpu(env)->parent_obj;
+}
+
+/**
+ * env_neg(env)
+ * @env: The architecture environment
+ *
+ * Return the CPUNegativeOffsetState associated with the environment.
+ */
+static inline CPUNegativeOffsetState *env_neg(CPUArchState *env)
+{
+    ArchCPU *arch_cpu = container_of(env, ArchCPU, env);
+    return &arch_cpu->neg;
+}
+
+/**
+ * cpu_neg(cpu)
+ * @cpu: The generic CPUState
+ *
+ * Return the CPUNegativeOffsetState associated with the cpu.
+ */
+static inline CPUNegativeOffsetState *cpu_neg(CPUState *cpu)
+{
+    ArchCPU *arch_cpu = container_of(cpu, ArchCPU, parent_obj);
+    return &arch_cpu->neg;
+}
+
+int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len);
+void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
+                          MemTxAttrs atr, int fl, uintptr_t ra);
 
 #endif /* CPU_ALL_H */

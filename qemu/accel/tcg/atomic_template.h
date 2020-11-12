@@ -67,28 +67,11 @@ ABI_TYPE ATOMIC_NAME(cmpxchg)(CPUArchState *env, target_ulong addr,
 {
     DATA_TYPE *haddr = ATOMIC_MMU_LOOKUP;
     DATA_TYPE ret;
-
-    if (haddr != NULL) {
 #if DATA_SIZE == 16
-        ret = atomic16_cmpxchg(haddr, cmpv, newv);
+    ret = atomic16_cmpxchg(haddr, cmpv, newv);
 #else
-        ret = atomic_cmpxchg__nocheck(haddr, cmpv, newv);
+    ret = atomic_cmpxchg__nocheck(haddr, cmpv, newv);
 #endif
-    } else {
-
-        fprintf(stderr, "%s: slowpath cmpxchg not supported\n", __func__);
-        abort();
-
-        size_t mmu_idx = get_mmuidx(oi);
-        uintptr_t index = tlb_index(env, mmu_idx, addr);
-        CPUIOTLBEntry *iotlbentry = &env->iotlb[mmu_idx][index];
-
-        env->uc->is_excl = true;
-        io_writex(env, iotlbentry, mmu_idx, newv, addr, GETPC(), 0, DATA_SIZE);
-        ret = env->uc->is_excl ? cmpv : newv;
-        env->uc->is_excl = false;
-    }
-
     ATOMIC_MMU_CLEANUP;
     return ret;
 }
@@ -123,7 +106,7 @@ ABI_TYPE ATOMIC_NAME(xchg)(CPUArchState *env, target_ulong addr,
 
 #define GEN_ATOMIC_HELPER(X)                                        \
 ABI_TYPE ATOMIC_NAME(X)(CPUArchState *env, target_ulong addr,       \
-                 ABI_TYPE val EXTRA_ARGS)                           \
+                        ABI_TYPE val EXTRA_ARGS)                    \
 {                                                                   \
     DATA_TYPE *haddr = ATOMIC_MMU_LOOKUP;                           \
     DATA_TYPE ret = atomic_##X(haddr, val);                         \
@@ -234,7 +217,7 @@ ABI_TYPE ATOMIC_NAME(xchg)(CPUArchState *env, target_ulong addr,
 
 #define GEN_ATOMIC_HELPER(X)                                        \
 ABI_TYPE ATOMIC_NAME(X)(CPUArchState *env, target_ulong addr,       \
-                 ABI_TYPE val EXTRA_ARGS)                           \
+                        ABI_TYPE val EXTRA_ARGS)                    \
 {                                                                   \
     DATA_TYPE *haddr = ATOMIC_MMU_LOOKUP;                           \
     DATA_TYPE ret = atomic_##X(haddr, BSWAP(val));                  \

@@ -5,6 +5,7 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
+#include "fpu/softfloat.h"
 #include "hw/boards.h"
 #include "hw/riscv/spike.h"
 #include "sysemu/cpus.h"
