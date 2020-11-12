@@ -75,7 +75,10 @@ ifneq (,$(findstring sparc,$(UNICORN_ARCHS)))
 	UNICORN_TARGETS += sparc-softmmu,sparc64-softmmu,
 endif
 
-UNICORN_CFLAGS += -fPIC -Wno-unused-but-set-variable -Wno-unused-variable -Wno-comment
+UNICORN_CFLAGS += -fPIC
+UNICORN_CFLAGS += -Wno-unused-but-set-variable # SNPS added
+UNICORN_CFLAGS += -Wno-unused-variable # SNPS added
+UNICORN_CFLAGS += -Wno-comment # SNPS added
 
 # Verbose output?
 V ?= 0

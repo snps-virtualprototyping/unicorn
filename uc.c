@@ -90,8 +90,7 @@ static void free_class_properties(uc_engine *uc, ObjectClass *klass)
 static void free_table(gpointer key, gpointer value, gpointer data)
 {
     TypeInfo *ti = (TypeInfo*) value;
-    uc_engine *uc = (uc_engine *)data;
-    free_class_properties(uc, ti->class);
+    g_hash_table_destroy(ti->class->properties);
     g_free((void *) ti->class);
     g_free((void *) ti->name);
     g_free((void *) ti->parent);
@@ -120,6 +119,8 @@ UNICORN_EXPORT
 const char *uc_strerror(uc_err code)
 {
     switch(code) {
+        default:
+            return "Unknown error code";
         case UC_ERR_OK:
             return "OK (UC_ERR_OK)";
         case UC_ERR_NOMEM:
@@ -162,6 +163,9 @@ const char *uc_strerror(uc_err code)
             return "Insufficient resource (UC_ERR_RESOURCE)";
         case UC_ERR_EXCEPTION:
             return "Unhandled CPU exception (UC_ERR_EXCEPTION)";
+        case UC_ERR_TIMEOUT:
+            return "Emulation timed out (UC_ERR_TIMEOUT)";
+        // SNPS adde
         case UC_ERR_BREAKPOINT:
             return "CPU hit breakpoint (UC_ERR_BREAKPOINT)";
         case UC_ERR_WATCHPOINT:
@@ -170,8 +174,6 @@ const char *uc_strerror(uc_err code)
             return "CPU wants to yield (UC_ERR_YIELD)";
         case UC_ERR_INTERNAL:
             return "Internal error (UC_ERR_INTERNAL)";
-        default:
-            return "Unknown error code";
     }
 }
 

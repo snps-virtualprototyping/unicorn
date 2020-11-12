@@ -197,79 +197,77 @@ struct uc_struct {
     uc_args_uc_long_t tcg_exec_init;
     uc_args_uc_ram_size_t memory_map;
     uc_args_uc_ram_size_ptr_t memory_map_ptr;
-    uc_args_uc_mmio_size_t memory_map_mmio;
+    uc_args_uc_mmio_size_t memory_map_mmio; // SNPS added
     uc_mem_unmap_t memory_unmap;
     uc_readonly_mem_t readonly_mem;
     uc_mem_redirect_t mem_redirect;
 
-    // JHW
-    size_t tb_size;
-    tb_flush_t tb_flush;
-    tb_flush_page_t tb_flush_page;
+    size_t tb_size; // SNPS added
+    tb_flush_t tb_flush; // SNPS added
+    tb_flush_page_t tb_flush_page; // SNPS added
 
-    uc_cb_mmio_t uc_portio_func;
-    void*        uc_portio_opaque;
+    uc_cb_mmio_t uc_portio_func; // SNPS added
+    void*        uc_portio_opaque; // SNPS added
 
-    uc_cb_dmiptr_t   get_dmi_ptr;
-    uc_cb_pgprot_t   protect_dmi_ptr;
-    dmi_invalidate_t inv_dmi_ptr;
-    void*            dmi_opaque;
+    uc_cb_dmiptr_t   get_dmi_ptr; // SNPS added
+    uc_cb_pgprot_t   protect_dmi_ptr; // SNPS added
+    dmi_invalidate_t inv_dmi_ptr; // SNPS added
+    void*            dmi_opaque; // SNPS added
 
-    tlb_flush_t             tlb_flush;
-    tlb_flush_page_t        tlb_flush_page;
-    tlb_flush_mmuidx_t      tlb_flush_mmuidx;
-    tlb_flush_page_mmuidx_t tlb_flush_page_mmuidx;
+    tlb_flush_t             tlb_flush; // SNPS added
+    tlb_flush_page_t        tlb_flush_page; // SNPS added
+    tlb_flush_mmuidx_t      tlb_flush_mmuidx; // SNPS added
+    tlb_flush_page_mmuidx_t tlb_flush_page_mmuidx; // SNPS added
 
-    tlb_cluster_flush_t             tlb_cluster_flush;
-    tlb_cluster_flush_page_t        tlb_cluster_flush_page;
-    tlb_cluster_flush_mmuidx_t      tlb_cluster_flush_mmuidx;
-    tlb_cluster_flush_page_mmuidx_t tlb_cluster_flush_page_mmuidx;
+    tlb_cluster_flush_t             tlb_cluster_flush; // SNPS added
+    tlb_cluster_flush_page_t        tlb_cluster_flush_page; // SNPS added
+    tlb_cluster_flush_mmuidx_t      tlb_cluster_flush_mmuidx; // SNPS added
+    tlb_cluster_flush_page_mmuidx_t tlb_cluster_flush_page_mmuidx; // SNPS added
 
-    uc_tlb_cluster_flush_t             uc_tlb_cluster_flush;
-    uc_tlb_cluster_flush_page_t        uc_tlb_cluster_flush_page;
-    uc_tlb_cluster_flush_mmuidx_t      uc_tlb_cluster_flush_mmuidx;
-    uc_tlb_cluster_flush_page_mmuidx_t uc_tlb_cluster_flush_page_mmuidx;
-    void*                              uc_tlb_cluster_opaque;
+    uc_tlb_cluster_flush_t             uc_tlb_cluster_flush; // SNPS added
+    uc_tlb_cluster_flush_page_t        uc_tlb_cluster_flush_page; // SNPS added
+    uc_tlb_cluster_flush_mmuidx_t      uc_tlb_cluster_flush_mmuidx; // SNPS added
+    uc_tlb_cluster_flush_page_mmuidx_t uc_tlb_cluster_flush_page_mmuidx; // SNPS added
+    void*                              uc_tlb_cluster_opaque; // SNPS added
 
-    cpu_breakpoint_insert_t breakpoint_insert;
-    cpu_breakpoint_remove_t breakpoint_remove;
-    cpu_watchpoint_insert_t watchpoint_insert;
-    cpu_watchpoint_remove_t watchpoint_remove;
+    cpu_breakpoint_insert_t breakpoint_insert; // SNPS added
+    cpu_breakpoint_remove_t breakpoint_remove; // SNPS added
+    cpu_watchpoint_insert_t watchpoint_insert; // SNPS added
+    cpu_watchpoint_remove_t watchpoint_remove; // SNPS added
 
-    uc_breakpoint_hit_t uc_breakpoint_func;
-    void*               uc_breakpoint_opaque;
+    uc_breakpoint_hit_t uc_breakpoint_func; // SNPS added
+    void*               uc_breakpoint_opaque; // SNPS added
 
-    uc_watchpoint_hit_t uc_watchpoint_func;
-    void*               uc_watchpoint_opaque;
+    uc_watchpoint_hit_t uc_watchpoint_func; // SNPS added
+    void*               uc_watchpoint_opaque; // SNPS added
 
-    uc_hintfunc_t uc_hint_func;
-    void*         uc_hint_opaque;
+    uc_hintfunc_t uc_hint_func; // SNPS added
+    void*         uc_hint_opaque; // SNPS added
 
-    uc_shfunc_t uc_semihost_func;
-    void*       uc_semihost_opaque;
+    uc_shfunc_t uc_semihost_func; // SNPS added
+    void*       uc_semihost_opaque; // SNPS added
 
-    uc_trace_basic_block_t uc_trace_bb_func;
-    void*                  uc_trace_bb_opaque;
+    uc_trace_basic_block_t uc_trace_bb_func; // SNPS added
+    void*                  uc_trace_bb_opaque; // SNPS added
 
-    uc_get_config_t uc_config_func;
-    void*           uc_config_opaque;
+    uc_get_config_t uc_config_func; // SNPS added
+    void*           uc_config_opaque; // SNPS added
 
-    uc_timer_timefunc_t timer_timefunc;
-    uc_timer_irqfunc_t  timer_irqfunc;
-    uc_timer_schedule_t timer_schedule;
-    uc_timer_recalc_t   timer_recalc;
-    void*               timer_opaque;
-    bool                timer_initialized;
+    uc_timer_timefunc_t timer_timefunc; // SNPS added
+    uc_timer_irqfunc_t  timer_irqfunc; // SNPS added
+    uc_timer_schedule_t timer_schedule; // SNPS added
+    uc_timer_recalc_t   timer_recalc; // SNPS added
+    void*               timer_opaque; // SNPS added
+    bool                timer_initialized; // SNPS added
 
-    uc_setup_once_t setup_once;
+    uc_setup_once_t setup_once; // SNPS added
 
-    bool is_debug;
-    bool is_excl;
-    bool is_running; // JHW: true during uc_emu_start (i.e. during callbacks)
-    bool is_memcb; // JHW: true during memory callbacks
+    bool is_debug; // SNPS added
+    bool is_excl; // SNPS added
+    bool is_running; // SNPS added
+    bool is_memcb; // SNPS added
 
-    char model[80];
-    // JHW /end
+    char model[80]; // SNPS added
 
     // TODO: remove current_cpu, as it's a flag for something else ("cpu running"?)
     CPUState *cpu, *current_cpu;
@@ -358,6 +356,7 @@ struct uc_struct {
     bool stop_request;  // request to immediately stop emulation - for uc_emu_stop()
     bool quit_request;  // request to quit the current TB, but continue to emulate - for uc_mem_protect()
     bool emulation_done;  // emulation is done by uc_emu_start()
+    bool timed_out;     // emulation timed out, uc_emu_start() will result in EC_ERR_TIMEOUT
     QemuThread timer;   // timer for emulation timeout
     uint64_t timeout;   // timeout for uc_emu_start()
 
@@ -366,7 +365,7 @@ struct uc_struct {
 
     uint64_t addr_end;  // address where emulation stops (@end param of uc_emu_start())
 
-    //int thumb;  // thumb mode for ARM
+    int thumb;  // thumb mode for ARM
     // full TCG cache leads to middle-block break in the last translation?
     bool block_full;
     int size_arg;     // what tcg arg slot do we need to update with the size of the block?
@@ -383,7 +382,7 @@ struct uc_struct {
     int qemu_icache_linesize;
     int qemu_dcache_linesize;
 
-    uc_mmio_region_t *mmios; // JHW: pointer to mapped IOs
+    uc_mmio_region_t *mmios; // SNPS added
 };
 
 // Metadata stub for the variable-size cpu context used with uc_context_*()
@@ -399,6 +398,7 @@ MemoryRegion *memory_mapping(struct uc_struct* uc, uint64_t address);
 // allow calling it directly.
 void init_cache_info(struct uc_struct *uc);
 
+ // SNPS added
 static inline const char* uc_get_config(struct uc_struct *uc, const char* cfg) {
     if (!uc || !uc->uc_config_func)
         return "";

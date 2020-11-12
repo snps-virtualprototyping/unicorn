@@ -28,7 +28,7 @@ typedef struct {
     bool in_use;
 } BounceBuffer;
 
-// JHW: helper for mmio callbacks
+// SNPS added
 typedef struct uc_mmio_region {
     void                  *user_data;
     void                  *callback;
