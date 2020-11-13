@@ -104,31 +104,43 @@ typedef enum uc_arch {
 typedef enum uc_mode {
     UC_MODE_LITTLE_ENDIAN = 0,    // little-endian mode (default mode)
     UC_MODE_BIG_ENDIAN = 1 << 30, // big-endian mode
+
     // arm / arm64
     UC_MODE_ARM = 0,              // ARM mode
     UC_MODE_THUMB = 1 << 4,       // THUMB mode (including Thumb-2)
     UC_MODE_MCLASS = 1 << 5,      // ARM's Cortex-M series (currently unsupported)
     UC_MODE_V8 = 1 << 6,          // ARMv8 A32 encodings for ARM (currently unsupported)
+
+    // arm (32bit) cpu types
+    UC_MODE_ARM926 = 1 << 7,    // ARM926 CPU type
+    UC_MODE_ARM946 = 1 << 8,    // ARM946 CPU type
+    UC_MODE_ARM1176 = 1 << 9,   // ARM1176 CPU type
+
     // mips
     UC_MODE_MICRO = 1 << 4,       // MicroMips mode (currently unsupported)
     UC_MODE_MIPS3 = 1 << 5,       // Mips III ISA (currently unsupported)
     UC_MODE_MIPS32R6 = 1 << 6,    // Mips32r6 ISA (currently unsupported)
     UC_MODE_MIPS32 = 1 << 2,      // Mips32 ISA
     UC_MODE_MIPS64 = 1 << 3,      // Mips64 ISA
+
     // x86 / x64
     UC_MODE_16 = 1 << 1,          // 16-bit mode
     UC_MODE_32 = 1 << 2,          // 32-bit mode
     UC_MODE_64 = 1 << 3,          // 64-bit mode
-    // ppc 
+
+    // ppc
     UC_MODE_PPC32 = 1 << 2,       // 32-bit mode (currently unsupported)
     UC_MODE_PPC64 = 1 << 3,       // 64-bit mode (currently unsupported)
     UC_MODE_QPX = 1 << 4,         // Quad Processing eXtensions mode (currently unsupported)
+
     // sparc
     UC_MODE_SPARC32 = 1 << 2,     // 32-bit mode
     UC_MODE_SPARC64 = 1 << 3,     // 64-bit mode
     UC_MODE_V9 = 1 << 4,          // SparcV9 mode (currently unsupported)
+
     // m68k
     // No flags for M68K yet
+
     // RISC-V
     UC_MODE_RISCV32 = 1 << 2,     // 32-bit mode
     UC_MODE_RISCV64 = 1 << 3,     // 64-bit mode
@@ -159,10 +171,11 @@ typedef enum uc_err {
     UC_ERR_HOOK_EXIST,  // hook for this event already existed
     UC_ERR_RESOURCE,    // Insufficient resource: uc_emu_start()
     UC_ERR_EXCEPTION, // Unhandled CPU exception
-    UC_ERR_BREAKPOINT, // Simulation reached a breakpoint
-    UC_ERR_WATCHPOINT, // Simulation triggered a watchpoint
-    UC_ERR_YIELD, // Simulator wants to yield
-    UC_ERR_INTERNAL, // Internal error
+    UC_ERR_BREAKPOINT, // SNPS added: Simulation reached a breakpoint
+    UC_ERR_WATCHPOINT, // SNPS added: Simulation triggered a watchpoint
+    UC_ERR_YIELD,      // SNPS added: Simulator wants to yield
+    UC_ERR_INTERNAL,   // SNPS added: Internal error
+    UC_ERR_TIMEOUT // Emulation timed out
 } uc_err;
 
 
@@ -182,6 +195,15 @@ typedef void (*uc_cb_hookcode_t)(uc_engine *uc, uint64_t address, uint32_t size,
   @user_data: user data passed to tracing APIs.
 */
 typedef void (*uc_cb_hookintr_t)(uc_engine *uc, uint32_t intno, void *user_data);
+
+/*
+  Callback function for tracing invalid instructions
+
+  @user_data: user data passed to tracing APIs.
+
+  @return: return true to continue, or false to stop program (due to invalid instruction).
+*/
+typedef bool (*uc_cb_hookinsn_invalid_t)(uc_engine *uc, void *user_data);
 
 /*
   Callback function for tracing IN instruction of X86
@@ -246,6 +268,8 @@ typedef enum uc_hook_type {
     // Hook memory read events, but only successful access.
     // The callback will be triggered after successful read.
     UC_HOOK_MEM_READ_AFTER = 1 << 13,
+    // Hook invalid instructions exceptions.
+    UC_HOOK_INSN_INVALID = 1 << 14,
 } uc_hook_type;
 
 // Hook type for all events of unmapped memory access
@@ -321,7 +345,7 @@ typedef enum uc_query_type {
     UC_QUERY_ARCH,
 } uc_query_type;
 
-// JHW: extensions for mmio
+// SNPS added
 typedef struct uc_mmio_tx {
     uint64_t addr;
     size_t   size;
@@ -414,13 +438,16 @@ bool uc_arch_supported(uc_arch arch);
 /*
  Create new instance of unicorn engine.
 
+ @arch: architecture type (UC_ARCH_*)
+ @mode: hardware mode. This is combined of UC_MODE_*
+ @uc: pointer to uc_engine, which will be updated at return time
 
  @return UC_ERR_OK on success, or other value on failure (refer to uc_err enum
    for detailed error).
 */
 UNICORN_EXPORT
 uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
-               uc_engine **result);
+               uc_engine **result); // SNPS changed
 
 /*
  Close a Unicorn engine instance.
@@ -676,11 +703,11 @@ uc_err uc_mem_map(uc_engine *uc, uint64_t address, size_t size, uint32_t perms);
 UNICORN_EXPORT
 uc_err uc_mem_map_ptr(uc_engine *uc, uint64_t address, size_t size, uint32_t perms, void *ptr);
 
-// JHW
+// SNPS added
 UNICORN_EXPORT
 uc_err uc_mem_map_io(uc_engine *uc, uint64_t addr, size_t size, uc_cb_mmio_t callback, void* opaque);
 
-// JHW
+// SNPS added
 UNICORN_EXPORT
 uc_err uc_mem_map_portio(uc_engine *uc, uc_cb_mmio_t callback, void *opaque);
 
@@ -794,89 +821,60 @@ UNICORN_EXPORT
 uc_err uc_context_restore(uc_engine *uc, uc_context *context);
 
 /*
- * Returns the number of executed target instructions since the last call to
- * uc_emu_start. (JHW)
- */
+  Return the size needed to store the cpu context. Can be used to allocate a buffer
+  to contain the cpu context and directly call uc_context_save.
+
+  @uc: handle returned by uc_open()
+
+  @return the size for needed to store the cpu context as as size_t.
+*/
 UNICORN_EXPORT
+size_t uc_context_size(uc_engine *uc);
+
+UNICORN_EXPORT // SNPS added
 size_t uc_instruction_count(uc_engine *uc);
 
-/*
- * Flushes the entire TCG translation buffer (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_tb_flush(uc_engine *uc);
 
-/*
- * Invalidate the TCG translation buffers for a range of pages
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_tb_flush_page(uc_engine *uc, uint64_t start, uint64_t end);
 
-/*
- * Flushes the entire TLB of the current MMU (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_tlb_flush(uc_engine *uc);
 
-/*
- * Flushes one TLB entry from the current MMU (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_tlb_flush_page(uc_engine *uc, uint64_t addr);
 
-/*
- * Flushes the entire TLB of the given MMUs (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_tlb_flush_mmuidx(uc_engine *uc, uint16_t idxmap);
 
-/*
- * Flushes one TLB entry from the given MMUs (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_tlb_flush_page_mmuidx(uc_engine *uc, uint64_t addr, uint16_t idxmap);
 
-/*
- * Registers TLB flush callback needed for multicore clusters (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_register_tlb_cluster(uc_engine *uc, void *opaque,
         uc_tlb_cluster_flush_t             tlb_cluster_flush_fn,
         uc_tlb_cluster_flush_page_t        tlb_cluster_flush_page_fn,
         uc_tlb_cluster_flush_mmuidx_t      tlb_cluster_flush_mmuidx_fn,
         uc_tlb_cluster_flush_page_mmuidx_t tlb_cluster_flush_page_mmuidx_fn);
 
-/*
- * Installs a breakpoint at the given address (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_breakpoint_insert(uc_engine *uc, uint64_t addr);
 
-/*
- * Removes a breakpoint from the given address (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_breakpoint_remove(uc_engine *uc, uint64_t addr);
 
-/*
- * Sets up a breakpoint callback function (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_cbbreakpoint_setup(uc_engine *uc, void *ptr, uc_breakpoint_hit_t fn);
 
-/*
- * Installs a callback breakpoint at the given address (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_cbbreakpoint_insert(uc_engine *uc, uint64_t addr);
 
-/*
- * Removes a callback breakpoint from the given address (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_cbbreakpoint_remove(uc_engine *uc, uint64_t addr);
 
-typedef enum uc_wpflags {
+typedef enum uc_wpflags { // SNPS added
     UC_WP_READ   = 1 << 0,
     UC_WP_WRITE  = 1 << 1,
     UC_WP_ACCESS = UC_WP_READ | UC_WP_WRITE,
@@ -884,107 +882,59 @@ typedef enum uc_wpflags {
     UC_WP_CALL   = 1 << 3, /* invoke a callback before watchpoint */
 } uc_wpflags_t;
 
-/*
- * Installs a watchpoint for the given address (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_watchpoint_insert(uc_engine *uc, uint64_t addr, size_t sz, int flags);
 
-/*
- * Removes a watchpoint from the given address (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_watchpoint_remove(uc_engine *uc, uint64_t addr, size_t sz, int flags);
 
-/*
- * Sets up a watchpoint callback function (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_cbwatchpoint_setup(uc_engine *uc, void *ptr, uc_watchpoint_hit_t fn);
 
-/*
- * Sets up a watchpoint with a callback function (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_cbwatchpoint_insert(uc_engine *uc, uint64_t addr, size_t sz, int flags);
 
-/*
- * Removes a watchpoint with a callback function (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_cbwatchpoint_remove(uc_engine *uc, uint64_t addr, size_t sz, int flags);
 
-/*
- * Various interrupt IDs
- */
-#define UC_IRQID_AARCH64_NIRQ 0 // JHW from target/arm/cpu.h
-#define UC_IRQID_AARCH64_FIRQ 1 // JHW from target/arm/cpu.h
-#define UC_IRQID_AARCH64_VIRQ 2 // JHW from target/arm/cpu.h
-#define UC_IRQID_AARCH64_VFIQ 3 // JHW from target/arm/cpu.h
+#define UC_IRQID_AARCH64_NIRQ 0 // SNPS added
+#define UC_IRQID_AARCH64_FIRQ 1 // SNPS added
+#define UC_IRQID_AARCH64_VIRQ 2 // SNPS added
+#define UC_IRQID_AARCH64_VFIQ 3 // SNPS added
 
-/*
- * Triggers a hardware interrupt
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_interrupt(uc_engine *uc, int irq_id, int set);
 
-
-/*
- * Translates a virtual to a physical address
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_va2pa(uc_engine *uc, uint64_t va, uint64_t *pa);
 
-/*
- * Set callback to provide unicorn with the current time in nanoseconds
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_setup_timer(uc_engine *uc, void *opaque, uc_timer_timefunc_t timefn,
                       uc_timer_irqfunc_t irqfn, uc_timer_schedule_t schedfn);
 
-/*
- * Recalculate timer state after interrupt
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_update_timer(uc_engine *uc, int timeridx);
 
-/*
- * Returns true when the processor is idle
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 bool uc_is_idle(uc_engine *uc);
 
-/*
- * Returns if the simulator is currently executing debugger commands
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 bool uc_is_debug(uc_engine *uc);
 
-/*
- * Returns if the simulator is performing an exclusive memory access
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 bool uc_is_excl(uc_engine *uc);
 
-/*
- * Clears the exclusive state, signaling operation was not atomic
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_clear_excl(uc_engine *uc);
 
-/*
- * Set callback to provide unicorn with per-page DMI pointers
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_setup_dmi(uc_engine *uc, void *opaque, uc_cb_dmiptr_t dmifn,
                     uc_cb_pgprot_t protfn);
 
-/*
- * Clears previously handed out DMI pointers
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_dmi_invalidate(uc_engine *uc, uint64_t start, uint64_t end);
 
+ // SNPS added
 typedef enum uc_hint {
     UC_HINT_NOP, /* unused! NOP currently generates no code! */
     UC_HINT_YIELD,
@@ -995,42 +945,24 @@ typedef enum uc_hint {
     UC_HINT_HINT, /* unused! reserved for architectural extensions */
 } uc_hint_t;
 
-typedef void (*uc_hintfunc_t)(void*, uc_hint_t);
+typedef void (*uc_hintfunc_t)(void*, uc_hint_t); // SNPS added
 
-/*
- * Sets up a callback for various hint instructions (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_setup_hint(uc_engine *uc, void *opaque, uc_hintfunc_t hintfn);
 
-/*
- * Callback for semihosting
- */
-typedef uint64_t (*uc_shfunc_t)(void* opaque, uint32_t call);
+typedef uint64_t (*uc_shfunc_t)(void* opaque, uint32_t call); // SNPS added
 
-/*
- * Sets up a callback for semihosting (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_setup_semihosting(uc_engine *uc, void *opaque, uc_shfunc_t fn);
 
-/*
- * Setup a callback for basic block tracing (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_setup_basic_block_trace(uc_engine *uc, void *opaque,
                                   uc_trace_basic_block_t fn);
 
-/*
- * Resets the cpu (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 uc_err uc_reset_cpu(uc_engine *uc);
 
-/*
- * Returns true if unicorn is currently running, i.e. during uc_emu_start (JHW)
- */
-UNICORN_EXPORT
+UNICORN_EXPORT // SNPS added
 bool uc_is_running(uc_engine *uc);
 
 #ifdef __cplusplus

@@ -21,58 +21,44 @@
 #include "qemu/log.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
-#include "fpu/softfloat.h"
 #include "internals.h"
 
+#ifdef CONFIG_TCG
+#include "fpu/softfloat.h"
+#endif
 
-/* VFP support.  We follow the convention used for VFP instructions:
-   Single precision routines have a "s" suffix, double precision a
-   "d" suffix.  */
+/*
+ * VFP support.  We follow the convention used for VFP instructions:
+ * Single precision routines have a "s" suffix, double precision a
+ * "d" suffix.
+ */
+
+#ifdef CONFIG_TCG
 
 /* Convert host exception flags to vfp form.  */
 static inline int vfp_exceptbits_from_host(int host_bits)
 {
     int target_bits = 0;
 
-    if (host_bits & float_flag_invalid)
+    if (host_bits & float_flag_invalid) {
         target_bits |= 1;
-    if (host_bits & float_flag_divbyzero)
+    }
+    if (host_bits & float_flag_divbyzero) {
         target_bits |= 2;
-    if (host_bits & float_flag_overflow)
+    }
+    if (host_bits & float_flag_overflow) {
         target_bits |= 4;
-    if (host_bits & (float_flag_underflow | float_flag_output_denormal))
+    }
+    if (host_bits & (float_flag_underflow | float_flag_output_denormal)) {
         target_bits |= 8;
-    if (host_bits & float_flag_inexact)
+    }
+    if (host_bits & float_flag_inexact) {
         target_bits |= 0x10;
-    if (host_bits & float_flag_input_denormal)
+    }
+    if (host_bits & float_flag_input_denormal) {
         target_bits |= 0x80;
+    }
     return target_bits;
-}
-
-uint32_t HELPER(vfp_get_fpscr)(CPUARMState *env)
-{
-    uint32_t i, fpscr;
-
-    fpscr = env->vfp.xregs[ARM_VFP_FPSCR]
-            | (env->vfp.vec_len << 16)
-            | (env->vfp.vec_stride << 20);
-
-    i = get_float_exception_flags(&env->vfp.fp_status);
-    i |= get_float_exception_flags(&env->vfp.standard_fp_status);
-    /* FZ16 does not generate an input denormal exception.  */
-    i |= (get_float_exception_flags(&env->vfp.fp_status_f16)
-          & ~float_flag_input_denormal);
-    fpscr |= vfp_exceptbits_from_host(i);
-
-    i = env->vfp.qc[0] | env->vfp.qc[1] | env->vfp.qc[2] | env->vfp.qc[3];
-    fpscr |= i ? FPCR_QC : 0;
-
-    return fpscr;
-}
-
-uint32_t vfp_get_fpscr(CPUARMState *env)
-{
-    return HELPER(vfp_get_fpscr)(env);
 }
 
 /* Convert vfp exception flags to target form.  */
@@ -80,51 +66,43 @@ static inline int vfp_exceptbits_to_host(int target_bits)
 {
     int host_bits = 0;
 
-    if (target_bits & 1)
+    if (target_bits & 1) {
         host_bits |= float_flag_invalid;
-    if (target_bits & 2)
+    }
+    if (target_bits & 2) {
         host_bits |= float_flag_divbyzero;
-    if (target_bits & 4)
+    }
+    if (target_bits & 4) {
         host_bits |= float_flag_overflow;
-    if (target_bits & 8)
+    }
+    if (target_bits & 8) {
         host_bits |= float_flag_underflow;
-    if (target_bits & 0x10)
+    }
+    if (target_bits & 0x10) {
         host_bits |= float_flag_inexact;
-    if (target_bits & 0x80)
+    }
+    if (target_bits & 0x80) {
         host_bits |= float_flag_input_denormal;
+    }
     return host_bits;
 }
 
-void HELPER(vfp_set_fpscr)(CPUARMState *env, uint32_t val)
+static uint32_t vfp_get_fpscr_from_host(CPUARMState *env)
+{
+    uint32_t i;
+
+    i = get_float_exception_flags(&env->vfp.fp_status);
+    i |= get_float_exception_flags(&env->vfp.standard_fp_status);
+    /* FZ16 does not generate an input denormal exception.  */
+    i |= (get_float_exception_flags(&env->vfp.fp_status_f16)
+          & ~float_flag_input_denormal);
+    return vfp_exceptbits_from_host(i);
+}
+
+static void vfp_set_fpscr_to_host(CPUARMState *env, uint32_t val)
 {
     int i;
     uint32_t changed = env->vfp.xregs[ARM_VFP_FPSCR];
-
-    /* When ARMv8.2-FP16 is not supported, FZ16 is RES0.  */
-    if (!cpu_isar_feature(aa64_fp16, arm_env_get_cpu(env))) {
-        val &= ~FPCR_FZ16;
-    }
-
-    /*
-     * We don't implement trapped exception handling, so the
-     * trap enable bits, IDE|IXE|UFE|OFE|DZE|IOE are all RAZ/WI (not RES0!)
-     *
-     * If we exclude the exception flags, IOC|DZC|OFC|UFC|IXC|IDC
-     * (which are stored in fp_status), and the other RES0 bits
-     * in between, then we clear all of the low 16 bits.
-     */
-    env->vfp.xregs[ARM_VFP_FPSCR] = val & 0xf7c80000;
-    env->vfp.vec_len = (val >> 16) & 7;
-    env->vfp.vec_stride = (val >> 20) & 3;
-
-    /*
-     * The bit we set within fpscr_q is arbitrary; the register as a
-     * whole being zero/non-zero is what counts.
-     */
-    env->vfp.qc[0] = val & FPCR_QC;
-    env->vfp.qc[1] = 0;
-    env->vfp.qc[2] = 0;
-    env->vfp.qc[3] = 0;
 
     changed ^= val;
     if (changed & (3 << 22)) {
@@ -162,7 +140,8 @@ void HELPER(vfp_set_fpscr)(CPUARMState *env, uint32_t val)
         set_default_nan_mode(dnan_enabled, &env->vfp.fp_status_f16);
     }
 
-    /* The exception flags are ORed together when we read fpscr so we
+    /*
+     * The exception flags are ORed together when we read fpscr so we
      * only need to preserve the current state in one of our
      * float_status values.
      */
@@ -172,10 +151,85 @@ void HELPER(vfp_set_fpscr)(CPUARMState *env, uint32_t val)
     set_float_exception_flags(0, &env->vfp.standard_fp_status);
 }
 
+#else
+
+static uint32_t vfp_get_fpscr_from_host(CPUARMState *env)
+{
+    return 0;
+}
+
+static void vfp_set_fpscr_to_host(CPUARMState *env, uint32_t val)
+{
+}
+
+#endif
+
+uint32_t HELPER(vfp_get_fpscr)(CPUARMState *env)
+{
+    uint32_t i, fpscr;
+
+    fpscr = env->vfp.xregs[ARM_VFP_FPSCR]
+            | (env->vfp.vec_len << 16)
+            | (env->vfp.vec_stride << 20);
+
+    fpscr |= vfp_get_fpscr_from_host(env);
+
+    i = env->vfp.qc[0] | env->vfp.qc[1] | env->vfp.qc[2] | env->vfp.qc[3];
+    fpscr |= i ? FPCR_QC : 0;
+
+    return fpscr;
+}
+
+uint32_t vfp_get_fpscr(CPUARMState *env)
+{
+    return HELPER(vfp_get_fpscr)(env);
+}
+
+void HELPER(vfp_set_fpscr)(CPUARMState *env, uint32_t val)
+{
+    /* When ARMv8.2-FP16 is not supported, FZ16 is RES0.  */
+    if (!cpu_isar_feature(any_fp16, env_archcpu(env))) {
+        val &= ~FPCR_FZ16;
+    }
+
+    if (arm_feature(env, ARM_FEATURE_M)) {
+        /*
+         * M profile FPSCR is RES0 for the QC, STRIDE, FZ16, LEN bits
+         * and also for the trapped-exception-handling bits IxE.
+         */
+        val &= 0xf7c0009f;
+    }
+
+    vfp_set_fpscr_to_host(env, val);
+
+    /*
+     * We don't implement trapped exception handling, so the
+     * trap enable bits, IDE|IXE|UFE|OFE|DZE|IOE are all RAZ/WI (not RES0!)
+     *
+     * If we exclude the exception flags, IOC|DZC|OFC|UFC|IXC|IDC
+     * (which are stored in fp_status), and the other RES0 bits
+     * in between, then we clear all of the low 16 bits.
+     */
+    env->vfp.xregs[ARM_VFP_FPSCR] = val & 0xf7c80000;
+    env->vfp.vec_len = (val >> 16) & 7;
+    env->vfp.vec_stride = (val >> 20) & 3;
+
+    /*
+     * The bit we set within fpscr_q is arbitrary; the register as a
+     * whole being zero/non-zero is what counts.
+     */
+    env->vfp.qc[0] = val & FPCR_QC;
+    env->vfp.qc[1] = 0;
+    env->vfp.qc[2] = 0;
+    env->vfp.qc[3] = 0;
+}
+
 void vfp_set_fpscr(CPUARMState *env, uint32_t val)
 {
     HELPER(vfp_set_fpscr)(env, val);
 }
+
+#ifdef CONFIG_TCG
 
 #define VFP_HELPER(name, p) HELPER(glue(glue(vfp_,name),p))
 
@@ -230,7 +284,7 @@ float64 VFP_HELPER(sqrt, d)(float64 a, CPUARMState *env)
     return float64_sqrt(a, &env->vfp.fp_status);
 }
 
-static void softfloat_to_vfp_compare(CPUARMState *env, int cmp)
+static void softfloat_to_vfp_compare(CPUARMState *env, FloatRelation cmp)
 {
     uint32_t flags;
     switch (cmp) {
@@ -443,7 +497,8 @@ uint64_t HELPER(vfp_touqh)(uint32_t x, uint32_t shift, void *fpst)
                                     shift, fpst);
 }
 
-/* Set the current fp rounding mode and return the old one.
+/*
+ * Set the current fp rounding mode and return the old one.
  * The argument is a softfloat float_round_ value.
  */
 uint32_t HELPER(set_rmode)(uint32_t rmode, void *fpstp)
@@ -456,7 +511,8 @@ uint32_t HELPER(set_rmode)(uint32_t rmode, void *fpstp)
     return prev_rmode;
 }
 
-/* Set the current fp rounding mode in the standard fp status and return
+/*
+ * Set the current fp rounding mode in the standard fp status and return
  * the old one. This is for NEON instructions that need to change the
  * rounding mode but wish to use the standard FPSCR values for everything
  * else. Always set the rounding mode back to the correct value after
@@ -476,11 +532,12 @@ uint32_t HELPER(set_neon_rmode)(uint32_t rmode, CPUARMState *env)
 /* Half precision conversions.  */
 float32 HELPER(vfp_fcvt_f16_to_f32)(uint32_t a, void *fpstp, uint32_t ahp_mode)
 {
-    /* Squash FZ16 to 0 for the duration of conversion.  In this case,
+    /*
+     * Squash FZ16 to 0 for the duration of conversion.  In this case,
      * it would affect flushing input denormals.
      */
     float_status *fpst = fpstp;
-    flag save = get_flush_inputs_to_zero(fpst);
+    bool save = get_flush_inputs_to_zero(fpst);
     set_flush_inputs_to_zero(false, fpst);
     float32 r = float16_to_float32(a, !ahp_mode, fpst);
     set_flush_inputs_to_zero(save, fpst);
@@ -489,11 +546,12 @@ float32 HELPER(vfp_fcvt_f16_to_f32)(uint32_t a, void *fpstp, uint32_t ahp_mode)
 
 uint32_t HELPER(vfp_fcvt_f32_to_f16)(float32 a, void *fpstp, uint32_t ahp_mode)
 {
-    /* Squash FZ16 to 0 for the duration of conversion.  In this case,
+    /*
+     * Squash FZ16 to 0 for the duration of conversion.  In this case,
      * it would affect flushing output denormals.
      */
     float_status *fpst = fpstp;
-    flag save = get_flush_to_zero(fpst);
+    bool save = get_flush_to_zero(fpst);
     set_flush_to_zero(false, fpst);
     float16 r = float32_to_float16(a, !ahp_mode, fpst);
     set_flush_to_zero(save, fpst);
@@ -502,11 +560,12 @@ uint32_t HELPER(vfp_fcvt_f32_to_f16)(float32 a, void *fpstp, uint32_t ahp_mode)
 
 float64 HELPER(vfp_fcvt_f16_to_f64)(uint32_t a, void *fpstp, uint32_t ahp_mode)
 {
-    /* Squash FZ16 to 0 for the duration of conversion.  In this case,
+    /*
+     * Squash FZ16 to 0 for the duration of conversion.  In this case,
      * it would affect flushing input denormals.
      */
     float_status *fpst = fpstp;
-    flag save = get_flush_inputs_to_zero(fpst);
+    bool save = get_flush_inputs_to_zero(fpst);
     set_flush_inputs_to_zero(false, fpst);
     float64 r = float16_to_float64(a, !ahp_mode, fpst);
     set_flush_inputs_to_zero(save, fpst);
@@ -515,11 +574,12 @@ float64 HELPER(vfp_fcvt_f16_to_f64)(uint32_t a, void *fpstp, uint32_t ahp_mode)
 
 uint32_t HELPER(vfp_fcvt_f64_to_f16)(float64 a, void *fpstp, uint32_t ahp_mode)
 {
-    /* Squash FZ16 to 0 for the duration of conversion.  In this case,
+    /*
+     * Squash FZ16 to 0 for the duration of conversion.  In this case,
      * it would affect flushing output denormals.
      */
     float_status *fpst = fpstp;
-    flag save = get_flush_to_zero(fpst);
+    bool save = get_flush_to_zero(fpst);
     set_flush_to_zero(false, fpst);
     float16 r = float64_to_float16(a, !ahp_mode, fpst);
     set_flush_to_zero(save, fpst);
@@ -530,7 +590,7 @@ uint32_t HELPER(vfp_fcvt_f64_to_f16)(float64 a, void *fpstp, uint32_t ahp_mode)
 #define float32_three make_float32(0x40400000)
 #define float32_one_point_five make_float32(0x3fc00000)
 
-float32 HELPER(recps_f32)(float32 a, float32 b, CPUARMState *env)
+float32 HELPER(recps_f32)(CPUARMState *env, float32 a, float32 b)
 {
     float_status *s = &env->vfp.standard_fp_status;
     if ((float32_is_infinity(a) && float32_is_zero_or_denormal(b)) ||
@@ -543,7 +603,7 @@ float32 HELPER(recps_f32)(float32 a, float32 b, CPUARMState *env)
     return float32_sub(float32_two, float32_mul(a, b, s), s);
 }
 
-float32 HELPER(rsqrts_f32)(float32 a, float32 b, CPUARMState *env)
+float32 HELPER(rsqrts_f32)(CPUARMState *env, float32 a, float32 b)
 {
     float_status *s = &env->vfp.standard_fp_status;
     float32 product;
@@ -560,21 +620,25 @@ float32 HELPER(rsqrts_f32)(float32 a, float32 b, CPUARMState *env)
 
 /* NEON helpers.  */
 
-/* Constants 256 and 512 are used in some helpers; we avoid relying on
- * int->float conversions at run-time.  */
+/*
+ * Constants 256 and 512 are used in some helpers; we avoid relying on
+ * int->float conversions at run-time.
+ */
 #define float64_256 make_float64(0x4070000000000000LL)
 #define float64_512 make_float64(0x4080000000000000LL)
 #define float16_maxnorm make_float16(0x7bff)
 #define float32_maxnorm make_float32(0x7f7fffff)
 #define float64_maxnorm make_float64(0x7fefffffffffffffLL)
 
-/* Reciprocal functions
+/*
+ * Reciprocal functions
  *
  * The algorithm that must be used to calculate the estimate
  * is specified by the ARM ARM, see FPRecipEstimate()/RecipEstimate
  */
 
-/* See RecipEstimate()
+/*
+ * See RecipEstimate()
  *
  * input is a 9 bit fixed point number
  * input range 256 .. 511 for a number from 0.5 <= x < 1.0.
@@ -647,10 +711,9 @@ static bool round_to_inf(float_status *fpst, bool sign_bit)
     case float_round_to_zero: /* Round to Zero */
         return false;
     default:
-        break;
+        g_assert_not_reached();
     }
 
-    g_assert_not_reached();
     return false;
 }
 
@@ -797,7 +860,8 @@ float64 HELPER(recpe_f64)(float64 input, void *fpstp)
     return make_float64(f64_val);
 }
 
-/* The algorithm that must be used to calculate the estimate
+/*
+ * The algorithm that must be used to calculate the estimate
  * is specified by the ARM ARM.
  */
 
@@ -879,8 +943,10 @@ uint32_t HELPER(rsqrte_f16)(uint32_t input, void *fpstp)
         return float16_zero;
     }
 
-    /* Scale and normalize to a double-precision value between 0.25 and 1.0,
-     * preserving the parity of the exponent.  */
+    /*
+     * Scale and normalize to a double-precision value between 0.25 and 1.0,
+     * preserving the parity of the exponent.
+     */
 
     f64_frac = ((uint64_t) f16_frac) << (52 - 10);
 
@@ -923,8 +989,10 @@ float32 HELPER(rsqrte_f32)(float32 input, void *fpstp)
         return float32_zero;
     }
 
-    /* Scale and normalize to a double-precision value between 0.25 and 1.0,
-     * preserving the parity of the exponent.  */
+    /*
+     * Scale and normalize to a double-precision value between 0.25 and 1.0,
+     * preserving the parity of the exponent.
+     */
 
     f64_frac = ((uint64_t) f32_frac) << 29;
 
@@ -975,9 +1043,8 @@ float64 HELPER(rsqrte_f64)(float64 input, void *fpstp)
     return make_float64(val);
 }
 
-uint32_t HELPER(recpe_u32)(uint32_t a, void *fpstp)
+uint32_t HELPER(recpe_u32)(uint32_t a)
 {
-    /* float_status *s = fpstp; */
     int input, estimate;
 
     if ((a & 0x80000000) == 0) {
@@ -990,7 +1057,7 @@ uint32_t HELPER(recpe_u32)(uint32_t a, void *fpstp)
     return deposit32(0, (32 - 9), 9, estimate);
 }
 
-uint32_t HELPER(rsqrte_u32)(uint32_t a, void *fpstp)
+uint32_t HELPER(rsqrte_u32)(uint32_t a)
 {
     int estimate;
 
@@ -1072,6 +1139,7 @@ int arm_rmode_to_sf(int rmode)
         /* FIXME: add support for TIEAWAY and ODD */
         qemu_log_mask(LOG_UNIMP, "arm: unimplemented rounding mode: %d\n",
                       rmode);
+        /* fall through for now */
     case FPROUNDING_TIEEVEN:
     default:
         rmode = float_round_nearest_even;
@@ -1272,3 +1340,35 @@ float64 HELPER(frint64_d)(float64 f, void *fpst)
 {
     return frint_d(f, fpst, 64);
 }
+
+void HELPER(check_hcr_el2_trap)(CPUARMState *env, uint32_t rt, uint32_t reg)
+{
+    uint32_t syndrome;
+
+    switch (reg) {
+    case ARM_VFP_MVFR0:
+    case ARM_VFP_MVFR1:
+    case ARM_VFP_MVFR2:
+        if (!(arm_hcr_el2_eff(env) & HCR_TID3)) {
+            return;
+        }
+        break;
+    case ARM_VFP_FPSID:
+        if (!(arm_hcr_el2_eff(env) & HCR_TID0)) {
+            return;
+        }
+        break;
+    default:
+        g_assert_not_reached();
+    }
+
+    syndrome = ((EC_FPIDTRAP << ARM_EL_EC_SHIFT)
+                | ARM_EL_IL
+                | (1 << 24) | (0xe << 20) | (7 << 14)
+                | (reg << 10) | (rt << 5) | 1);
+
+    raise_exception(env, EXCP_HYP_TRAP, syndrome, 2);
+}
+
+#endif
+

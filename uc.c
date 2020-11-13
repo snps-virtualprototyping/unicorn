@@ -26,6 +26,7 @@
 #include "qemu/include/hw/boards.h"
 #include "qemu/include/qemu/queue.h"
 
+// SNPS added
 static void helper_tlb_cluster_flush(CPUState* cpu) {
     uc_engine *uc = cpu->uc;
     if (!uc->uc_tlb_cluster_flush) {
@@ -35,6 +36,7 @@ static void helper_tlb_cluster_flush(CPUState* cpu) {
     }
 }
 
+// SNPS added
 static void helper_tlb_cluster_flush_page(CPUState* cpu, uint64_t addr) {
     uc_engine *uc = cpu->uc;
     if (!uc->uc_tlb_cluster_flush_page) {
@@ -44,6 +46,7 @@ static void helper_tlb_cluster_flush_page(CPUState* cpu, uint64_t addr) {
     }
 }
 
+// SNPS added
 static void helper_tlb_cluster_flush_mmuidx(CPUState* cpu, uint16_t idxmap) {
     uc_engine *uc = cpu->uc;
     if (!uc->uc_tlb_cluster_flush_mmuidx) {
@@ -53,6 +56,7 @@ static void helper_tlb_cluster_flush_mmuidx(CPUState* cpu, uint16_t idxmap) {
     }
 }
 
+// SNPS added
 static void helper_tlb_cluster_flush_page_mmuidx(CPUState* cpu, uint64_t addr, uint16_t idxmap) {
     uc_engine *uc = cpu->uc;
      if (!uc->uc_tlb_cluster_flush_page_mmuidx) {
@@ -60,31 +64,6 @@ static void helper_tlb_cluster_flush_page_mmuidx(CPUState* cpu, uint64_t addr, u
     } else {
         uc->uc_tlb_cluster_flush_page_mmuidx(uc->uc_tlb_cluster_opaque, addr, idxmap);
     }
-}
-
-static void free_class_properties(uc_engine *uc, ObjectClass *klass)
-{
-    ObjectProperty *prop;
-    GHashTableIter iter;
-    gpointer key, value;
-    bool released;
-
-    do {
-        released = false;
-        g_hash_table_iter_init(&iter, klass->properties);
-        while (g_hash_table_iter_next(&iter, &key, &value)) {
-            prop = value;
-            if (prop->release) {
-                prop->release(uc, NULL, prop->name, prop->opaque);
-                prop->release = NULL;
-                released = true;
-                break;
-            }
-            g_hash_table_iter_remove(&iter);
-        }
-    } while (released);
-
-    g_hash_table_destroy(klass->properties);
 }
 
 static void free_table(gpointer key, gpointer value, gpointer data)
@@ -165,7 +144,7 @@ const char *uc_strerror(uc_err code)
             return "Unhandled CPU exception (UC_ERR_EXCEPTION)";
         case UC_ERR_TIMEOUT:
             return "Emulation timed out (UC_ERR_TIMEOUT)";
-        // SNPS adde
+        // SNPS added
         case UC_ERR_BREAKPOINT:
             return "CPU hit breakpoint (UC_ERR_BREAKPOINT)";
         case UC_ERR_WATCHPOINT:
@@ -211,8 +190,9 @@ bool uc_arch_supported(uc_arch arch)
     }
 }
 
-#define UC_DEFAULT_TBSZ (8ull * 1024ull * 1024ull) // 8MB
+#define UC_DEFAULT_TBSZ (8ull * 1024ull * 1024ull) // SNPS added
 
+// SNPS added
 static size_t parse_tbsz(const char* tbsz) {
     char* postfix = NULL;
     size_t sz = strtoull(tbsz, &postfix, 10);
@@ -237,10 +217,11 @@ static size_t parse_tbsz(const char* tbsz) {
 
 UNICORN_EXPORT
 uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
-               uc_engine **result)
+               uc_engine **result) // SNPS changed
 {
     struct uc_struct *uc;
 
+    // SNPS added
     uc_arch arch = UC_ARCH_MAX;
     uc_mode mode;
 
@@ -292,13 +273,13 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
         uc->arch = arch;
         uc->mode = mode;
 
-        uc->uc_config_func = cfg_func;
-        uc->uc_config_opaque = cfg_opaque;
+        uc->uc_config_func = cfg_func; // SNPS added
+        uc->uc_config_opaque = cfg_opaque; // SNPS added
 
-        const char* tbsz = uc_get_config(uc, "tbsize");
-        uc->tb_size = parse_tbsz(tbsz);
+        const char* tbsz = uc_get_config(uc, "tbsize"); // SNPS added
+        uc->tb_size = parse_tbsz(tbsz); // SNPS added
 
-        snprintf(uc->model, sizeof(uc->model), "%s-arm-cpu", model);
+        snprintf(uc->model, sizeof(uc->model), "%s-arm-cpu", model); // SNPS added
 
         // uc->ram_list = { .blocks = QLIST_HEAD_INITIALIZER(ram_list.blocks) };
         uc->ram_list.blocks.lh_first = NULL;
@@ -311,43 +292,43 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
 
         uc->phys_map_node_alloc_hint = 16;
 
-        uc->mmios = NULL;
+        uc->mmios = NULL; // SNPS added
 
-        uc->timer_initialized = false;
-        uc->timer_timefunc = NULL;
-        uc->timer_irqfunc  = NULL;
-        uc->timer_schedule = NULL;
+        uc->timer_initialized = false; // SNPS added
+        uc->timer_timefunc = NULL; // SNPS added
+        uc->timer_irqfunc  = NULL; // SNPS added
+        uc->timer_schedule = NULL; // SNPS added
 
-        uc->uc_tlb_cluster_flush = NULL;
-        uc->uc_tlb_cluster_flush_page = NULL;
-        uc->uc_tlb_cluster_flush_mmuidx = NULL;
-        uc->uc_tlb_cluster_flush_page_mmuidx = NULL;
-        uc->uc_tlb_cluster_opaque = NULL;
+        uc->uc_tlb_cluster_flush = NULL; // SNPS added
+        uc->uc_tlb_cluster_flush_page = NULL; // SNPS added
+        uc->uc_tlb_cluster_flush_mmuidx = NULL; // SNPS added
+        uc->uc_tlb_cluster_flush_page_mmuidx = NULL; // SNPS added
+        uc->uc_tlb_cluster_opaque = NULL; // SNPS added
 
-        uc->tlb_cluster_flush = helper_tlb_cluster_flush;
-        uc->tlb_cluster_flush_page = helper_tlb_cluster_flush_page;
-        uc->tlb_cluster_flush_mmuidx = helper_tlb_cluster_flush_mmuidx;
-        uc->tlb_cluster_flush_page_mmuidx = helper_tlb_cluster_flush_page_mmuidx;
+        uc->tlb_cluster_flush = helper_tlb_cluster_flush; // SNPS added
+        uc->tlb_cluster_flush_page = helper_tlb_cluster_flush_page; // SNPS added
+        uc->tlb_cluster_flush_mmuidx = helper_tlb_cluster_flush_mmuidx; // SNPS added
+        uc->tlb_cluster_flush_page_mmuidx = helper_tlb_cluster_flush_page_mmuidx; // SNPS added
 
-        uc->uc_breakpoint_func = NULL;
-        uc->uc_breakpoint_opaque = NULL;
+        uc->uc_breakpoint_func = NULL; // SNPS added
+        uc->uc_breakpoint_opaque = NULL; // SNPS added
 
-        uc->uc_watchpoint_func = NULL;
-        uc->uc_watchpoint_opaque = NULL;
+        uc->uc_watchpoint_func = NULL; // SNPS added
+        uc->uc_watchpoint_opaque = NULL; // SNPS added
 
-        uc->uc_hint_func = NULL;
-        uc->uc_hint_opaque = NULL;
+        uc->uc_hint_func = NULL; // SNPS added
+        uc->uc_hint_opaque = NULL; // SNPS added
 
-        uc->uc_semihost_func = NULL;
-        uc->uc_semihost_opaque = NULL;
+        uc->uc_semihost_func = NULL; // SNPS added
+        uc->uc_semihost_opaque = NULL; // SNPS added
 
-        uc->uc_trace_bb_func = NULL;
-        uc->uc_trace_bb_opaque = NULL;
+        uc->uc_trace_bb_func = NULL; // SNPS added
+        uc->uc_trace_bb_opaque = NULL; // SNPS added
 
-        uc->setup_once = NULL;
+        uc->setup_once = NULL; // SNPS added
 
-        uc->is_debug = false;
-        uc->is_excl = false;
+        uc->is_debug = false; // SNPS added
+        uc->is_excl = false; // SNPS added
 
         switch(arch) {
             default:
@@ -380,14 +361,13 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
                     return UC_ERR_MODE;
                 }
                 if (mode & UC_MODE_BIG_ENDIAN) {
-                    assert(0);
-                    //uc->init_arch = armeb_uc_init;
+                    assert(0 && "UC_MODE_BIG_ENDIAN not supported"); // SNPS changed
                 } else {
                     uc->init_arch = arm_uc_init;
                 }
 
-                //if (mode & UC_MODE_THUMB)
-                //    uc->thumb = 1;
+                if (mode & UC_MODE_THUMB)
+                    assert(0 && "UC_MODE_THUMB not supported"); // SNPS changed
                 break;
 #endif
 #ifdef UNICORN_HAS_ARM64
@@ -397,8 +377,7 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
                     return UC_ERR_MODE;
                 }
                 if (mode & UC_MODE_BIG_ENDIAN) {
-                    assert(0);
-                    //uc->init_arch = arm64eb_uc_init;
+                    assert(0 && "UC_MODE_BIG_ENDIAN not supported"); // SNPS changed
                 } else {
                     uc->init_arch = arm64_uc_init;
                 }
@@ -509,6 +488,7 @@ static void free_hooks(uc_engine *uc)
     }
 }
 
+// SNPS added
 static void free_mmios(uc_engine *uc)
 {
     uc_mmio_region_t *p = uc->mmios;
@@ -519,6 +499,7 @@ static void free_mmios(uc_engine *uc)
     }
 }
 
+// SNPS added
 static void free_breakpoints(uc_engine *uc)
 {
     CPUBreakpoint *bp, *next;
@@ -553,12 +534,10 @@ uc_err uc_close(uc_engine *uc)
     object_unref(uc, OBJECT(uc->machine_state));
     object_unref(uc, OBJECT(uc->cpu));
 
-    // These seem to be auto deleted when uc->root gets deleted, no need to
-    // unref them manually (?)
+    // SNPS disabled
     //object_unref(uc, OBJECT(&uc->io_mem_notdirty));
     //object_unref(uc, OBJECT(&uc->io_mem_unassigned));
     //object_unref(uc, OBJECT(&uc->io_mem_rom));
-    //object_unref(uc, OBJECT(&uc->io_mem_watch));
     object_unref(uc, OBJECT(uc->root));
 
     // System memory.
@@ -569,6 +548,8 @@ uc_err uc_close(uc_engine *uc)
         g_free(uc->qemu_thread_data);
 
     // Other auxilaries.
+    free(uc->l1_map);
+
     if (uc->bounce.buffer) {
         free(uc->bounce.buffer);
     }
@@ -577,7 +558,7 @@ uc_err uc_close(uc_engine *uc)
     g_hash_table_destroy(uc->type_table);
 
     free_hooks(uc);
-    free_mmios(uc);
+    free_mmios(uc); // SNPS added
     free(uc->mapped_blocks);
 
     // finally, free uc itself.
@@ -586,6 +567,7 @@ uc_err uc_close(uc_engine *uc)
 
     return UC_ERR_OK;
 }
+
 
 UNICORN_EXPORT
 uc_err uc_reg_read_batch(uc_engine *uc, int *ids, void **vals, int count)
@@ -605,6 +587,7 @@ uc_err uc_reg_write_batch(uc_engine *uc, int *ids, void *const *vals, int count)
         return UC_ERR_OK;
     return UC_ERR_HANDLE;
 }
+
 
 UNICORN_EXPORT
 uc_err uc_reg_read(uc_engine *uc, int regid, void *value)
@@ -651,7 +634,7 @@ uc_err uc_mem_read(uc_engine *uc, uint64_t address, void *_bytes, size_t size)
     if (!check_mem_area(uc, address, size))
         return UC_ERR_READ_UNMAPPED;
 
-    uc->is_debug = true;
+    uc->is_debug = true; // SNPS added
 
     // memory area can overlap adjacent memory blocks
     while(count < size) {
@@ -667,7 +650,7 @@ uc_err uc_mem_read(uc_engine *uc, uint64_t address, void *_bytes, size_t size)
             break;
     }
 
-    uc->is_debug = false;
+    uc->is_debug = false; // SNPS added
 
     if (count == size)
         return UC_ERR_OK;
@@ -688,7 +671,7 @@ uc_err uc_mem_write(uc_engine *uc, uint64_t address, const void *_bytes, size_t 
     if (!check_mem_area(uc, address, size))
         return UC_ERR_WRITE_UNMAPPED;
 
-    uc->is_debug = true;
+    uc->is_debug = true; // SNPS added
 
     // memory area can overlap adjacent memory blocks
     while(count < size) {
@@ -714,7 +697,7 @@ uc_err uc_mem_write(uc_engine *uc, uint64_t address, const void *_bytes, size_t 
             break;
     }
 
-    uc->is_debug = false;
+    uc->is_debug = false; // SNPS added
 
     if (count == size)
         return UC_ERR_OK;
@@ -737,6 +720,7 @@ static void *_timeout_fn(void *arg)
 
     // timeout before emulation is done?
     if (!uc->emulation_done) {
+        uc->timed_out = true;
         // force emulation to stop
         uc_emu_stop(uc);
     }
@@ -751,16 +735,24 @@ static void enable_emu_timer(uc_engine *uc, uint64_t timeout)
             uc, QEMU_THREAD_JOINABLE);
 }
 
+static void hook_count_cb(struct uc_struct *uc, uint64_t address, uint32_t size, void *user_data)
+{
+    // count this instruction. ah ah ah.
+    uc->emu_counter++;
+
+    if (uc->emu_counter > uc->emu_count)
+        uc_emu_stop(uc);
+}
+
 UNICORN_EXPORT
 uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t timeout, size_t count)
 {
     // reset the counter
     uc->emu_counter = 0;
-    uc->emu_count = count;
     uc->invalid_error = UC_ERR_OK;
     uc->block_full = false;
     uc->emulation_done = false;
-    uc->parallel_cpus = true;
+    uc->parallel_cpus = true; // SNPS changed
 
     switch(uc->arch) {
         default:
@@ -823,18 +815,16 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
 #endif
     }
 
-#if 0
+    uc->stop_request = false;
+
+    uc->emu_count = count;
     // remove count hook if counting isn't necessary
-    // remove hooks as soon as we are not single stepping anymore
-    //if (count <= 0 && uc->count_hook != 0) {
-    if (count != 1 && uc->count_hook != 0) {
+    if (count <= 0 && uc->count_hook != 0) {
         uc_hook_del(uc, uc->count_hook);
         uc->count_hook = 0;
     }
     // set up count hook to count instructions.
-    // JHW: only include hooks if we are single stepping
-    //if (count == 0 && uc->count_hook == 0) {
-    if (count == 1 && uc->count_hook == 0) {
+    if (count > 0 && uc->count_hook == 0) {
         uc_err err;
         // callback to count instructions must be run before everything else,
         // so instead of appending, we must insert the hook at the begin
@@ -847,10 +837,10 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
             return err;
         }
     }
-#endif
 
-    uc->stop_request = false;
     uc->addr_end = until;
+
+    // SNPS added
     uc->cpu->singlestep_enabled = (count == 1);
 
     if (uc->setup_once) {
@@ -861,6 +851,7 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
     if (timeout)
         enable_emu_timer(uc, timeout * 1000);   // microseconds -> nanoseconds
 
+    // SNPS changed
     uc->is_running = true;
     int res = uc->vm_start(uc);
     uc->is_running = false;
@@ -876,11 +867,17 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
         qemu_thread_join(&uc->timer);
     }
 
+    if (uc->timed_out) {
+        return UC_ERR_TIMEOUT;
+    }
+
+    // SNPS added
     if (uc->invalid_error == UC_ERR_OK && uc->cpu->is_idle)
         uc->invalid_error = UC_ERR_YIELD;
 
     return uc->invalid_error;
 }
+
 
 UNICORN_EXPORT
 uc_err uc_emu_stop(uc_engine *uc)
@@ -1003,6 +1000,7 @@ uc_err uc_mem_map_ptr(uc_engine *uc, uint64_t address, size_t size, uint32_t per
         address = uc->mem_redirect(address);
     }
 
+// SNPS removed
 //    res = mem_map_check(uc, address, size, perms);
 //    if (res)
 //        return res;
@@ -1462,10 +1460,10 @@ static size_t cpu_context_size(uc_arch arch, uc_mode mode)
         case UC_ARCH_X86:   return X86_REGS_STORAGE_SIZE;
 #endif
 #ifdef UNICORN_HAS_ARM
-        case UC_ARCH_ARM:   return /*mode & UC_MODE_BIG_ENDIAN ? ARM_REGS_STORAGE_SIZE_armeb :*/ ARM_REGS_STORAGE_SIZE_arm;
+        case UC_ARCH_ARM:   return /*mode & UC_MODE_BIG_ENDIAN ? ARM_REGS_STORAGE_SIZE_armeb :*/ ARM_REGS_STORAGE_SIZE_arm; // SNPS changed
 #endif
 #ifdef UNICORN_HAS_ARM64
-        case UC_ARCH_ARM64: return /*mode & UC_MODE_BIG_ENDIAN ? ARM64_REGS_STORAGE_SIZE_aarch64eb :*/ ARM64_REGS_STORAGE_SIZE_aarch64;
+        case UC_ARCH_ARM64: return /*mode & UC_MODE_BIG_ENDIAN ? ARM64_REGS_STORAGE_SIZE_aarch64eb :*/ ARM64_REGS_STORAGE_SIZE_aarch64; // SNPS changed
 #endif
 #ifdef UNICORN_HAS_MIPS
         case UC_ARCH_MIPS:
@@ -1520,6 +1518,12 @@ uc_err uc_free(void *mem)
 }
 
 UNICORN_EXPORT
+size_t uc_context_size(uc_engine *uc)
+{
+    return cpu_context_size(uc->arch, uc->mode);
+}
+
+UNICORN_EXPORT
 uc_err uc_context_save(uc_engine *uc, uc_context *context)
 {
     struct uc_context *_context = context;
@@ -1535,6 +1539,7 @@ uc_err uc_context_restore(uc_engine *uc, uc_context *context)
     return UC_ERR_OK;
 }
 
+// SNPS added
 UNICORN_EXPORT
 size_t uc_instruction_count(uc_engine *uc) {
     return uc->cpu->insn_count;

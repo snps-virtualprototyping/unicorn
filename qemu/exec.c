@@ -138,7 +138,6 @@ typedef struct subpage_t {
 #define PHYS_SECTION_UNASSIGNED 0
 #define PHYS_SECTION_NOTDIRTY 1
 #define PHYS_SECTION_ROM 2
-#define PHYS_SECTION_WATCH 3 // SNPS added
 
 static void memory_map_init(struct uc_struct *uc);
 static void tcg_commit(MemoryListener *listener);
@@ -753,7 +752,6 @@ int cpu_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len,
         int flags, CPUWatchpoint **watchpoint)
 {
     CPUWatchpoint *wp;
-    int needs_tb_flush = QTAILQ_EMPTY(&cpu->watchpoints); // SNPS added
 
     /* forbid ranges which are empty or run off the end of the address space */
     if (len == 0 || (addr + len - 1) < addr) {
@@ -773,10 +771,6 @@ int cpu_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len,
     }
 
     tlb_flush_page(cpu, addr);
-
-    // SNPS added
-    if (needs_tb_flush)
-        tb_flush(cpu);
 
     if (watchpoint)
         *watchpoint = wp;
@@ -1055,7 +1049,6 @@ hwaddr memory_region_section_get_iotlb(CPUState *cpu,
         target_ulong *address)
 {
     hwaddr iotlb;
-    CPUWatchpoint *wp; // SNPS added
 
     if (memory_region_is_ram(section->mr)) {
         /* Normal RAM.  */
@@ -1072,18 +1065,6 @@ hwaddr memory_region_section_get_iotlb(CPUState *cpu,
         d = flatview_to_dispatch(section->fv);
         iotlb = section - d->map.sections;
         iotlb += xlat;
-    }
-
-    // SNPS added
-    QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
-        if (cpu_watchpoint_address_matches(wp, vaddr, TARGET_PAGE_SIZE)) {
-            /* Avoid trapping reads of pages with a write breakpoint. */
-            if ((prot & PAGE_WRITE) || (wp->flags & BP_MEM_READ)) {
-                iotlb = PHYS_SECTION_WATCH + paddr;
-                *address |= TLB_MMIO;
-                break;
-            }
-        }
     }
 
     return iotlb;
@@ -1853,177 +1834,6 @@ static const MemoryRegionOps notdirty_mem_ops = {
     },
 };
 
-// SNPS added
-static int check_watchpoint_cb(struct uc_struct* uc, int offset, int len,
-                               MemTxAttrs attrs, int flags, uint64_t data) {
-    CPUState *cpu = uc->cpu;
-    CPUClass *cc = CPU_GET_CLASS(uc, cpu);
-    target_ulong vaddr;
-    CPUWatchpoint *wp;
-    int hits = 0;
-
-    void* opaque = uc->uc_watchpoint_opaque;
-    if (!uc->uc_watchpoint_func)
-        return 0;
-
-    vaddr = (cpu->mem_io_vaddr & TARGET_PAGE_MASK) + offset;
-    vaddr = cc->adjust_watchpoint_address(cpu, vaddr, len);
-    QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
-        /* ignore watchpoints that do not want a callback */
-        if (!(wp->flags & BP_CALL))
-            continue;
-
-        /* ignore watchpoints that do not match the requested access type */
-        if (!(wp->flags & flags))
-            continue;
-
-        /* ignore watchpoints that do not match the requested memory range */
-        if (!cpu_watchpoint_address_matches(wp, vaddr, len))
-            continue;
-
-        uc->uc_watchpoint_func(opaque, vaddr, len, data, flags & BP_MEM_WRITE);
-        hits++;
-    }
-
-    return hits;
-}
-
-/* Generate a debug exception if a watchpoint has been hit.  */
-static void check_watchpoint(struct uc_struct* uc, int offset, int len,
-                             MemTxAttrs attrs, int flags)
-{
-    CPUState *cpu = uc->cpu;
-    CPUClass *cc = CPU_GET_CLASS(uc, cpu);
-    target_ulong vaddr;
-    CPUWatchpoint *wp;
-
-    assert(tcg_enabled(uc));
-    if (cpu->watchpoint_hit) {
-        /* We re-entered the check after replacing the TB. Now raise
-         * the debug interrupt so that is will trigger after the
-         * current instruction. */
-        //cpu_interrupt(cpu, CPU_INTERRUPT_DEBUG);
-        cpu->watchpoint_hit = NULL;
-        return;
-    }
-
-    vaddr = (cpu->mem_io_vaddr & TARGET_PAGE_MASK) + offset;
-    vaddr = cc->adjust_watchpoint_address(cpu, vaddr, len);
-    QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
-        if (cpu_watchpoint_address_matches(wp, vaddr, len)
-            && (wp->flags & flags) && !(wp->flags & BP_CALL)) {
-            if (flags == BP_MEM_READ) {
-                wp->flags |= BP_WATCHPOINT_HIT_READ;
-            } else {
-                wp->flags |= BP_WATCHPOINT_HIT_WRITE;
-            }
-            wp->hitaddr = vaddr;
-            //wp->hitattrs = attrs;
-            if (!cpu->watchpoint_hit) {
-                if (wp->flags & BP_CPU &&
-                    !cc->debug_check_watchpoint(cpu, wp)) {
-                    wp->flags &= ~BP_WATCHPOINT_HIT;
-                    continue;
-                }
-                cpu->watchpoint_hit = wp;
-
-                mmap_lock();
-                tb_check_watchpoint(cpu);
-                if (wp->flags & BP_STOP_BEFORE_ACCESS) {
-                    cpu->exception_index = EXCP_DEBUG;
-                    mmap_unlock();
-                    cpu_loop_exit(cpu);
-                } else {
-                    /* Force execution of one insn next time.  */
-                    //cpu->cflags_next_tb = 1 | curr_cflags();
-                    g_assert(0 && "JHW: !BP_STOP_BEFORE_ACCESS not implemented");
-                    mmap_unlock();
-                    cpu_loop_exit_noexc(cpu);
-                }
-            }
-        } else {
-            wp->flags &= ~BP_WATCHPOINT_HIT;
-        }
-    }
-}
-
-/* Watchpoint access routines.  Watchpoints are inserted using TLB tricks,
-   so these check for a hit then pass through to the normal out-of-line
-   phys routines.  */
-static MemTxResult watch_mem_read(struct uc_struct* uc, void *opaque,
-                                  hwaddr addr, uint64_t *pdata,
-                                  unsigned size, MemTxAttrs attrs)
-{
-    MemTxResult res;
-    uint64_t data;
-    int asidx = cpu_asidx_from_attrs(uc->cpu, attrs);
-    AddressSpace *as = uc->cpu->cpu_ases[asidx].as;
-
-    check_watchpoint_cb(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_READ, 0); // JHW
-    check_watchpoint(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_READ);
-    switch (size) {
-    case 1:
-        data = address_space_ldub(as, addr, attrs, &res);
-        break;
-    case 2:
-        data = address_space_lduw(as, addr, attrs, &res);
-        break;
-    case 4:
-        data = address_space_ldl(as, addr, attrs, &res);
-        break;
-    case 8:
-        data = address_space_ldq(as, addr, attrs, &res);
-        break;
-    default: abort();
-    }
-    *pdata = data;
-    return res;
-}
-
-static MemTxResult watch_mem_write(struct uc_struct* uc, void *opaque, hwaddr addr,
-                                   uint64_t val, unsigned size,
-                                   MemTxAttrs attrs)
-{
-    MemTxResult res;
-    int asidx = cpu_asidx_from_attrs(uc->cpu, attrs);
-    AddressSpace *as = uc->cpu->cpu_ases[asidx].as;
-
-    check_watchpoint_cb(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_WRITE, val); // JHW
-    check_watchpoint(uc, addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_WRITE);
-    switch (size) {
-    case 1:
-        address_space_stb(as, addr, val, attrs, &res);
-        break;
-    case 2:
-        address_space_stw(as, addr, val, attrs, &res);
-        break;
-    case 4:
-        address_space_stl(as, addr, val, attrs, &res);
-        break;
-    case 8:
-        address_space_stq(as, addr, val, attrs, &res);
-        break;
-    default: abort();
-    }
-    return res;
-}
-
-static const MemoryRegionOps watch_mem_ops = {
-    .read_with_attrs = watch_mem_read,
-    .write_with_attrs = watch_mem_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-    .valid = {
-        .min_access_size = 1,
-        .max_access_size = 8,
-        .unaligned = false,
-    },
-    .impl = {
-        .min_access_size = 1,
-        .max_access_size = 8,
-        .unaligned = false,
-    },
-};
-
 static void io_mem_init(struct uc_struct* uc)
 {
     memory_region_init_io(uc, &uc->io_mem_rom, NULL, &unassigned_mem_ops, NULL, NULL, UINT64_MAX);
@@ -2031,9 +1841,6 @@ static void io_mem_init(struct uc_struct* uc)
                           NULL, UINT64_MAX);
     memory_region_init_io(uc, &uc->io_mem_notdirty, NULL, &notdirty_mem_ops, NULL,
                           NULL, UINT64_MAX);
-
-    // SNPS added
-    memory_region_init_io(uc, &uc->io_mem_watch, NULL, &watch_mem_ops, NULL, NULL, UINT64_MAX);
 }
 
 static subpage_t *subpage_init(FlatView *fv, hwaddr base)
@@ -2098,10 +1905,6 @@ AddressSpaceDispatch *address_space_dispatch_new(struct uc_struct *uc, FlatView 
     assert(n == PHYS_SECTION_NOTDIRTY);
     n = dummy_section(&d->map, fv, &uc->io_mem_rom);
     assert(n == PHYS_SECTION_ROM);
-
-    // SNPS added
-    n = dummy_section(&d->map, fv, &uc->io_mem_watch);
-    assert(n == PHYS_SECTION_WATCH);
 
     d->phys_map = ppe;
 

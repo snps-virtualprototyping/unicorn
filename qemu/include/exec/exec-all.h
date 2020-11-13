@@ -124,7 +124,7 @@ void tlb_init(CPUState *cpu);
  * Flush one page from the TLB of the specified CPU, for all
  * MMU indexes.
  */
-void tlb_flush_page(CPUState *cpu, target_ulong addr);
+void tlb_flush_page(CPUState *cpu, uint64_t addr); // SNPS changed
 /**
  * tlb_flush:
  * @cpu: CPU whose TLB should be flushed
@@ -151,7 +151,7 @@ void tlb_flush_page_by_mmuidx_all_cpus_synced(CPUState *cpu, target_ulong addr, 
  * Flush one page from the TLB of the specified CPU, for the specified
  * MMU indexes.
  */
-void tlb_flush_page_by_mmuidx(CPUState *cpu, target_ulong addr,
+void tlb_flush_page_by_mmuidx(CPUState *cpu, uint64_t addr, // SNPS changed
                               uint16_t idxmap);
 /**
  * tlb_flush_by_mmuidx:

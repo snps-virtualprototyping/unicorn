@@ -1442,6 +1442,9 @@ address_space_write_cached(MemoryRegionCache *cache, hwaddr addr,
 
 void unicorn_free_empty_flat_view(struct uc_struct *uc);
 
+/* enum device_endian to MemOp.  */
+MemOp devend_memop(enum device_endian end);
+
 #endif
 
 #endif

@@ -23,7 +23,7 @@
 
 #else
 
-#define MISMATCH_CHECK(X, Y) QEMU_BUILD_BUG_ON(0)
+#define MISMATCH_CHECK(X, Y) //QEMU_BUILD_BUG_ON(0)
 
 #endif
 

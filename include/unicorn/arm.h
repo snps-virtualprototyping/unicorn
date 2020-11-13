@@ -138,6 +138,7 @@ typedef enum uc_arm_reg {
     UC_ARM_REG_PSP,
     UC_ARM_REG_CONTROL,
 
+    // SNPS added register IDs
     UC_ARM_REG_R8_USR,
     UC_ARM_REG_R9_USR,
     UC_ARM_REG_R10_USR,

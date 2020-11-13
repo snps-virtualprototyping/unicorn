@@ -3405,6 +3405,13 @@
 #define xpsr_write xpsr_write_arm
 #define xscale_cp_reginfo xscale_cp_reginfo_arm
 #define xscale_cpar_write xscale_cpar_write_arm
+#define memory_map_io memory_map_io_arm
+#define tlb_flush_all_cpus_synced tlb_flush_all_cpus_synced_arm
+#define tlb_flush_page_all_cpus_synced tlb_flush_page_all_cpus_synced_arm
+#define tlb_flush_by_mmuidx_all_cpus_synced tlb_flush_by_mmuidx_all_cpus_synced_arm
+#define tlb_flush_page_by_mmuidx_all_cpus_synced tlb_flush_page_by_mmuidx_all_cpus_synced_arm
+#define dmi_invalidate dmi_invalidate_arm
+#define helper_trace_tb_entry helper_trace_tb_entry_arm
 #define aa64_va_parameters aa64_va_parameters_arm
 #define aa64_va_parameters_both aa64_va_parameters_both_arm
 #define aarch64_translator_ops aarch64_translator_ops_arm
@@ -3527,4 +3534,7 @@
 #define uqsub_op uqsub_op_arm
 #define v8m_security_lookup v8m_security_lookup_arm
 #define vfp_expand_imm vfp_expand_imm_arm
+#define helper_sev helper_sev_arm
+#define helper_sevl helper_sevl_arm
+#define helper_call_breakpoints helper_call_breakpoints_arm
 #endif

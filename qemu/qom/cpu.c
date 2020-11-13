@@ -91,6 +91,7 @@ void cpu_exit(CPUState *cpu)
     /* Ensure cpu_exec will see the exit request after TCG has exited.  */
     smp_wmb();
     atomic_set(&cpu->tcg_exit_req, 1);
+    atomic_set(&cpu->icount_decr_ptr->u16.high, -1);
 }
 
 static void cpu_common_noop(CPUState *cpu)
@@ -145,10 +146,11 @@ static void cpu_common_reset(CPUState *cpu)
     cpu->mem_io_pc = 0;
     cpu->mem_io_vaddr = 0;
     cpu->icount_extra = 0;
-    atomic_set(&cpu->icount_decr.u32, 0);
-    cpu->can_do_io = 1; // JHW: we can do IO anytime
+    atomic_set(&cpu->icount_decr_ptr->u32, 0);
+    cpu->can_do_io = 1; // SNPS changed
     cpu->exception_index = -1;
     cpu->crash_occurred = false;
+    cpu->cflags_next_tb = -1;
 
     // TODO: Should be uncommented, but good 'ol
     //       unicorn's crappy symbol deduplication

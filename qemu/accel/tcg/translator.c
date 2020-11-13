@@ -30,7 +30,7 @@ void translator_loop_temp_check(DisasContextBase *db)
 }
 
 void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
-                     CPUState *cpu, TranslationBlock *tb)
+                     CPUState *cpu, TranslationBlock *tb, int max_insns)
 {
     int bp_insn = 0;
     TCGContext *tcg_ctx = cpu->uc->tcg_ctx;

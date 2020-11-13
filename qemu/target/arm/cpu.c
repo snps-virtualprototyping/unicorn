@@ -219,9 +219,7 @@ static void arm_cpu_reset(CPUState *s)
 #endif
     }
 
-#if defined(CONFIG_USER_ONLY)
-    env->uncached_cpsr = ARM_CPU_MODE_USR;
-    /* For user mode we must enable access to coprocessors */
+    // Unicorn: Always enable access to the coprocessors initially.
     env->vfp.xregs[ARM_VFP_FPEXC] = 1 << 30;
     if (arm_feature(env, ARM_FEATURE_IWMMXT)) {
         env->cp15.c15_cpar = 3;

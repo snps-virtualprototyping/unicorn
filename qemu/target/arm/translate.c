@@ -5837,7 +5837,7 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
             gen_io_start();
         }
 #endif
-        gen_set_pc_im(s, s->pc); // SNPS added
+        gen_set_pc_im(s, s->pc_curr); // SNPS added
 
         if (isread) {
             /* Read */

@@ -3405,6 +3405,13 @@
 #define xpsr_write xpsr_write_aarch64
 #define xscale_cp_reginfo xscale_cp_reginfo_aarch64
 #define xscale_cpar_write xscale_cpar_write_aarch64
+#define memory_map_io memory_map_io_aarch64
+#define tlb_flush_all_cpus_synced tlb_flush_all_cpus_synced_aarch64
+#define tlb_flush_page_all_cpus_synced tlb_flush_page_all_cpus_synced_aarch64
+#define tlb_flush_by_mmuidx_all_cpus_synced tlb_flush_by_mmuidx_all_cpus_synced_aarch64
+#define tlb_flush_page_by_mmuidx_all_cpus_synced tlb_flush_page_by_mmuidx_all_cpus_synced_aarch64
+#define dmi_invalidate dmi_invalidate_aarch64
+#define helper_trace_tb_entry helper_trace_tb_entry_aarch64
 #define ARM64_REGS_STORAGE_SIZE ARM64_REGS_STORAGE_SIZE_aarch64
 #define aa64_va_parameters aa64_va_parameters_aarch64
 #define aa64_va_parameters_both aa64_va_parameters_both_aarch64
@@ -4527,4 +4534,7 @@
 #define v8m_security_lookup v8m_security_lookup_aarch64
 #define vfp_expand_imm vfp_expand_imm_aarch64
 #define write_fp_dreg write_fp_dreg_aarch64
+#define helper_sev helper_sev_aarch64
+#define helper_sevl helper_sevl_aarch64
+#define helper_call_breakpoints helper_call_breakpoints_aarch64
 #endif

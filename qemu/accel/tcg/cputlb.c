@@ -194,7 +194,8 @@ static void tlb_flush_page_by_mmuidx_async_work(CPUState *cpu,
     tb_flush_jmp_cache(cpu, addr);
 }
 
-void tlb_flush_page_by_mmuidx(CPUState *cpu, target_ulong addr, uint16_t idxmap)
+// SNPS changed
+void tlb_flush_page_by_mmuidx(CPUState *cpu, uint64_t addr, uint16_t idxmap)
 {
     target_ulong addr_and_mmu_idx;
 
@@ -208,9 +209,10 @@ void tlb_flush_page_by_mmuidx(CPUState *cpu, target_ulong addr, uint16_t idxmap)
         cpu, RUN_ON_CPU_TARGET_PTR(addr_and_mmu_idx));
 }
 
-void tlb_flush_page(CPUState *cpu, target_ulong addr)
+void tlb_flush_page(CPUState *cpu, uint64_t addr)
 {
-    tlb_flush_page_async_work(cpu, RUN_ON_CPU_TARGET_PTR(addr));
+    target_ulong addr2 = (target_ulong)addr;
+    tlb_flush_page_async_work(cpu, RUN_ON_CPU_TARGET_PTR(addr2));
 }
 
 // SNPS added
@@ -389,6 +391,7 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
     int asidx = cpu_asidx_from_attrs(cpu, attrs);
     int wp_flags;
     int newprot = prot; // SNPS added
+    unsigned char* dmiptr = NULL; // SNPS added
 
     if (size <= TARGET_PAGE_SIZE) {
         sz = TARGET_PAGE_SIZE;
@@ -632,15 +635,7 @@ tb_page_addr_t get_page_addr_code(CPUArchState *env, target_ulong addr)
     }
 
     // SNPS added
-    if (unlikely(entry->addr_code & (TLB_RECHECK | TLB_MMIO))) {
-        /*
-         * Return -1 if we can't translate and execute from an entire
-         * page of RAM here, which will cause us to execute by loading
-         * and translating one insn at a time, without caching:
-         *  - TLB_RECHECK: means the MMU protection covers a smaller range
-         *    than a target page, so we must redo the MMU check every insn
-         *  - TLB_MMIO: region is not backed by RAM
-         */
+    if (unlikely(entry->addr_code & TLB_MMIO)) {
         return -1;
     }
 
@@ -674,7 +669,7 @@ tb_page_addr_t get_page_addr_code(CPUArchState *env, target_ulong addr)
         return RAM_ADDR_INVALID;
     }
     p = (void *)((uintptr_t)addr + entry->addend);
-    ram_addr = (ioentry->addr & TARGET_PAGE_MASK) + addr; // SNPS changed
+    ram_addr = (iotlbentry->addr & TARGET_PAGE_MASK) + addr; // SNPS changed
     // ToDo: protect p?
     if (ram_addr == RAM_ADDR_INVALID) {
         env->invalid_addr = addr;
@@ -683,83 +678,6 @@ tb_page_addr_t get_page_addr_code(CPUArchState *env, target_ulong addr)
     } else {
         return ram_addr;
     }
-}
-
-// SNPS added
-static bool tlb_is_dirty_ram(CPUTLBEntry *tlbe)
-{
-    return (tlb_addr_write(tlbe) & (TLB_INVALID_MASK|TLB_MMIO|TLB_NOTDIRTY)) == 0;
-}
-
-// SNPS added
-void tlb_flush_by_mmuidx(CPUState *cpu, uint16_t idxmap)
-{
-    CPUArchState *env = cpu->env_ptr;
-    unsigned long mmu_idx_bitmask = idxmap;
-    int mmu_idx;
-
-    tlb_debug("start\n");
-
-    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
-        if (test_bit(mmu_idx, &mmu_idx_bitmask)) {
-            tlb_debug("%d\n", mmu_idx);
-
-            memset(env->tlb_table[mmu_idx], -1, sizeof(env->tlb_table[0]));
-            memset(env->tlb_v_table[mmu_idx], -1, sizeof(env->tlb_v_table[0]));
-
-            env->tlb_flush_addr[mmu_idx] = (target_ulong)-1;
-            env->tlb_flush_mask[mmu_idx] = 0;
-        }
-    }
-
-    cpu_tb_jmp_cache_clear(cpu);
-}
-
-// SNPS added
-static inline void tlb_flush_entry(CPUTLBEntry *tlb_entry, target_ulong addr)
-{
-    if (tlb_hit_page(tlb_entry->addr_read, addr) ||
-        tlb_hit_page(tlb_addr_write(tlb_entry), addr) ||
-        tlb_hit_page(tlb_entry->addr_code, addr)) {
-        memset(tlb_entry, -1, sizeof(*tlb_entry));
-    }
-}
-
-// SNPS added
-void tlb_flush_page_by_mmuidx(CPUState *cpu, uint64_t addr, uint16_t idxmap)
-{
-    CPUArchState *env = cpu->env_ptr;
-    unsigned long mmu_idx_bitmap = idxmap;
-    int i, page, mmu_idx;
-
-    tlb_debug("addr 0x%lx\n", addr);
-
-    /* Check if we need to flush due to large pages.  */
-    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
-        target_ulong flush_mask = env->tlb_flush_mask[mmu_idx];
-        target_ulong flush_addr = env->tlb_flush_addr[mmu_idx];
-        if ((addr & flush_mask) == flush_addr) {
-            tlb_debug("forced full flush ("
-                      TARGET_FMT_lx "/" TARGET_FMT_lx ")\n",
-                      flush_addr, flush_mask);
-
-            tlb_flush_one_mmu(cpu, mmu_idx);
-        }
-    }
-
-    addr &= TARGET_PAGE_MASK;
-    page = (addr >> TARGET_PAGE_BITS) & (CPU_TLB_SIZE - 1);
-    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
-        if (test_bit(mmu_idx, &mmu_idx_bitmap)) {
-            tlb_flush_entry(&env->tlb_table[mmu_idx][page], addr);
-            /* check whether there are vltb entries that need to be flushed */
-            for (i = 0; i < CPU_VTLB_SIZE; i++) {
-                tlb_flush_entry(&env->tlb_v_table[mmu_idx][i], addr);
-            }
-        }
-    }
-
-    tb_flush_jmp_cache(cpu, addr);
 }
 
 static uint64_t io_readx(CPUArchState *env, CPUIOTLBEntry *iotlbentry,
@@ -1824,21 +1742,15 @@ void dmi_invalidate(CPUState *cpu, uint64_t start, uint64_t end) {
         for (idx = 0; idx < CPU_TLB_SIZE; idx++) {
             CPUIOTLBEntry* entry = &env->iotlb[mmu_idx][idx];
             target_ulong vaddr = lookup_virt_addr(entry);
-            if (entry->phys >= start && entry->phys < end && vaddr != -1) {
-                if (tlb_flush_page(cpu, vaddr))
-                    // that caused a full flush - we are done here
-                    return;
-            }
+            if (entry->phys >= start && entry->phys < end && vaddr != -1)
+                tlb_flush_page(cpu, vaddr);
         }
 
         for (idx = 0; idx < CPU_VTLB_SIZE; idx++) {
             CPUIOTLBEntry* entry = &env->iotlb_v[mmu_idx][idx];
             target_ulong vaddr = lookup_virt_addr(entry);
-            if (entry->phys >= start && entry->phys < end && vaddr != -1) {
-                if (tlb_flush_page(cpu, vaddr))
-                    // that caused a full flush - we are done here
-                    return;
-            }
+            if (entry->phys >= start && entry->phys < end && vaddr != -1)
+                tlb_flush_page(cpu, vaddr);
         }
     }
 }

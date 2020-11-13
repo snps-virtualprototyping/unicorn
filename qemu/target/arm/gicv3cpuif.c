@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include "uc_priv.h"
 
 uint64_t encode_cpreg(const ARMCPRegInfo *ri);
 uint64_t encode_cpreg(const ARMCPRegInfo *ri) {

@@ -17,7 +17,7 @@ extern "C" {
 
 //> ARM64 registers
 typedef enum uc_arm64_reg {
-    UC_ARM64_REG_INVALID = 0x40000000, // smaller ids are reserved for armv7
+    UC_ARM64_REG_INVALID = 0x40000000, // SNPS changed
 
     UC_ARM64_REG_X29,
     UC_ARM64_REG_X30,
@@ -281,89 +281,88 @@ typedef enum uc_arm64_reg {
     UC_ARM64_REG_V31,
 
     //> pseudo registers
-    UC_ARM64_REG_PC,            // program counter register
+    UC_ARM64_REG_PC, // SNPS changed
 
     UC_ARM64_REG_CPACR_EL1,
     UC_ARM64_REG_ESR,
 
     //> thread registers
-    UC_ARM64_REG_TPIDRRO_EL0,
+    UC_ARM64_REG_TPIDRRO_EL0, // SNPS added
     UC_ARM64_REG_TPIDR_EL0,
-    UC_ARM64_REG_TPIDR_EL1,
-    UC_ARM64_REG_TPIDR_EL2,
-    UC_ARM64_REG_TPIDR_EL3,
+    UC_ARM64_REG_TPIDR_EL1, // SNPS changed
+    UC_ARM64_REG_TPIDR_EL2, // SNPS added
+    UC_ARM64_REG_TPIDR_EL3, // SNPS added
 
     UC_ARM64_REG_PSTATE,        // PSTATE pseudoregister
 
     //> floating point control and status registers
     UC_ARM64_REG_FPCR,
     UC_ARM64_REG_FPSR,
-    UC_ARM64_REG_FPEXC,
+    UC_ARM64_REG_FPEXC, // SNPS added
 
     //> banked system registers
-    UC_ARM64_REG_SP_EL0,
-    UC_ARM64_REG_SP_EL1,
-    UC_ARM64_REG_SP_EL2,
-    UC_ARM64_REG_SP_EL3,
+    UC_ARM64_REG_SP_EL0, // SNPS added
+    UC_ARM64_REG_SP_EL1, // SNPS added
+    UC_ARM64_REG_SP_EL2, // SNPS added
+    UC_ARM64_REG_SP_EL3, // SNPS added
 
-    UC_ARM64_REG_ELR_EL0,
-    UC_ARM64_REG_ELR_EL1,
-    UC_ARM64_REG_ELR_EL2,
-    UC_ARM64_REG_ELR_EL3,
+    UC_ARM64_REG_ELR_EL0, // SNPS added
+    UC_ARM64_REG_ELR_EL1, // SNPS added
+    UC_ARM64_REG_ELR_EL2, // SNPS added
+    UC_ARM64_REG_ELR_EL3, // SNPS added
 
-    UC_ARM64_REG_SPSR_EL1,
-    UC_ARM64_REG_SPSR_EL2,
-    UC_ARM64_REG_SPSR_EL3,
+    UC_ARM64_REG_SPSR_EL1, // SNPS added
+    UC_ARM64_REG_SPSR_EL2, // SNPS added
+    UC_ARM64_REG_SPSR_EL3, // SNPS added
 
-    UC_ARM64_REG_SCTLR_EL1,
-    UC_ARM64_REG_SCTLR_EL2,
-    UC_ARM64_REG_SCTLR_EL3,
+    UC_ARM64_REG_SCTLR_EL1, // SNPS added
+    UC_ARM64_REG_SCTLR_EL2, // SNPS added
+    UC_ARM64_REG_SCTLR_EL3, // SNPS added
 
-    UC_ARM64_REG_MAIR_EL1,
-    UC_ARM64_REG_MAIR_EL2,
-    UC_ARM64_REG_MAIR_EL3,
+    UC_ARM64_REG_MAIR_EL1, // SNPS added
+    UC_ARM64_REG_MAIR_EL2, // SNPS added
+    UC_ARM64_REG_MAIR_EL3, // SNPS added
 
-    UC_ARM64_REG_TCR_EL1,
-    UC_ARM64_REG_TCR_EL2,
-    UC_ARM64_REG_TCR_EL3,
+    UC_ARM64_REG_TCR_EL1, // SNPS added
+    UC_ARM64_REG_TCR_EL2, // SNPS added
+    UC_ARM64_REG_TCR_EL3, // SNPS added
 
-    UC_ARM64_REG_VBAR_EL1,
-    UC_ARM64_REG_VBAR_EL2,
-    UC_ARM64_REG_VBAR_EL3,
+    UC_ARM64_REG_VBAR_EL1, // SNPS added
+    UC_ARM64_REG_VBAR_EL2, // SNPS added
+    UC_ARM64_REG_VBAR_EL3, // SNPS added
 
-    UC_ARM64_REG_TTBR0_EL1,
-    UC_ARM64_REG_TTBR0_EL2,
-    UC_ARM64_REG_TTBR0_EL3,
+    UC_ARM64_REG_TTBR0_EL1, // SNPS added
+    UC_ARM64_REG_TTBR0_EL2, // SNPS added
+    UC_ARM64_REG_TTBR0_EL3, // SNPS added
 
-    UC_ARM64_REG_TTBR1_EL1,
-    UC_ARM64_REG_TTBR1_EL2,
-    UC_ARM64_REG_TTBR1_EL3,
+    UC_ARM64_REG_TTBR1_EL1, // SNPS added
+    UC_ARM64_REG_TTBR1_EL2, // SNPS added
+    UC_ARM64_REG_TTBR1_EL3, // SNPS added
 
-    UC_ARM64_REG_VTTBR_EL2,
-    UC_ARM64_REG_VTCR_EL2,
+    UC_ARM64_REG_VTTBR_EL2, // SNPS added
+    UC_ARM64_REG_VTCR_EL2, // SNPS added
 
     UC_ARM64_REG_MDSCR_EL1,
 
     //> architecture id registers
-    UC_ARM64_REG_MIDR,          // main id register
-    UC_ARM64_REG_MPIDR,         // multiprocessor affinity register
-    UC_ARM64_REG_VPIDR,         // virtual processor id register
-    UC_ARM64_REG_VMPIDR,        // virtual multiprocessor register
+    UC_ARM64_REG_MIDR, // SNPS added
+    UC_ARM64_REG_MPIDR, // SNPS added
+    UC_ARM64_REG_VPIDR, // SNPS added
+    UC_ARM64_REG_VMPIDR, // SNPS added
 
-    UC_ARM64_REG_DACR_S,        // secure domain access control register
-    UC_ARM64_REG_DACR_NS,       // non-secure domain access control register
-    UC_ARM64_REG_DACR32,        // domain access control register aarch32
-    UC_ARM64_REG_HCR_EL2,       // hypervisor configuration register
-    UC_ARM64_REG_SCR_EL3,       // secure configuration register
-    UC_ARM64_REG_RVBAR,         // reset vector base address register
+    UC_ARM64_REG_DACR_S, // SNPS added
+    UC_ARM64_REG_DACR_NS, // SNPS added
+    UC_ARM64_REG_DACR32, // SNPS added
+    UC_ARM64_REG_HCR_EL2, // SNPS added
+    UC_ARM64_REG_SCR_EL3, // SNPS added
+    UC_ARM64_REG_RVBAR, // SNPS added
 
-    UC_ARM64_VREG_AA64,         // virtual register for is_aarch64
-    UC_ARM64_VREG_THUMB,        // virtual register for is_thumb
+    UC_ARM64_VREG_AA64, // SNPS added
+    UC_ARM64_VREG_THUMB, // SNPS added
 
-    UC_ARM64_REG_NOIMP,         // placeholder for todo regs
+    UC_ARM64_REG_NOIMP, // SNPS added
 
-    UC_ARM64_REG_ENDING,        // <-- mark the end of the list of registers
-
+    UC_ARM64_REG_ENDING, // SNPS changed
     //> alias registers
 
     UC_ARM64_REG_IP0 = UC_ARM64_REG_X16,

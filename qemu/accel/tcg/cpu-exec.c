@@ -323,7 +323,7 @@ static inline bool cpu_handle_exception(struct uc_struct *uc, CPUState *cpu, int
             *ret = cpu->exception_index;
             cpu->exception_index = -1;
             return true;
-#else if 0 // SNPS changed
+#elif 0 // SNPS changed
             bool catched = false;
             if (uc->stop_interrupt && uc->stop_interrupt(cpu->exception_index)) {
                 // Unicorn: call registered invalid instruction callbacks
@@ -465,7 +465,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
         /* Instruction counter expired.  */
 #ifdef CONFIG_USER_ONLY
         abort();
-#else if 0 // SNPS disabled
+#elif 0 // SNPS disabled
         int insns_left = atomic_read(&cpu_neg(cpu)->icount_decr.u32);
         *last_tb = NULL;
         if (cpu->icount_extra && insns_left >= 0) {

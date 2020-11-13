@@ -60,9 +60,9 @@ static inline void gen_tb_start(TCGContext *tcg_ctx, TranslationBlock *tb)
     limit = tcg_temp_new_i64(tcg_ctx);
     ninsn = tcg_temp_local_new_i64(tcg_ctx);
     tcg_gen_ld_i64(tcg_ctx, ninsn, tcg_ctx->cpu_env,
-                   offsetof(CPUState, insn_count) - ENV_OFFSET);
+                   offsetof(CPUState, insn_count) - offsetof(ArchCPU, env));
     tcg_gen_ld_i64(tcg_ctx, limit, tcg_ctx->cpu_env,
-                   offsetof(CPUState, insn_limit) - ENV_OFFSET);
+                   offsetof(CPUState, insn_limit) - offsetof(ArchCPU, env));
     tcg_gen_brcond_i64(tcg_ctx, TCG_COND_GE, ninsn, limit,
                        tcg_ctx->icount_label);
     tcg_temp_free_i64(tcg_ctx, limit);
@@ -74,7 +74,7 @@ static inline void gen_tb_start(TCGContext *tcg_ctx, TranslationBlock *tb)
     tcg_gen_add_i64(tcg_ctx, ninsn, ninsn, dummy);
     tcg_temp_free_i64(tcg_ctx, dummy);
     tcg_gen_st_i64(tcg_ctx, ninsn, tcg_ctx->cpu_env,
-                   offsetof(CPUState, insn_count) - ENV_OFFSET);
+                   offsetof(CPUState, insn_count) - offsetof(ArchCPU, env));
     tcg_temp_free_i64(tcg_ctx, ninsn);
 
     // SNPS added: trace new TB if requested
