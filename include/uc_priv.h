@@ -146,13 +146,13 @@ enum uc_hook_idx {
     struct list_item *cur
 
 // for loop macro to loop over hook lists
-#define HOOK_FOREACH(uc, hh, idx)                         \
-    for (                                                 \
-        cur = (uc)->hook[idx##_IDX].head;                 \
-        cur != NULL && ((hh) = (struct hook *)cur->data)  \
-            /* stop excuting callbacks on stop request */ \
-            && !uc->stop_request;                         \
-        cur = cur->next)
+#define HOOK_FOREACH(uc, hh, idx) while (false) // SNPS changed
+//    for (                                                 \
+//        cur = (uc)->hook[idx##_IDX].head;                 \
+//        cur != NULL && ((hh) = (struct hook *)cur->data)  \
+//            /* stop excuting callbacks on stop request */ \
+//            && !uc->stop_request;                         \
+//        cur = cur->next)
 
 // if statement to check hook bounds
 #define HOOK_BOUND_CHECK(hh, addr)                  \
