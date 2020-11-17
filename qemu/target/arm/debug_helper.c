@@ -247,6 +247,14 @@ void HELPER(check_breakpoints)(CPUARMState *env)
     }
 }
 
+// SNPS added
+void HELPER(call_breakpoints)(CPUARMState *env) {                                                                                                                                                                                       
+    if (env->uc->uc_breakpoint_func) {
+        uint64_t pc = env->aarch64 ? env->pc : env->regs[15];
+        (env->uc->uc_breakpoint_func)(env->uc->uc_breakpoint_opaque, pc);
+    }
+}
+
 bool arm_debug_check_watchpoint(CPUState *cs, CPUWatchpoint *wp)
 {
     /*
