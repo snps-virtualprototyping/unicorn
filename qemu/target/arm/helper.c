@@ -6959,6 +6959,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
              */
             { .name = "ID_AA64PFR0_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 4, .opc2 = 0,
+              .access = PL1_R, // SNPS added
 #ifdef CONFIG_USER_ONLY
               .type = ARM_CP_CONST,
               .resetvalue = cpu->isar.id_aa64pfr0
