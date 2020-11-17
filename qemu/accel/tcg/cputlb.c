@@ -976,6 +976,7 @@ load_helper(CPUArchState *env, target_ulong addr, TCGMemOpIdx oi,
     bool handled;
     HOOK_FOREACH_VAR_DECLARE;
 
+#if 0 // SNPS added
     struct uc_struct *uc = env->uc;
     MemoryRegion *mr = memory_mapping(uc, addr);
 
@@ -1076,6 +1077,7 @@ load_helper(CPUArchState *env, target_ulong addr, TCGMemOpIdx oi,
             return 0;
         }
     }
+#endif // SNPS added
 
     /* Handle CPU specific unaligned behaviour */
     if (addr & ((1 << a_bits) - 1)) {
@@ -1180,6 +1182,7 @@ load_helper(CPUArchState *env, target_ulong addr, TCGMemOpIdx oi,
 
 finished:
     // Unicorn: callback on successful read
+#if 0 // SNPS added
     if (!code_read) {
         HOOK_FOREACH(uc, hook, UC_HOOK_MEM_READ_AFTER) {
             if (!HOOK_BOUND_CHECK(hook, addr)) {
@@ -1188,6 +1191,7 @@ finished:
             ((uc_cb_hookmem_t)hook->callback)(env->uc, UC_MEM_READ_AFTER, addr, size, res, hook->user_data);
         }
     }
+#endif
 
     return res;
 }
@@ -1337,6 +1341,7 @@ store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
     bool handled;
     HOOK_FOREACH_VAR_DECLARE;
 
+#if 0 // SNPS added
     struct uc_struct *uc = env->uc;
     MemoryRegion *mr = memory_mapping(uc, addr);
 
@@ -1395,6 +1400,7 @@ store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
             return;
         }
     }
+#endif // SNPS added
 
     /* Handle CPU specific unaligned behaviour */
     if (addr & ((1 << a_bits) - 1)) {
