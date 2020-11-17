@@ -502,7 +502,7 @@ void cpu_exec_step_atomic(struct uc_struct *uc, CPUState *cpu)
     uint32_t cflags = 1;
     uint32_t cf_mask = cflags & CF_HASH_MASK;
 
-	assert(0 && "unexpected call to cpu_exec_step_atomic"); // SNPS added
+    assert(0 && "unexpected call to cpu_exec_step_atomic"); // SNPS added
 
     cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
 

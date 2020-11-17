@@ -670,7 +670,6 @@ tb_page_addr_t get_page_addr_code(CPUArchState *env, target_ulong addr)
     }
     p = (void *)((uintptr_t)addr + entry->addend);
     ram_addr = (iotlbentry->addr & TARGET_PAGE_MASK) + addr; // SNPS changed
-    // ToDo: protect p?
     if (ram_addr == RAM_ADDR_INVALID) {
         env->invalid_addr = addr;
         env->invalid_error = UC_ERR_FETCH_UNMAPPED;
@@ -1096,6 +1095,20 @@ load_helper(CPUArchState *env, target_ulong addr, TCGMemOpIdx oi,
         }
         tlb_addr = code_read ? entry->addr_code : entry->addr_read;
         tlb_addr &= ~TLB_INVALID_MASK;
+    }
+
+    // SNPS added
+    if (code_read && (entry->addr_code & TLB_NOTPROTECTED)) {
+        entry->addr_code &= ~TLB_NOTPROTECTED;
+        tlb_addr = entry->addr_code;
+
+        if (env->uc->protect_dmi_ptr != NULL) {
+            CPUIOTLBEntry *iotlbentry = &env->iotlb[mmu_idx][index];
+            uint64_t phys = iotlbentry->phys & TARGET_PAGE_MASK;
+            uintptr_t host = (uintptr_t)addr + entry->addend;
+            unsigned char* dmi = (unsigned char*)(host & TARGET_PAGE_MASK);
+            env->uc->protect_dmi_ptr(env->uc->dmi_opaque, dmi, phys);
+        }
     }
 
     /* Handle anything that isn't just a straight memory access.  */
