@@ -551,7 +551,7 @@ static uint64_t do_paired_cmpxchg64_le(CPUARMState *env, uint64_t addr,
     newv = int128_make128(new_lo, new_hi);
 
     if (parallel) {
-#ifndef CONFIG_ATOMIC128
+#ifndef CONFIG_CMPXCHG128 // SNPS changed
         cpu_loop_exit_atomic(env_cpu(env), ra);
 #else
         int mem_idx = cpu_mmu_index(env, false);
@@ -621,7 +621,7 @@ static uint64_t do_paired_cmpxchg64_be(CPUARMState *env, uint64_t addr,
     newv = int128_make128(new_lo, new_hi);
 
     if (parallel) {
-#ifndef CONFIG_ATOMIC128
+#ifndef CONFIG_CMPXCHG128 // SNPS changed
         cpu_loop_exit_atomic(env_cpu(env), ra);
 #else
         int mem_idx = cpu_mmu_index(env, false);
