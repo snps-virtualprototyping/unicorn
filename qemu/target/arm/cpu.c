@@ -212,11 +212,11 @@ static void arm_cpu_reset(CPUState *s)
         env->pc = cpu->rvbar;
 #endif
     } else {
-// SNPS changed
-#if defined(CONFIG_USER_ONLY)
+// Unicorn: commented out to always allow accesses to FP/Neon
+//#if defined(CONFIG_USER_ONLY)
         /* Userspace expects access to cp10 and cp11 for FP/Neon */
         env->cp15.cpacr_el1 = deposit64(env->cp15.cpacr_el1, 20, 4, 0xf);
-#endif
+//#endif
     }
 
     // Unicorn: Always enable access to the coprocessors initially.
@@ -767,10 +767,17 @@ static void arm_cpu_post_init(struct uc_struct *uc, Object *obj)
         //                         &error_abort);
     }
 
+    // SNPS added
+    if (arm_feature(&cpu->env, ARM_FEATURE_EL2)) {
+        cpu->has_el2 = true;
+    }
+
+
     if (arm_feature(&cpu->env, ARM_FEATURE_EL3)) {
         /* Add the has_el3 state CPU property only if EL3 is allowed.  This will
          * prevent "has_el3" from existing on CPUs which cannot support EL3.
          */
+        cpu->has_el3 = true; // SNPS added
         //qdev_property_add_static(DEVICE(obj), &arm_cpu_has_el3_property,
         //                         &error_abort);
 
