@@ -647,6 +647,47 @@ void arm_cpu_update_vfiq(ARMCPU *cpu)
     }
 }
 
+// SNPS added
+static void arm_cpu_set_irq(CPUState *cs, int irq, int level)
+{
+    ARMCPU *cpu = ARM_CPU(NULL, cs);
+    CPUARMState *env = &cpu->env;
+
+    static const int mask[] = {
+        [ARM_CPU_IRQ] = CPU_INTERRUPT_HARD,
+        [ARM_CPU_FIQ] = CPU_INTERRUPT_FIQ,
+        [ARM_CPU_VIRQ] = CPU_INTERRUPT_VIRQ,
+        [ARM_CPU_VFIQ] = CPU_INTERRUPT_VFIQ
+    };
+
+    if (level) {
+        env->irq_line_state |= mask[irq];
+    } else {
+        env->irq_line_state &= ~mask[irq];
+    }
+
+    switch (irq) {
+    case ARM_CPU_VIRQ:
+        assert(arm_feature(env, ARM_FEATURE_EL2));
+        arm_cpu_update_virq(cpu);
+        break;
+    case ARM_CPU_VFIQ:
+        assert(arm_feature(env, ARM_FEATURE_EL2));
+        arm_cpu_update_vfiq(cpu);
+        break;
+    case ARM_CPU_IRQ:
+    case ARM_CPU_FIQ:
+        if (level) {
+            cpu_interrupt(cs, mask[irq]);
+        } else {
+            cpu_reset_interrupt(cs, mask[irq]);
+        }
+        break;
+    default:
+        g_assert_not_reached();
+    }
+}
+
 static QEMU_UNUSED_FUNC bool arm_cpu_is_big_endian(CPUState *cs)
 {
     ARMCPU *cpu = ARM_CPU(NULL, cs);
@@ -2000,6 +2041,8 @@ static void arm_cpu_class_init(struct uc_struct *uc, ObjectClass *oc, void *data
     acc->parent_realize = dc->realize;
     dc->realize = arm_cpu_realizefn;
     //dc->props = arm_cpu_properties;
+
+    cc->set_irq = arm_cpu_set_irq; // SNPS added
 
     acc->parent_reset = cc->reset;
     cc->reset = arm_cpu_reset;
