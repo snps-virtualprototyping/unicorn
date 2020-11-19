@@ -425,7 +425,6 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
         // SNPS added: DMI/b_transport handling
         if (env->uc->get_dmi_ptr != NULL &&
             env->uc->get_dmi_ptr(env->uc->dmi_opaque, paddr_page, &dmiptr, &newprot)) {
-            address &= ~TLB_MMIO;
             addend = (uintptr_t)dmiptr;
             prot = prot & newprot; // don't take more than we're allowed to
         } else {
@@ -488,7 +487,7 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
 
     te->addr_write = -1;
     if (prot & PAGE_WRITE) {
-        te->addr_write = address | TLB_NOTDIRTY; // SNPS changed
+        te->addr_write = address /*| TLB_NOTDIRTY*/; // SNPS changed
         if (prot & PAGE_WRITE_INV) {
             te->addr_write |= TLB_INVALID_MASK;
         }
@@ -634,11 +633,6 @@ tb_page_addr_t get_page_addr_code(CPUArchState *env, target_ulong addr)
         assert(tlb_hit(entry->addr_code, addr));
     }
 
-    // SNPS added
-    if (unlikely(entry->addr_code & TLB_MMIO)) {
-        return -1;
-    }
-
     iotlbentry = &env->iotlb[mmu_idx][index];
     section = iotlb_to_section(cpu, iotlbentry->addr, iotlbentry->attrs);
     mr = section->mr;
@@ -669,7 +663,8 @@ tb_page_addr_t get_page_addr_code(CPUArchState *env, target_ulong addr)
         return RAM_ADDR_INVALID;
     }
     p = (void *)((uintptr_t)addr + entry->addend);
-    ram_addr = (iotlbentry->addr & TARGET_PAGE_MASK) + addr; // SNPS changed
+    ram_addr = (iotlbentry->addr & TARGET_PAGE_MASK) | // SNPS changed
+               (addr & ~TARGET_PAGE_MASK);
     if (ram_addr == RAM_ADDR_INVALID) {
         env->invalid_addr = addr;
         env->invalid_error = UC_ERR_FETCH_UNMAPPED;
