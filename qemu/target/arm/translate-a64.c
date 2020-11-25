@@ -408,10 +408,10 @@ static void gen_exception_internal_insn(DisasContext *s, uint64_t pc, int excp)
     s->base.is_jmp = DISAS_NORETURN;
 }
 
-static void gen_exception_insn(DisasContext *s, int offset, int excp,
+static void gen_exception_insn(DisasContext *s, uint64_t pc, int excp, // SNPS changed
                                uint32_t syndrome, uint32_t target_el)
 {
-    gen_a64_set_pc_im(s, s->base.pc_next - offset);
+    gen_a64_set_pc_im(s, pc); // SNPS changed
     gen_exception(s, excp, syndrome, target_el);
     s->base.is_jmp = DISAS_NORETURN;
 }
@@ -14414,7 +14414,8 @@ static void disas_a64_insn(CPUARMState *env, DisasContext *s)
             if (s->btype != 0
                 && s->guarded_page
                 && !btype_destination_ok(insn, s->bt, s->btype)) {
-                gen_exception_insn(s, 4, EXCP_UDEF, syn_btitrap(s->btype),
+                gen_exception_insn(s, s->pc_curr, EXCP_UDEF,
+                                   syn_btitrap(s->btype),
                                    default_exception_el(s));
                 return;
             }
