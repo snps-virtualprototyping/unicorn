@@ -59,20 +59,20 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
          * Both set_pc() & synchronize_fromtb() can be ignored when code tracing hook is installed,
          * or timer mode is in effect, since these already fix the PC.
          */
-        if (!HOOK_EXISTS(env->uc, UC_HOOK_CODE) && !env->uc->timeout) {
+        //if (!HOOK_EXISTS(env->uc, UC_HOOK_CODE) && !env->uc->timeout) {   // SNPS changed
             if (cc->synchronize_from_tb) {
                 // avoid sync twice when helper_uc_tracecode() already did this.
-                if (env->uc->emu_counter <= env->uc->emu_count &&
-                        !env->uc->stop_request && !env->uc->quit_request)
+        //        if (env->uc->emu_counter <= env->uc->emu_count &&         // SNPS changed
+        //                !env->uc->stop_request && !env->uc->quit_request) // SNPS changed
                     cc->synchronize_from_tb(cpu, last_tb);
             } else {
                 assert(cc->set_pc);
                 // avoid sync twice when helper_uc_tracecode() already did this.
-                if (env->uc->emu_counter <= env->uc->emu_count &&
-                        !env->uc->stop_request && !env->uc->quit_request)
+        //        if (env->uc->emu_counter <= env->uc->emu_count &&         // SNPS changed
+        //                !env->uc->stop_request && !env->uc->quit_request) // SNPS changed
                     cc->set_pc(cpu, last_tb->pc);
             }
-        }
+        //}                                                                 // SNPS changed
     }
 
     if (tb_exit == TB_EXIT_REQUESTED) {
