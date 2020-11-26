@@ -3307,7 +3307,7 @@ static void disas_ldst_atomic(DisasContext *s, uint32_t insn,
     bool r = extract32(insn, 22, 1);
     bool a = extract32(insn, 23, 1);
     TCGv_i64 tcg_rs, clean_addr;
-    AtomicThreeOpFn *fn;
+    AtomicThreeOpFn *fn = NULL; // SNPS changed
 
     if (is_vector || !dc_isar_feature(aa64_atomics, s)) {
         unallocated_encoding(s);
@@ -12814,7 +12814,7 @@ static void disas_simd_two_reg_misc_fp16(DisasContext *s, uint32_t insn)
     TCGv_ptr tcg_fpstatus = NULL;
     bool need_rmode = false;
     bool need_fpst = true;
-    int rmode;
+    int rmode = FPROUNDING_ZERO; // SNPS changed
 
     if (!dc_isar_feature(aa64_fp16, s)) {
         unallocated_encoding(s);
