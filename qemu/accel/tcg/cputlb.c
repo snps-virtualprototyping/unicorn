@@ -199,7 +199,7 @@ void tlb_flush_page_by_mmuidx(CPUState *cpu, uint64_t addr, uint16_t idxmap)
 {
     target_ulong addr_and_mmu_idx;
 
-    tlb_debug("addr: "TARGET_FMT_lx" mmu_idx:%" PRIx16 "\n", addr, idxmap);
+    tlb_debug("addr: 0x%" PRIx64 " mmu_idx: 0x%" PRIx16 "\n", addr, idxmap);
 
     /* This should already be page aligned */
     addr_and_mmu_idx = addr & TARGET_PAGE_MASK;
@@ -802,7 +802,7 @@ void *probe_access(CPUArchState *env, target_ulong addr, int size,
     if (tlb_addr & TLB_WATCHPOINT) {
         cpu_check_watchpoint(env_cpu(env), addr, size,
                              env->iotlb[mmu_idx][index].attrs,
-                             wp_access, retaddr);
+                             wp_access, retaddr, ~0ul); // SNPS changed
     }
 
     if (tlb_addr & (TLB_NOTDIRTY | TLB_MMIO)) {
@@ -1121,7 +1121,7 @@ load_helper(CPUArchState *env, target_ulong addr, TCGMemOpIdx oi,
         if (unlikely(tlb_addr & TLB_WATCHPOINT)) {
             /* On watchpoint hit, this will longjmp out.  */
             cpu_check_watchpoint(env_cpu(env), addr, size,
-                                 iotlbentry->attrs, BP_MEM_READ, retaddr);
+                                 iotlbentry->attrs, BP_MEM_READ, retaddr, 0); // SNPS changed
 
             /* The backing page may or may not require I/O.  */
             tlb_addr &= ~TLB_WATCHPOINT;
@@ -1443,7 +1443,7 @@ store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
         if (unlikely(tlb_addr & TLB_WATCHPOINT)) {
             /* On watchpoint hit, this will longjmp out.  */
             cpu_check_watchpoint(env_cpu(env), addr, size,
-                                 iotlbentry->attrs, BP_MEM_WRITE, retaddr);
+                                 iotlbentry->attrs, BP_MEM_WRITE, retaddr, val); // SNPS changed
 
             /* The backing page may or may not require I/O.  */
             tlb_addr &= ~TLB_WATCHPOINT;
@@ -1495,12 +1495,12 @@ store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
         if (unlikely(tlb_addr & TLB_WATCHPOINT)) {
             cpu_check_watchpoint(env_cpu(env), addr, size - size2,
                                  env->iotlb[mmu_idx][index].attrs,
-                                 BP_MEM_WRITE, retaddr);
+                                 BP_MEM_WRITE, retaddr, val); // SNPS changed
         }
         if (unlikely(tlb_addr2 & TLB_WATCHPOINT)) {
             cpu_check_watchpoint(env_cpu(env), page2, size2,
                                  env->iotlb[mmu_idx][index2].attrs,
-                                 BP_MEM_WRITE, retaddr);
+                                 BP_MEM_WRITE, retaddr, val); // SNPS changed
         }
 
         /*

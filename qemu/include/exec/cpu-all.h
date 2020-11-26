@@ -446,6 +446,7 @@ static inline CPUNegativeOffsetState *cpu_neg(CPUState *cpu)
 
 int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len);
 void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
-                          MemTxAttrs atr, int fl, uintptr_t ra);
+                          MemTxAttrs atr, int fl, uintptr_t ra,
+                          uint64_t data); // SNPS changed
 
 #endif /* CPU_ALL_H */

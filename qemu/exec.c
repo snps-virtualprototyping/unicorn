@@ -851,8 +851,8 @@ int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len)
 
 /* Generate a debug exception if a watchpoint has been hit.  */
 void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
-                          MemTxAttrs attrs, int flags, uintptr_t ra)
-{
+                          MemTxAttrs attrs, int flags, uintptr_t ra,
+                          uint64_t data) { // SNPS changed
     CPUClass *cc = CPU_GET_CLASS(cpu->uc, cpu);
     CPUWatchpoint *wp;
 
@@ -880,6 +880,15 @@ void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
             }
             wp->hitaddr = MAX(addr, wp->vaddr);
             wp->hitattrs = attrs;
+            // SNPS added
+            if (wp->flags & BP_CALL) {
+                struct uc_struct* uc = cpu->uc;
+                void* opaque = uc->uc_watchpoint_opaque;
+                bool iswr = flags & BP_MEM_WRITE;
+                cpu->uc->uc_watchpoint_func(opaque, addr, len, data, iswr);
+                wp->flags &= ~BP_WATCHPOINT_HIT;
+                continue;
+            }
             if (!cpu->watchpoint_hit) {
                 if (wp->flags & BP_CPU &&
                     !cc->debug_check_watchpoint(cpu, wp)) {
