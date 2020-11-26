@@ -88,7 +88,7 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
 #ifndef CONFIG_USER_ONLY
 /* Execute the code without caching the generated code. An interpreter
    could be used if available. */
-static void cpu_exec_nocache(CPUState *cpu, int max_cycles,
+static QEMU_UNUSED_FUNC void cpu_exec_nocache(CPUState *cpu, int max_cycles, // SNPS changed
                              TranslationBlock *orig_tb, bool ignore_icount)
 {
     TranslationBlock *tb;
