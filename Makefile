@@ -79,6 +79,7 @@ UNICORN_CFLAGS += -fPIC
 UNICORN_CFLAGS += -Wno-unused-but-set-variable # SNPS added
 UNICORN_CFLAGS += -Wno-unused-variable # SNPS added
 UNICORN_CFLAGS += -Wno-comment # SNPS added
+UNICORN_CFLAGS += -Wno-redundant-decls # SNPS added
 
 # Verbose output?
 V ?= 0
