@@ -5659,7 +5659,7 @@ static void define_arm_vh_e2h_redirects_aliases(ARMCPU *cpu)
             uint32_t *new_key = g_memdup(&a->new_key, sizeof(uint32_t));
             bool ok;
 
-            new_reg->name = a->new_name;
+            new_reg->name = g_strdup(a->new_name); // SNPS changed
             new_reg->type |= ARM_CP_ALIAS;
             /* Remove PL1/PL0 access, leaving PL2/PL3 R/W in place.  */
             new_reg->access &= PL2_RW | PL3_RW;
