@@ -1364,6 +1364,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->flags = flags;
     tb->cflags = cflags;
     tcg_ctx->tb_cflags = cflags;
+    assert(cflags & CF_PARALLEL); // SNPS added
  tb_overflow:
 
 #ifdef CONFIG_PROFILER

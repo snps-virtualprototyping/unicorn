@@ -550,6 +550,8 @@ static uint64_t do_paired_cmpxchg64_le(CPUARMState *env, uint64_t addr,
     cmpv = int128_make128(env->exclusive_val, env->exclusive_high);
     newv = int128_make128(new_lo, new_hi);
 
+    assert(parallel && "unexpected non-parallel cmpxchg64_le"); // SNPS added
+
     if (parallel) {
 #ifndef CONFIG_CMPXCHG128 // SNPS changed
         cpu_loop_exit_atomic(env_cpu(env), ra);
@@ -616,6 +618,8 @@ static uint64_t do_paired_cmpxchg64_be(CPUARMState *env, uint64_t addr,
     uintptr_t ra = GETPC();
     Int128 oldv, cmpv, newv;
     bool success;
+
+    assert(parallel && "unexpected non-parallel cmpxchg64_be"); // SNPS added
 
     cmpv = int128_make128(env->exclusive_val, env->exclusive_high);
     newv = int128_make128(new_lo, new_hi);

@@ -2574,6 +2574,7 @@ static void gen_compare_and_swap_pair(DisasContext *s, int rs, int rt,
         }
         tcg_temp_free_i32(tcg_ctx, tcg_rs); // SNPS changed
     } else {
+        assert(0 && "unexpected call to non-parallel CASP");
         TCGv_i64 d1 = tcg_temp_new_i64(tcg_ctx);
         TCGv_i64 d2 = tcg_temp_new_i64(tcg_ctx);
         TCGv_i64 a2 = tcg_temp_new_i64(tcg_ctx);
