@@ -68,7 +68,7 @@ typedef void (*tb_flush_page_t)(CPUState*, uint64_t,  uint64_t); // SNPS added
 typedef void (*dmi_invalidate_t)(CPUState*, uint64_t, uint64_t); // SNPS added
 
 typedef void (*tlb_flush_t)(CPUState*); // SNPS added
-typedef bool (*tlb_flush_page_t)(CPUState*, uint64_t); // SNPS added
+typedef void (*tlb_flush_page_t)(CPUState*, uint64_t); // SNPS added
 typedef void (*tlb_flush_mmuidx_t)(CPUState*, uint16_t); // SNPS added
 typedef void (*tlb_flush_page_mmuidx_t)(CPUState*, uint64_t, uint16_t); // SNPS added
 
