@@ -183,6 +183,12 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
                 *(uint64_t *)value = state->elr_el[regid - UC_ARM64_REG_ELR_EL0];
                 break;
 
+            case UC_ARM64_REG_ESR_EL1:
+            case UC_ARM64_REG_ESR_EL2:
+            case UC_ARM64_REG_ESR_EL3:
+                *(uint64_t *)value = state->cp15.esr_el[1 + regid - UC_ARM64_REG_ESR_EL1];
+                break;
+
             case UC_ARM64_REG_SPSR_EL1:
             case UC_ARM64_REG_SPSR_EL2:
             case UC_ARM64_REG_SPSR_EL3: {
