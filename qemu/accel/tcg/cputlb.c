@@ -663,7 +663,7 @@ tb_page_addr_t get_page_addr_code(CPUArchState *env, target_ulong addr)
         return RAM_ADDR_INVALID;
     }
     p = (void *)((uintptr_t)addr + entry->addend);
-    ram_addr = (iotlbentry->addr & TARGET_PAGE_MASK) | // SNPS changed
+    ram_addr = (iotlbentry->phys & TARGET_PAGE_MASK) | // SNPS changed
                (addr & ~TARGET_PAGE_MASK);
     if (ram_addr == RAM_ADDR_INVALID) {
         env->invalid_addr = addr;
