@@ -9137,7 +9137,7 @@ static bool trans_LDM_t32(DisasContext *s, arg_ldst_block *a)
         return true;
     }
     /* BitCount(list) < 2 is UNPREDICTABLE */
-    return do_ldm(s, a, 2);
+    return do_ldm(s, a, 1); // SNPS changed
 }
 
 static bool trans_LDM_t16(DisasContext *s, arg_ldst_block *a)
