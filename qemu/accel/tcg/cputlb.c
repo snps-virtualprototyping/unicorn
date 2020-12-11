@@ -147,8 +147,12 @@ static void tlb_flush_page_locked(CPUArchState *env, int midx,
                   midx, lp_addr, lp_mask);
         tlb_flush_one_mmuidx_locked(env, midx);
     } else {
-        tlb_flush_entry_locked(tlb_entry(env, midx, page), page);
-        tlb_flush_vtlb_page_locked(env, midx, page);
+        // SNPS added workaround for flushing tagged addresses in the dumbest
+        // possible (but correct) way; this should be handled by ARM code
+        for (uint64_t i = 0; i < 256; page = deposit64(page, 56, 8, i++)) {
+            tlb_flush_entry_locked(tlb_entry(env, midx, page), page);
+            tlb_flush_vtlb_page_locked(env, midx, page);
+        }
     }
 }
 
