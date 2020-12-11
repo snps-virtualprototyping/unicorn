@@ -8591,6 +8591,16 @@ uint32_t arm_phys_excp_target_el(CPUState *cs, uint32_t excp_idx,
 
 target_ulong do_arm_semihosting(CPUARMState *env)
 {
+    // SNPS added
+    void* opaque = env->uc->uc_semihost_opaque;
+    uc_shfunc_t fn = env->uc->uc_semihost_func;
+    uint32_t call = env->aarch64 ? (uint32_t)env->xregs[0]
+                                 : env->regs[0];
+    if (fn != NULL)
+        return fn(opaque, call);
+
+    return -1;
+
     /* Unicorn: We don't handle semihosting */
     g_assert_not_reached();
 }
