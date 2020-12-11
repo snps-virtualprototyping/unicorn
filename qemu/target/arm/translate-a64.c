@@ -2130,7 +2130,7 @@ static void disas_exc(DisasContext *s, uint32_t insn)
              * to provide some semblance of security (and for consistency
              * with our 32-bit semihosting).
              */
-            if (s->current_el == 0) {
+            if (s->current_el == 0 && 0) { // SNPS changed
                 unsupported_encoding(s, insn);
                 break;
             }
