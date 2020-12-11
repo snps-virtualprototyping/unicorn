@@ -534,6 +534,7 @@ static inline hwaddr cpu_get_phys_page_attrs_debug(CPUState *cpu, vaddr addr,
     }
     /* Fallback for CPUs which don't implement the _attrs_ hook */
     *attrs = MEMTXATTRS_UNSPECIFIED;
+    assert(cc->get_phys_page_debug); // SNPS added
     return cc->get_phys_page_debug(cpu, addr);
 }
 /**

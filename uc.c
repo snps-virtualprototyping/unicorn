@@ -1780,29 +1780,14 @@ uc_err uc_interrupt(uc_engine *uc, int irqid, int set) {
 
 UNICORN_EXPORT
 uc_err uc_va2pa(uc_engine *uc, uint64_t va, uint64_t *pa) {
-    if (pa == NULL)
-        return UC_ERR_ARG;
-
-    CPUClass *cc = CPU_GET_CLASS(uc, uc->cpu);
-    MemTxAttrs attrs = { 0 };
-
-    // Translating virtual addresses might cause QEMU to perform memory
-    // accesses, which are routed through the regular memory API and can
-    // invoke our transaction callback. There is currently no way to
-    // annotate debugger accesses in this API, so we mark this via our
-    // unicorn global state struct.
-    uc->is_debug = true;
-
-    // This debug call just causes potential faults to be ignored, but does
-    // not annotate its nature to the memory API that it uses.
-    uint64_t addr = cc->get_phys_page_attrs_debug(uc->cpu, va, &attrs);
-
-    uc->is_debug = false;
+    uint64_t addr = cpu_get_phys_page_debug(uc->cpu, va);
 
     if (addr == ~0)
         return UC_ERR_NOMEM;
 
-    *pa = addr;
+    if (pa != NULL)
+        *pa = addr;
+
     return UC_ERR_OK;
 }
 

@@ -11735,10 +11735,11 @@ hwaddr arm_cpu_get_phys_page_attrs_debug(CPUState *cs, vaddr addr,
     bool ret;
     ARMMMUFaultInfo fi = {0};
     ARMMMUIdx mmu_idx = arm_mmu_idx(env);
-
+    bool prev = cs->uc->is_debug; // SNPS added
+    cs->uc->is_debug = true; // SNPS added
     ret = get_phys_addr(env, addr, 0, mmu_idx, &phys_addr,
                         attrs, &prot, &page_size, &fi, NULL);
-
+    cs->uc->is_debug = prev; // SNPS added
     if (ret) {
         return -1;
     }
