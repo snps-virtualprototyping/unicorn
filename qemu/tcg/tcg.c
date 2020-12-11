@@ -372,8 +372,8 @@ void tcg_context_init(TCGContext *s)
         total_args += n;
     }
 
-    args_ct = g_malloc(sizeof(TCGArgConstraint) * total_args);
-    sorted_args = g_malloc(sizeof(int) * total_args);
+    args_ct = g_malloc0(sizeof(TCGArgConstraint) * total_args); // SNPS changed
+    sorted_args = g_malloc0(sizeof(int) * total_args); // SNPS changed
 
     for(op = 0; op < NB_OPS; op++) {
         def = &s->tcg_op_defs[op];
