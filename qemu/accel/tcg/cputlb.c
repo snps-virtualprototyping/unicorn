@@ -107,9 +107,16 @@ void tlb_flush(CPUState *cpu)
 static inline bool tlb_hit_page_anyprot(CPUTLBEntry *tlb_entry,
                                         target_ulong page)
 {
+#ifdef TARGET_AARCH64 // SNPS added
+    const uint64_t mask = 0x00fffffffffffffful; // ignore top byte
+    return tlb_hit_page(tlb_entry->addr_read & mask, page & mask) ||
+           tlb_hit_page(tlb_addr_write(tlb_entry) & mask, page & mask) ||
+           tlb_hit_page(tlb_entry->addr_code & mask, page & mask);
+#else
     return tlb_hit_page(tlb_entry->addr_read, page) ||
            tlb_hit_page(tlb_addr_write(tlb_entry), page) ||
            tlb_hit_page(tlb_entry->addr_code, page);
+#endif
 }
 
 /* Called with tlb_c.lock held */
@@ -147,12 +154,8 @@ static void tlb_flush_page_locked(CPUArchState *env, int midx,
                   midx, lp_addr, lp_mask);
         tlb_flush_one_mmuidx_locked(env, midx);
     } else {
-        // SNPS added workaround for flushing tagged addresses in the dumbest
-        // possible (but correct) way; this should be handled by ARM code
-        for (uint64_t i = 0; i < 256; page = deposit64(page, 56, 8, i++)) {
-            tlb_flush_entry_locked(tlb_entry(env, midx, page), page);
-            tlb_flush_vtlb_page_locked(env, midx, page);
-        }
+        tlb_flush_entry_locked(tlb_entry(env, midx, page), page);
+        tlb_flush_vtlb_page_locked(env, midx, page);
     }
 }
 
