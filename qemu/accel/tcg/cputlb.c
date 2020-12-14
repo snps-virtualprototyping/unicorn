@@ -1131,7 +1131,7 @@ load_helper(CPUArchState *env, target_ulong addr, TCGMemOpIdx oi,
                                  iotlbentry->attrs, BP_MEM_READ, retaddr, 0); // SNPS changed
 
             /* The backing page may or may not require I/O.  */
-            tlb_addr &= ~TLB_WATCHPOINT;
+            //tlb_addr &= ~TLB_WATCHPOINT; // SNPS changed, never goto
             if ((tlb_addr & ~TARGET_PAGE_MASK) == 0) {
                 goto do_aligned_access;
             }
@@ -1453,7 +1453,7 @@ store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
                                  iotlbentry->attrs, BP_MEM_WRITE, retaddr, val); // SNPS changed
 
             /* The backing page may or may not require I/O.  */
-            tlb_addr &= ~TLB_WATCHPOINT;
+            // tlb_addr &= ~TLB_WATCHPOINT; // SNPS changed, never goto
             if ((tlb_addr & ~TARGET_PAGE_MASK) == 0) {
                 goto do_aligned_access;
             }

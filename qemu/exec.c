@@ -856,6 +856,10 @@ void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
     CPUClass *cc = CPU_GET_CLASS(cpu->uc, cpu);
     CPUWatchpoint *wp;
 
+    struct CPUWatchpointCallInfo *info, *next;
+    QTAILQ_HEAD(callwp_head, CPUWatchpointCallInfo) calls;
+    QTAILQ_INIT(&calls);
+
     assert(tcg_enabled(cpu->uc));
     if (cpu->watchpoint_hit) {
         /*
@@ -882,10 +886,12 @@ void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
             wp->hitattrs = attrs;
             // SNPS added
             if (wp->flags & BP_CALL) {
-                struct uc_struct* uc = cpu->uc;
-                void* opaque = uc->uc_watchpoint_opaque;
-                bool iswr = flags & BP_MEM_WRITE;
-                cpu->uc->uc_watchpoint_func(opaque, addr, len, data, iswr);
+                struct CPUWatchpointCallInfo *info
+                    = g_malloc(sizeof(struct CPUWatchpointCallInfo));
+                info->addr = wp->vaddr;
+                info->len = wp->len;
+                QTAILQ_INSERT_TAIL(&calls, info, entry);
+
                 wp->flags &= ~BP_WATCHPOINT_HIT;
                 continue;
             }
@@ -916,6 +922,15 @@ void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
         } else {
             wp->flags &= ~BP_WATCHPOINT_HIT;
         }
+    }
+
+    // SNPS added
+    QTAILQ_FOREACH_SAFE(info, &calls, entry, next) {
+        struct uc_struct* uc = cpu->uc;
+        void* opaque = uc->uc_watchpoint_opaque;
+        bool iswr = flags & BP_MEM_WRITE;
+        cpu->uc->uc_watchpoint_func(opaque, info->addr, info->len, data, iswr);
+        g_free(info);
     }
 }
 

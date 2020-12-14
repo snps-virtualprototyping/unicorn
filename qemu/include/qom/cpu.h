@@ -225,6 +225,12 @@ struct CPUWatchpoint {
     QTAILQ_ENTRY(CPUWatchpoint) entry;
 };
 
+struct CPUWatchpointCallInfo {
+    vaddr addr;
+    vaddr len;
+    QTAILQ_ENTRY(CPUWatchpointCallInfo) entry;
+};
+
 struct KVMState;
 struct kvm_run;
 
