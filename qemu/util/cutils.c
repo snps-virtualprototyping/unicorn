@@ -26,7 +26,9 @@
 #include "qemu/host-utils.h"
 #include "qemu/cutils.h"
 #include <math.h>
+#ifdef CONFIG_POSIX
 #include <sys/mman.h>
+#endif
 
 #include "uc_priv.h"
 
