@@ -35,7 +35,7 @@ asan() {
 
 build_cross() {
   [ "$UNAME" = Darwin ] && LIBARCHS="i386 x86_64"
-  CROSS=$1
+  CROSS=$1 \
   CC=$CROSS-gcc \
   AR=$CROSS-gcc-ar \
   RANLIB=$CROSS-gcc-ranlib \

@@ -143,7 +143,7 @@ UNICORN_CFLAGS := $(UNICORN_CFLAGS:-fPIC=)
 #UNICORN_QEMU_FLAGS += --disable-stack-protector
 
 # mingw?
-else ifneq ($(filter MINGW%,$(UNAME_S)),)
+else ifneq ($(filter MINGW%,$(UNAME_S)),) 
 EXT = dll
 AR_EXT = a
 BIN_EXT = .exe
@@ -151,6 +151,15 @@ UNICORN_QEMU_FLAGS += --disable-stack-protector
 UNICORN_CFLAGS := $(UNICORN_CFLAGS:-fPIC=) -D__USE_MINGW_ANSI_STDIO=1
 $(LIBNAME)_LDFLAGS += -Wl,--output-def,unicorn.def
 DO_WINDOWS_EXPORT = 1
+
+# mingw as cross compiler?
+else ifneq ($(findstring mingw,$(CROSS)),) 
+EXT = dll
+AR_EXT = a
+BIN_EXT = .exe
+UNICORN_QEMU_FLAGS += --disable-stack-protector
+UNICORN_CFLAGS := $(UNICORN_CFLAGS:-fPIC=) -D__USE_MINGW_ANSI_STDIO=1
+$(LIBNAME)_LDFLAGS += -Wl,--output-def,unicorn.def
 
 # Haiku
 else ifneq ($(filter Haiku%,$(UNAME_S)),)
