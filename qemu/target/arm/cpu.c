@@ -1991,22 +1991,22 @@ static const ARMCPUInfo arm_cpus[] = {
     { .name = "arm1136",     .initfn = arm1136_initfn },
     { .name = "arm1176",     .initfn = arm1176_initfn },
     { .name = "arm11mpcore", .initfn = arm11mpcore_initfn },
-    { .name = "cortex-m0",   .initfn = cortex_m0_initfn,
+    { .name = "Cortex-M0",   .initfn = cortex_m0_initfn, // SNPS changed
                              .class_init = arm_v7m_class_init },
-    { .name = "cortex-m3",   .initfn = cortex_m3_initfn,
+    { .name = "Cortex-M3",   .initfn = cortex_m3_initfn, // SNPS changed
                              .class_init = arm_v7m_class_init },
-    { .name = "cortex-m4",   .initfn = cortex_m4_initfn,
+    { .name = "Cortex-M4",   .initfn = cortex_m4_initfn, // SNPS changed
                              .class_init = arm_v7m_class_init },
-    { .name = "cortex-m7",   .initfn = cortex_m7_initfn,
+    { .name = "Cortex-M7",   .initfn = cortex_m7_initfn, // SNPS changed
                              .class_init = arm_v7m_class_init },
-    { .name = "cortex-m33",  .initfn = cortex_m33_initfn,
+    { .name = "Cortex-M33",  .initfn = cortex_m33_initfn, // SNPS changed
                              .class_init = arm_v7m_class_init },
-    { .name = "cortex-r5",   .initfn = cortex_r5_initfn },
-    { .name = "cortex-r5f",  .initfn = cortex_r5f_initfn },
-    { .name = "cortex-a7",   .initfn = cortex_a7_initfn },
-    { .name = "cortex-a8",   .initfn = cortex_a8_initfn },
-    { .name = "cortex-a9",   .initfn = cortex_a9_initfn },
-    { .name = "cortex-a15",  .initfn = cortex_a15_initfn },
+    { .name = "Cortex-R5",   .initfn = cortex_r5_initfn }, // SNPS changed
+    { .name = "Cortex-R5f",  .initfn = cortex_r5f_initfn }, // SNPS changed
+    { .name = "Cortex-A7",   .initfn = cortex_a7_initfn }, // SNPS changed
+    { .name = "Cortex-A8",   .initfn = cortex_a8_initfn }, // SNPS changed
+    { .name = "Cortex-A9",   .initfn = cortex_a9_initfn }, // SNPS changed
+    { .name = "Cortex-A15",  .initfn = cortex_a15_initfn }, // SNPS changed
     { .name = "ti925t",      .initfn = ti925t_initfn },
     { .name = "sa1100",      .initfn = sa1100_initfn },
     { .name = "sa1110",      .initfn = sa1110_initfn },
