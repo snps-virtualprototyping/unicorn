@@ -11,6 +11,8 @@ compiler:
 os:
   - linux
   - osx
+python:
+  - "3.5"
 matrix:
   include:
     - if: branch = master
