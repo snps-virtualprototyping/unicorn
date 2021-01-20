@@ -495,7 +495,8 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
     te->addr_write = -1;
     if (prot & PAGE_WRITE) {
         te->addr_write = address /*| TLB_NOTDIRTY*/; // SNPS changed
-        if (prot & PAGE_WRITE_INV) {
+        // prot == -1 when MMU off would trigger this unintentionally
+        if ((prot != -1) && (prot & PAGE_WRITE_INV)) { // SNPS changed
             te->addr_write |= TLB_INVALID_MASK;
         }
         if (wp_flags & BP_MEM_WRITE) {
