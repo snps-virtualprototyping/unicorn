@@ -377,7 +377,12 @@ int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
                 break;
 
             case UC_ARM_REG_VECTADDR:
+<<<<<<< HEAD
                 *value = A32_BANKED_CURRENT_REG_GET(state, vbar);
+=======
+                assert(0 && "vic_vectaddr got removed in QEMU5");
+                //*value = state->vic_vectaddr;
+>>>>>>> branch 'master' of git@github.com:snps-virtualprototyping/unicorn.git
                 break;
 
             case UC_ARM_VREG_AA64:
