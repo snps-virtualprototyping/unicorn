@@ -377,7 +377,7 @@ int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
                 break;
 
             case UC_ARM_REG_VECTADDR:
-                assert(0 && "vic_vectaddr got removed in QEMU5"); //*value = state->vic_vectaddr;
+                *value = A32_BANKED_CURRENT_REG_GET(state, vbar);
                 break;
 
             case UC_ARM_VREG_AA64:
@@ -712,8 +712,7 @@ int arm_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals, i
                 break;
 
             case UC_ARM_REG_VECTADDR:
-                assert(0 && "vic_vectaddr got removed in QEMU5");
-                //state->vic_vectaddr = *value;
+                A32_BANKED_CURRENT_REG_SET(state, vbar, *value);
                 break;
 
             case UC_ARM_REG_NOIMP:
