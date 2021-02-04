@@ -207,6 +207,7 @@ INSTALL_BIN ?= install
 INSTALL_DATA ?= $(INSTALL_BIN) -m0644
 INSTALL_LIB ?= $(INSTALL_BIN) -m0755
 PKGCFGF = $(LIBNAME).pc
+GITREV = gitrev.h
 PREFIX ?= /usr
 DESTDIR ?=
 
@@ -241,6 +242,7 @@ endif
 $(LIBNAME)_LDFLAGS += -lm
 
 .PHONY: all
+all: gitrev
 all: unicorn
 #	$(MAKE) -C samples
 
@@ -287,6 +289,8 @@ endif
 $(PKGCFGF):
 	$(generate-pkgcfg)
 
+gitrev:
+	 echo '#define UNICORN_GITREV "'$(shell git rev-parse --short HEAD)'"' >$(GITREV)
 
 .PHONY: fuzz
 fuzz: all
@@ -371,7 +375,6 @@ define generate-pkgcfg
 	echo 'Libs: -L$${libdir} -lunicorn' >> $(PKGCFGF)
 	echo 'Cflags: -I$${includedir}' >> $(PKGCFGF)
 endef
-
 
 define log
 	@printf "  %-7s %s\n" "$(1)" "$(2)"

@@ -965,6 +965,9 @@ uc_err uc_reset_cpu(uc_engine *uc);
 UNICORN_EXPORT // SNPS added
 bool uc_is_running(uc_engine *uc);
 
+UNICORN_EXPORT // SNPS added
+const char* uc_gitrev(void);
+
 #ifdef __cplusplus
 }
 #endif

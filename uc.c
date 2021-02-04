@@ -1915,3 +1915,10 @@ bool uc_is_running(uc_engine *uc) {
         return false;
     return true;
 }
+
+#include "gitrev.h"
+
+UNICORN_EXPORT
+const char* uc_gitrev(void) {
+    return UNICORN_GITREV;
+}

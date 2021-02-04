@@ -12,6 +12,8 @@
 *.jar
 *~
 
+gitrev.h
+
 qemu/config-all-devices.mak
 
 qemu/aarch64-softmmu/
