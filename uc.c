@@ -367,7 +367,7 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
                 }
 
                 if (mode & UC_MODE_THUMB)
-                    assert(0 && "UC_MODE_THUMB not supported"); // SNPS changed
+                    uc->thumb = true; // SNPS changed
                 break;
 #endif
 #ifdef UNICORN_HAS_ARM64
