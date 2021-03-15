@@ -110,6 +110,10 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
         } else if (regid >= UC_ARM64_REG_B0 && regid <= UC_ARM64_REG_B31) {
             const float64 *q_reg = aa64_vfp_qreg(state, regid - UC_ARM64_REG_B0);
             *(int8_t*)value = READ_BYTE_L(*q_reg);
+        } else if (regid >= UC_ARM64_REG_Z0 && regid <= UC_ARM64_REG_Z31) {
+            memcpy(value, state->vfp.zregs[regid - UC_ARM64_REG_Z0].d, 256);
+        } else if (regid >= UC_ARM64_REG_P0 && regid <= UC_ARM64_REG_P15) {
+            memcpy(value, state->vfp.pregs[regid - UC_ARM64_REG_P0].p, 32);
         } else {
             switch(regid) {
             case UC_ARM64_REG_CPACR_EL1:
@@ -329,6 +333,10 @@ int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals,
         } else if (regid >= UC_ARM64_REG_B0 && regid <= UC_ARM64_REG_B31) {
             float64 *q_reg = aa64_vfp_qreg(state, regid - UC_ARM64_REG_B0);
             WRITE_BYTE_L(*q_reg, *(int8_t*) value);
+        } else if (regid >= UC_ARM64_REG_Z0 && regid <= UC_ARM64_REG_Z31) {
+            memcpy(state->vfp.zregs[regid - UC_ARM64_REG_Z0].d, value, 256);
+        } else if (regid >= UC_ARM64_REG_P0 && regid <= UC_ARM64_REG_P15) {
+            memcpy(state->vfp.pregs[regid - UC_ARM64_REG_P0].p, value, 32);
         } else {
             switch(regid) {
             case UC_ARM64_REG_CPACR_EL1:

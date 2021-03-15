@@ -280,6 +280,57 @@ typedef enum uc_arm64_reg {
     UC_ARM64_REG_V30,
     UC_ARM64_REG_V31,
 
+    //> SVE registers
+    UC_ARM64_REG_Z0, // SNPS added
+    UC_ARM64_REG_Z1, // SNPS added
+    UC_ARM64_REG_Z2, // SNPS added
+    UC_ARM64_REG_Z3, // SNPS added
+    UC_ARM64_REG_Z4, // SNPS added
+    UC_ARM64_REG_Z5, // SNPS added
+    UC_ARM64_REG_Z6, // SNPS added
+    UC_ARM64_REG_Z7, // SNPS added
+    UC_ARM64_REG_Z8, // SNPS added
+    UC_ARM64_REG_Z9, // SNPS added
+    UC_ARM64_REG_Z10, // SNPS added
+    UC_ARM64_REG_Z11, // SNPS added
+    UC_ARM64_REG_Z12, // SNPS added
+    UC_ARM64_REG_Z13, // SNPS added
+    UC_ARM64_REG_Z14, // SNPS added
+    UC_ARM64_REG_Z15, // SNPS added
+    UC_ARM64_REG_Z16, // SNPS added
+    UC_ARM64_REG_Z17, // SNPS added
+    UC_ARM64_REG_Z18, // SNPS added
+    UC_ARM64_REG_Z19, // SNPS added
+    UC_ARM64_REG_Z20, // SNPS added
+    UC_ARM64_REG_Z21, // SNPS added
+    UC_ARM64_REG_Z22, // SNPS added
+    UC_ARM64_REG_Z23, // SNPS added
+    UC_ARM64_REG_Z24, // SNPS added
+    UC_ARM64_REG_Z25, // SNPS added
+    UC_ARM64_REG_Z26, // SNPS added
+    UC_ARM64_REG_Z27, // SNPS added
+    UC_ARM64_REG_Z28, // SNPS added
+    UC_ARM64_REG_Z29, // SNPS added
+    UC_ARM64_REG_Z30, // SNPS added
+    UC_ARM64_REG_Z31, // SNPS added
+
+    UC_ARM64_REG_P0, // SNPS added
+    UC_ARM64_REG_P1, // SNPS added
+    UC_ARM64_REG_P2, // SNPS added
+    UC_ARM64_REG_P3, // SNPS added
+    UC_ARM64_REG_P4, // SNPS added
+    UC_ARM64_REG_P5, // SNPS added
+    UC_ARM64_REG_P6, // SNPS added
+    UC_ARM64_REG_P7, // SNPS added
+    UC_ARM64_REG_P8, // SNPS added
+    UC_ARM64_REG_P9, // SNPS added
+    UC_ARM64_REG_P10, // SNPS added
+    UC_ARM64_REG_P11, // SNPS added
+    UC_ARM64_REG_P12, // SNPS added
+    UC_ARM64_REG_P13, // SNPS added
+    UC_ARM64_REG_P14, // SNPS added
+    UC_ARM64_REG_P15, // SNPS added
+
     //> pseudo registers
     UC_ARM64_REG_PC, // SNPS changed
 
