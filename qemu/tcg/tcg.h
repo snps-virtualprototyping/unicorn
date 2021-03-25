@@ -612,8 +612,8 @@ void tcg_set_frame(TCGContext *s, TCGReg reg, intptr_t start, intptr_t size);
 void tcg_clear_temp_count(TCGContext *s);
 int tcg_check_temp_count(TCGContext *s);
 #else
-#define tcg_clear_temp_count() do { } while (0)
-#define tcg_check_temp_count() 0
+#define tcg_clear_temp_count(...) do { } while (0)
+#define tcg_check_temp_count(...) 0
 #endif
 
 void tcg_dump_info(void);
