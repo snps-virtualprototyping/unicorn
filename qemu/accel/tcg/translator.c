@@ -23,7 +23,8 @@
    For most targets, (2) is at the end of translate_insn.  */
 void translator_loop_temp_check(DisasContextBase *db)
 {
-    if (tcg_check_temp_count()) {
+    TCGContext *tcg_ctx = db->uc->tcg_ctx;
+    if (tcg_check_temp_count(tcg_ctx)) {
         qemu_log("warning: TCG temporary leaks before "
                  TARGET_FMT_lx "\n", db->pc_next);
     }
@@ -51,7 +52,7 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
     /* Reset the temp count so that we can identify leaks */
-    tcg_clear_temp_count();
+    tcg_clear_temp_count(tcg_ctx);
 
     /* Unicorn: early check to see if the address of this block is
      * the "run until" address. */

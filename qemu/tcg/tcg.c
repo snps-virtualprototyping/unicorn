@@ -396,6 +396,11 @@ void tcg_context_init(TCGContext *s)
     tcg_target_init(s);
     process_op_defs(s);
 
+    // SNPS added
+    QEMU_BUILD_BUG_MSG(ARRAY_SIZE(tcg_target_reg_alloc_order) >
+                       ARRAY_SIZE(s->indirect_reg_alloc_order),
+                       "TCGContext::indirect_reg_alloc_order too small");
+
     /* Reverse the order of the saved registers, assuming they're all at
        the start of tcg_target_reg_alloc_order.  */
     for (n = 0; n < ARRAY_SIZE(tcg_target_reg_alloc_order); ++n) {
@@ -2504,7 +2509,7 @@ static void dump_regs(TCGContext *s)
             printf("%s", tcg_target_reg_names[ts->reg]);
             break;
         case TEMP_VAL_MEM:
-            printf("%d(%s)", (int)ts->mem_offset
+            printf("%d(%s)", (int)ts->mem_offset,
                    tcg_target_reg_names[ts->mem_base->reg]);
             break;
         case TEMP_VAL_CONST:

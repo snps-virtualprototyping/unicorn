@@ -2714,6 +2714,7 @@
 #define tb_phys_invalidate tb_phys_invalidate_aarch64eb
 #define tb_reset_jump tb_reset_jump_aarch64eb
 #define tb_set_jmp_target tb_set_jmp_target_aarch64eb
+#define tb_target_set_jmp_target tb_target_set_jmp_target_aarch64eb
 #define tcg_accel_class_init tcg_accel_class_init_aarch64eb
 #define tcg_accel_type tcg_accel_type_aarch64eb
 #define tcg_add_param_i32 tcg_add_param_i32_aarch64eb
@@ -2724,6 +2725,8 @@
 #define tcg_can_emit_vec_op tcg_can_emit_vec_op_aarch64eb
 #define tcg_can_emit_vecop_list tcg_can_emit_vecop_list_aarch64eb
 #define tcg_canonicalize_memop tcg_canonicalize_memop_aarch64eb
+#define tcg_check_temp_count tcg_check_temp_count_aarch64eb
+#define tcg_clear_temp_count tcg_clear_temp_count_aarch64eb
 #define tcg_commit tcg_commit_aarch64eb
 #define tcg_cond_to_jcc tcg_cond_to_jcc_aarch64eb
 #define tcg_const_i32 tcg_const_i32_aarch64eb
