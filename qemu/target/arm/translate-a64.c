@@ -470,9 +470,8 @@ static inline void gen_goto_tb(DisasContext *s, int n, uint64_t dest)
 
     tb = s->base.tb;
     if (use_goto_tb(s, n, dest)) {
-        gen_a64_set_pc_im(s, dest); // SNPS added
+        gen_a64_set_pc_im(s, dest); // SNPS moved
         tcg_gen_goto_tb(tcg_ctx, n);
-        gen_a64_set_pc_im(s, dest);
         tcg_gen_exit_tb(tcg_ctx, tb, n);
         s->base.is_jmp = DISAS_NORETURN;
     } else {
