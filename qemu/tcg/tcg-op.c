@@ -2703,7 +2703,7 @@ void tcg_gen_exit_tb(TCGContext *s, TranslationBlock *tb, unsigned idx)
     } else {
         /* This is an exit via the exitreq label.  */
         tcg_debug_assert(idx == TB_EXIT_REQUESTED ||
-                         idx == TB_EXIT_ICOUNT_EXPIRED);
+                         idx == TB_EXIT_ICOUNT_EXPIRED); // SNPS added
     }
 
     tcg_gen_op1i(s, INDEX_op_exit_tb, val);
