@@ -2694,7 +2694,7 @@ void tcg_gen_exit_tb(TCGContext *s, TranslationBlock *tb, unsigned idx)
 #ifdef CONFIG_DEBUG_TCG
         /* This is an exit following a goto_tb.  Verify that we have
            seen this numbered exit before, via tcg_gen_goto_tb.  */
-        tcg_debug_assert(tcg_ctx->goto_tb_issue_mask & (1 << idx));
+        tcg_debug_assert(s->goto_tb_issue_mask & (1 << idx));
 #endif
         /* When not chaining, exit without indicating a link.  */
         if (qemu_loglevel_mask(CPU_LOG_TB_NOCHAIN)) {

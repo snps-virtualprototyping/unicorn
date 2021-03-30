@@ -55,7 +55,7 @@
  * (N = number of input arguments + output arguments).  */
 #define MAX_OPC_PARAM (4 + (MAX_OPC_PARAM_PER_ARG * MAX_OPC_PARAM_ARGS))
 
-#define CPU_TEMP_BUF_NLONGS 1024 // SNPS changed from 128
+#define CPU_TEMP_BUF_NLONGS 128
 
 /* Default target word size to pointer size.  */
 #ifndef TCG_TARGET_REG_BITS
@@ -609,11 +609,11 @@ void tcg_set_frame(TCGContext *s, TCGReg reg, intptr_t start, intptr_t size);
  * calling tcg_check_temp_count() at the end of the section will
  * return 1 if the section did in fact leak a temporary.
  */
-void tcg_clear_temp_count(void);
-int tcg_check_temp_count(void);
+void tcg_clear_temp_count(TCGContext *s);
+int tcg_check_temp_count(TCGContext *s);
 #else
-#define tcg_clear_temp_count() do { } while (0)
-#define tcg_check_temp_count() 0
+#define tcg_clear_temp_count(...) do { } while (0)
+#define tcg_check_temp_count(...) 0
 #endif
 
 void tcg_dump_info(void);
@@ -781,7 +781,7 @@ struct TCGContext {
     uint64_t tcg_target_available_regs[TCG_TYPE_COUNT];
     // Unicorn: Use a large array size to get around needing a file static
     //          Initially was using: ARRAY_SIZE(tcg_target_reg_alloc_order) as the size
-    int indirect_reg_alloc_order[50];
+    int indirect_reg_alloc_order[52]; // SNPS changed from 50 for aarch64
     TCGOpDef *tcg_op_defs;
 
     /* qemu/tcg/optimize.c */
