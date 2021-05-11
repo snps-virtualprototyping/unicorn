@@ -259,6 +259,18 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
     }
 #endif
 
+#ifdef UNICORN_HAS_RISCV
+    if (strcmp(model, "rv32") == 0) {
+        arch = UC_ARCH_RISCV;
+        mode = UC_MODE_RISCV32;
+    }
+
+    if (strcmp(model, "rv64") == 0) {
+        arch = UC_ARCH_RISCV;
+        mode = UC_MODE_RISCV64;
+    }
+#endif
+
     if (arch == UC_ARCH_MAX)
         return UC_ERR_ARCH;
 
@@ -273,13 +285,27 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
         uc->arch = arch;
         uc->mode = mode;
 
-        uc->uc_config_func = cfg_func; // SNPS added
-        uc->uc_config_opaque = cfg_opaque; // SNPS added
+        // SNSP added begin
 
-        const char* tbsz = uc_get_config(uc, "tbsize"); // SNPS added
-        uc->tb_size = parse_tbsz(tbsz); // SNPS added
+        uc->uc_config_func = cfg_func;
+        uc->uc_config_opaque = cfg_opaque;
 
-        snprintf(uc->model, sizeof(uc->model), "%s-arm-cpu", model); // SNPS added
+        const char* tbsz = uc_get_config(uc, "tbsize");
+        uc->tb_size = parse_tbsz(tbsz);
+
+        switch (arch) {
+        case UC_ARCH_ARM:
+        case UC_ARCH_ARM64:
+            snprintf(uc->model, sizeof(uc->model), "%s-arm-cpu", model);
+            break;
+        case UC_ARCH_RISCV:
+            snprintf(uc->model, sizeof(uc->model), "%s-riscv-cpu", model);
+            break;
+        default:
+            return UC_ERR_ARCH;
+        }
+
+        // SNPS added end
 
         // uc->ram_list = { .blocks = QLIST_HEAD_INITIALIZER(ram_list.blocks) };
         uc->ram_list.blocks.lh_first = NULL;
