@@ -3511,4 +3511,6 @@
 #define riscv_set_mode riscv_set_mode_riscv64
 #define riscv_translate_init riscv_translate_init_riscv64
 #define spike_v1_10_0_machine_init_register_types spike_v1_10_0_machine_init_register_types_riscv64
+#define helper_call_breakpoints helper_call_breakpoints_riscv64
+#define gen_sync_pc gen_sync_pc_riscv64
 #endif

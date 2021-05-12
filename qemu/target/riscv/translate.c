@@ -81,6 +81,12 @@ static const int tcg_memop_lookup[8] = {
 #define CASE_OP_32_64(X) case X
 #endif
 
+// SNPS added
+static inline void gen_sync_pc(const DisasContext *ctx) {
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+    tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, ctx->base.pc_next);
+}
+
 static inline bool has_ext(DisasContext *ctx, uint32_t ext)
 {
     return ctx->misa & ext;
@@ -111,8 +117,8 @@ static void generate_exception_mbadaddr(DisasContext *ctx, int excp)
 
 static void gen_exception_debug(const DisasContext *ctx)
 {
+    gen_sync_pc(ctx); // SNPS added
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-
     TCGv_i32 helper_tmp = tcg_const_i32(tcg_ctx, EXCP_DEBUG);
     gen_helper_raise_exception(tcg_ctx, tcg_ctx->cpu_env, helper_tmp);
     tcg_temp_free_i32(tcg_ctx, helper_tmp);
@@ -171,8 +177,8 @@ static void gen_goto_tb(DisasContext *ctx, int n, target_ulong dest)
 
     if (use_goto_tb(ctx, dest)) {
         /* chaining is only allowed when the jump is to the same page */
+        tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, dest); // SNPS moved
         tcg_gen_goto_tb(tcg_ctx, n);
-        tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, dest);
 
         /* No need to check for single stepping here as use_goto_tb() will
          * return false in case of single stepping.
@@ -359,6 +365,7 @@ static void gen_jal(DisasContext *ctx, int rd, target_ulong imm)
 static void gen_load_c(DisasContext *ctx, uint32_t opc, int rd, int rs1,
         target_long imm)
 {
+    gen_sync_pc(ctx); // SNPS added
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv t0 = tcg_temp_new(tcg_ctx);
     TCGv t1 = tcg_temp_new(tcg_ctx);
@@ -380,6 +387,7 @@ static void gen_load_c(DisasContext *ctx, uint32_t opc, int rd, int rs1,
 static void gen_store_c(DisasContext *ctx, uint32_t opc, int rs1, int rs2,
         target_long imm)
 {
+    gen_sync_pc(ctx); // SNPS added
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv t0 = tcg_temp_new(tcg_ctx);
     TCGv dat = tcg_temp_new(tcg_ctx);
@@ -443,6 +451,8 @@ static void gen_fp_load(DisasContext *ctx, uint32_t opc, int rd,
         return;
     }
 
+    gen_sync_pc(ctx); // SNPS added
+
     t0 = tcg_temp_new(tcg_ctx);
     gen_get_gpr(ctx, t0, rs1);
     tcg_gen_addi_tl(tcg_ctx, t0, t0, imm);
@@ -482,6 +492,8 @@ static void gen_fp_store(DisasContext *ctx, uint32_t opc, int rs1,
         gen_exception_illegal(ctx);
         return;
     }
+
+    gen_sync_pc(ctx); // SNPS added
 
     t0 = tcg_temp_new(tcg_ctx);
     gen_get_gpr(ctx, t0, rs1);
@@ -822,6 +834,13 @@ static bool riscv_tr_breakpoint_check(DisasContextBase *dcbase, CPUState *cpu,
     TCGContext *tcg_ctx = cpu->uc->tcg_ctx;
 
     tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, ctx->base.pc_next);
+
+    if (bp->flags & BP_CALL) { // SNPS added
+        gen_helper_call_breakpoints(tcg_ctx, tcg_ctx->cpu_env);
+        ctx->base.is_jmp = DISAS_TOO_MANY;
+        return true;
+    }
+
     ctx->base.is_jmp = DISAS_NORETURN;
     gen_exception_debug(ctx);
     /* The address covered by the breakpoint must be included in

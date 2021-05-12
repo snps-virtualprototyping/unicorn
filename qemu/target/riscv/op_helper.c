@@ -193,4 +193,11 @@ void helper_tlb_flush(CPURISCVState *env)
     }
 }
 
+// SNPS added
+void helper_call_breakpoints(CPURISCVState *env) {
+    if (env->uc->uc_breakpoint_func) {
+        (env->uc->uc_breakpoint_func)(env->uc->uc_breakpoint_opaque, env->pc);
+    }
+}
+
 #endif /* !CONFIG_USER_ONLY */

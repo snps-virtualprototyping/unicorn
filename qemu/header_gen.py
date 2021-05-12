@@ -5772,6 +5772,10 @@ riscv_symbols = (
     'riscv_set_mode',
     'riscv_translate_init',
     'spike_v1_10_0_machine_init_register_types',
+
+    # SNPS added
+    'helper_call_breakpoints',
+    'gen_sync_pc',
 )
 
 sparc_symbols = (
