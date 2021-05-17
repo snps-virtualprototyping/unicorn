@@ -347,6 +347,8 @@ static inline void cpu_get_tb_cpu_state(CPURISCVState *env, target_ulong *pc,
 #endif
 }
 
+target_ulong riscv_cpu_do_semihosting(CPURISCVState *env);
+
 int riscv_csrrw(CPURISCVState *env, int csrno, target_ulong *ret_value,
                 target_ulong new_value, target_ulong write_mask);
 int riscv_csrrw_debug(CPURISCVState *env, int csrno, target_ulong *ret_value,

@@ -5740,6 +5740,7 @@ riscv_symbols = (
     'pmpcfg_csr_write',
     'riscv_cpu_claim_interrupts',
     'riscv_cpu_do_interrupt',
+    'riscv_cpu_do_semihosting',
     'riscv_cpu_do_unaligned_access',
     'riscv_cpu_exec_interrupt',
     'riscv_cpu_force_hs_excep_enabled',

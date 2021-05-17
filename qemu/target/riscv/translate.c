@@ -748,6 +748,15 @@ static bool gen_shift(DisasContext *ctx, arg_r *a,
     return true;
 }
 
+// SNPS integrated semihosting support
+static uint32_t opcode_at(DisasContextBase *dcbase, target_ulong addr)
+{
+    DisasContext *ctx = container_of(dcbase, DisasContext, base);
+    CPURISCVState *env = ctx->uc->cpu->env_ptr;
+
+    return cpu_ldl_code(env, addr);
+}
+
 /* Include insn module translation function */
 #include "insn_trans/trans_rvi.inc.c"
 #include "insn_trans/trans_rvm.inc.c"
