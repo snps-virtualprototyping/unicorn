@@ -117,7 +117,6 @@ static void generate_exception_mbadaddr(DisasContext *ctx, int excp)
 
 static void gen_exception_debug(const DisasContext *ctx)
 {
-    gen_sync_pc(ctx); // SNPS added
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv_i32 helper_tmp = tcg_const_i32(tcg_ctx, EXCP_DEBUG);
     gen_helper_raise_exception(tcg_ctx, tcg_ctx->cpu_env, helper_tmp);
