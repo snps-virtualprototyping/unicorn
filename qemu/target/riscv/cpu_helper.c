@@ -805,7 +805,7 @@ target_ulong riscv_cpu_do_semihosting(CPURISCVState *env)
     void* opaque = env->uc->uc_semihost_opaque;
     uc_shfunc_t fn = env->uc->uc_semihost_func;
 
-    uint32_t call = (uint32_t)env->gpr[0];
+    uint32_t call = (uint32_t)env->gpr[xA0];
 
     if (fn != NULL)
         return fn(opaque, call);
