@@ -85,6 +85,11 @@ typedef enum uc_riscv_reg {
     UC_RISCV_REG_F30,
     UC_RISCV_REG_F31,
 
+    /* SNSP added system registers */
+
+    UC_RISCV_REG_MHARTID,
+    UC_RISCV_REG_MSTATUS,
+
     /* General-purpose register aliases */
 
     /* Zero register */
