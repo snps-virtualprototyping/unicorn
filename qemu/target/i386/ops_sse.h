@@ -1439,12 +1439,12 @@ void glue(helper_phaddw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
 
     r.W(0) = (int16_t)d->W(0) + (int16_t)d->W(1);
     r.W(1) = (int16_t)d->W(2) + (int16_t)d->W(3);
-    XMM_ONLY(r.W(2) = (int16_t)d->W(4) + (int16_t)d->W(5));
-    XMM_ONLY(r.W(3) = (int16_t)d->W(6) + (int16_t)d->W(7));
+    ZMM_ONLY(r.W(2) = (int16_t)d->W(4) + (int16_t)d->W(5));
+    ZMM_ONLY(r.W(3) = (int16_t)d->W(6) + (int16_t)d->W(7));
     r.W((2 << SHIFT) + 0) = (int16_t)s->W(0) + (int16_t)s->W(1);
     r.W((2 << SHIFT) + 1) = (int16_t)s->W(2) + (int16_t)s->W(3);
-    XMM_ONLY(r.W(6) = (int16_t)s->W(4) + (int16_t)s->W(5));
-    XMM_ONLY(r.W(7) = (int16_t)s->W(6) + (int16_t)s->W(7));
+    ZMM_ONLY(r.W(6) = (int16_t)s->W(4) + (int16_t)s->W(5));
+    ZMM_ONLY(r.W(7) = (int16_t)s->W(6) + (int16_t)s->W(7));
 
     *d = r;
 }
@@ -1454,9 +1454,9 @@ void glue(helper_phaddd, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
     Reg r;
 
     r.L(0) = (int32_t)d->L(0) + (int32_t)d->L(1);
-    XMM_ONLY(r.L(1) = (int32_t)d->L(2) + (int32_t)d->L(3));
+    ZMM_ONLY(r.L(1) = (int32_t)d->L(2) + (int32_t)d->L(3));
     r.L((1 << SHIFT) + 0) = (int32_t)s->L(0) + (int32_t)s->L(1);
-    XMM_ONLY(r.L(3) = (int32_t)s->L(2) + (int32_t)s->L(3));
+    ZMM_ONLY(r.L(3) = (int32_t)s->L(2) + (int32_t)s->L(3));
 
     *d = r;
 }
@@ -1467,12 +1467,12 @@ void glue(helper_phaddsw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
 
     r.W(0) = satsw((int16_t)d->W(0) + (int16_t)d->W(1));
     r.W(1) = satsw((int16_t)d->W(2) + (int16_t)d->W(3));
-    XMM_ONLY(r.W(2) = satsw((int16_t)d->W(4) + (int16_t)d->W(5)));
-    XMM_ONLY(r.W(3) = satsw((int16_t)d->W(6) + (int16_t)d->W(7)));
+    ZMM_ONLY(r.W(2) = satsw((int16_t)d->W(4) + (int16_t)d->W(5)));
+    ZMM_ONLY(r.W(3) = satsw((int16_t)d->W(6) + (int16_t)d->W(7)));
     r.W((2 << SHIFT) + 0) = satsw((int16_t)s->W(0) + (int16_t)s->W(1));
     r.W((2 << SHIFT) + 1) = satsw((int16_t)s->W(2) + (int16_t)s->W(3));
-    XMM_ONLY(r.W(6) = satsw((int16_t)s->W(4) + (int16_t)s->W(5)));
-    XMM_ONLY(r.W(7) = satsw((int16_t)s->W(6) + (int16_t)s->W(7)));
+    ZMM_ONLY(r.W(6) = satsw((int16_t)s->W(4) + (int16_t)s->W(5)));
+    ZMM_ONLY(r.W(7) = satsw((int16_t)s->W(6) + (int16_t)s->W(7)));
 
     *d = r;
 }

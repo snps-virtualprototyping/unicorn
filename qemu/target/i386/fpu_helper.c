@@ -298,7 +298,7 @@ int32_t helper_fistl_ST0(CPUX86State *env)
 
     set_float_exception_flags(0, &env->fp_status);
 
-    val = floatx80_to_int32(ST0, &env->fp_status);
+    int32_t val = floatx80_to_int32(ST0, &env->fp_status);
     if (get_float_exception_flags(&env->fp_status) & float_flag_invalid) {
         val = 0x80000000;
     }

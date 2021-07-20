@@ -306,7 +306,7 @@ int x86_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
             case UC_X86_REG_YMM15:
                 {
                     float64 *dst = (float64*)value;
-                    ZMMReg *reg = &state->xmm_regs[regid - UC_X86_REG_XMM0];
+                    ZMMReg *reg = &state->xmm_regs[regid - UC_X86_REG_YMM0];
                     dst[0] = reg->ZMM_D(0);
                     dst[1] = reg->ZMM_D(1);
                     dst[2] = reg->ZMM_D(2);
@@ -884,7 +884,7 @@ int x86_reg_write(struct uc_struct *uc, unsigned int *regs, void *const *vals, i
             case UC_X86_REG_YMM15:
                 {
                     float64 *src = (float64*)value;
-                    ZMMReg *reg = &state->xmm_regs[regid - UC_X86_REG_XMM0];
+                    ZMMReg *reg = &state->xmm_regs[regid - UC_X86_REG_YMM0];
                     reg->ZMM_D(4) = src[0];
                     reg->ZMM_D(5) = src[1];
                     reg->ZMM_D(6) = src[2];
