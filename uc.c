@@ -274,7 +274,7 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
 #ifdef UNICORN_HAS_X86
     if (strcmp(model, "x86") == 0) {
         arch = UC_ARCH_X86;
-        mode = UC_MODE_64;
+        mode = UC_MODE_16;
     }
 #endif
 

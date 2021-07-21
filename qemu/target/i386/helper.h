@@ -231,3 +231,4 @@ DEF_HELPER_3(rcrq, tl, env, tl, tl)
 
 DEF_HELPER_1(rdrand, tl, env)
 
+DEF_HELPER_1(call_breakpoints, void, env) // SNPS added

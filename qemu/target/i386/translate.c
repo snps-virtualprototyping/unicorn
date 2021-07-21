@@ -2424,8 +2424,8 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
 
     if (use_goto_tb(s, pc))  {
         /* jump to same page: we can use a direct jump */
+        gen_jmp_im(s, eip); // SNPS moved
         tcg_gen_goto_tb(tcg_ctx, tb_num);
-        gen_jmp_im(s, eip);
         tcg_gen_exit_tb(tcg_ctx, s->base.tb, tb_num);
         s->base.is_jmp = DISAS_NORETURN;
     } else {
@@ -9178,6 +9178,15 @@ static bool i386_tr_breakpoint_check(DisasContextBase *dcbase, CPUState *cpu,
                                      const CPUBreakpoint *bp)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
+
+    if (bp->flags & BP_CALL) { // SNPS added
+        TCGContext *tcg_ctx = dc->uc->tcg_ctx;
+        gen_jmp_im(dc, dcbase->pc_next);
+        gen_helper_call_breakpoints(tcg_ctx, tcg_ctx->cpu_env);
+        dcbase->is_jmp = DISAS_TOO_MANY;
+        return true;
+    }
+
     /* If RF is set, suppress an internally generated breakpoint.  */
     int flags = dc->base.tb->flags & HF_RF_MASK ? BP_GDB : BP_ANY;
     if (bp->flags & flags) {

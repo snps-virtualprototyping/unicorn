@@ -332,3 +332,10 @@ void helper_bpt_io(CPUX86State *env, uint32_t port,
     }
 #endif
 }
+
+// SNPS added
+void helper_call_breakpoints(CPUX86State *env) {
+    if (env->uc->uc_breakpoint_func) {
+        (env->uc->uc_breakpoint_func)(env->uc->uc_breakpoint_opaque, env->eip);
+    }
+}
