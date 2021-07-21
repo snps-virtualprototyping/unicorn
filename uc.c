@@ -271,6 +271,13 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
     }
 #endif
 
+#ifdef UNICORN_HAS_X86
+    if (strcmp(model, "x86") == 0) {
+        arch = UC_ARCH_X86;
+        mode = UC_MODE_64;
+    }
+#endif
+
     if (arch == UC_ARCH_MAX)
         return UC_ERR_ARCH;
 
@@ -300,6 +307,9 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
             break;
         case UC_ARCH_RISCV:
             snprintf(uc->model, sizeof(uc->model), "%s-riscv-cpu", model);
+            break;
+        case UC_ARCH_X86:
+            snprintf(uc->model, sizeof(uc->model), "%s-x86_64-cpu", "qemu64-v1");
             break;
         default:
             return UC_ERR_ARCH;
