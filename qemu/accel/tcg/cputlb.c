@@ -474,7 +474,6 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
 
     // SNPS added: link iotlb back to tlb to enable dmi
     env->iotlb[mmu_idx][index].phys = paddr_page;
-    env->iotlb[mmu_idx][index].p2v = te;
 
     te->addend = addend - vaddr_page;
     if (prot & PAGE_READ) {
@@ -1734,12 +1733,8 @@ uint64_t helper_be_ldq_cmmu(CPUArchState *env, target_ulong addr,
 }
 
 // SNPS added
-static target_ulong lookup_virt_addr(CPUIOTLBEntry* iotlbe);
-static target_ulong lookup_virt_addr(CPUIOTLBEntry* iotlbe) {
-    CPUTLBEntry* tlbe = iotlbe->p2v;
-    if (iotlbe->phys == -1 || tlbe == NULL)
-        return -1;
-
+static target_ulong lookup_virt_addr(CPUTLBEntry* tlbe);
+static target_ulong lookup_virt_addr(CPUTLBEntry* tlbe) {
     if (tlbe->addr_read != -1)
         return tlbe->addr_read & TARGET_PAGE_MASK;
     if (tlbe->addr_write != -1)
@@ -1762,17 +1757,23 @@ void dmi_invalidate(CPUState *cpu, uint64_t start, uint64_t end) {
 
     for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
         for (idx = 0; idx < CPU_TLB_SIZE; idx++) {
-            CPUIOTLBEntry* entry = &env->iotlb[mmu_idx][idx];
-            target_ulong vaddr = lookup_virt_addr(entry);
-            if (entry->phys >= start && entry->phys < end && vaddr != -1)
-                tlb_flush_page(cpu, vaddr);
+            CPUIOTLBEntry* iotlbe = &env->iotlb[mmu_idx][idx];
+            if (iotlbe->phys >= start && iotlbe->phys < end) {
+                CPUTLBEntry* tlbe = &env->tlb_table[mmu_idx][idx];
+                target_ulong vaddr = lookup_virt_addr(tlbe);
+                if (vaddr != -1)
+                    tlb_flush_page(cpu, vaddr);
+            }
         }
 
         for (idx = 0; idx < CPU_VTLB_SIZE; idx++) {
-            CPUIOTLBEntry* entry = &env->iotlb_v[mmu_idx][idx];
-            target_ulong vaddr = lookup_virt_addr(entry);
-            if (entry->phys >= start && entry->phys < end && vaddr != -1)
-                tlb_flush_page(cpu, vaddr);
+            CPUIOTLBEntry* iotlbe = &env->iotlb_v[mmu_idx][idx];
+            if (iotlbe->phys >= start && iotlbe->phys < end) {
+                CPUTLBEntry* tlbe = &env->tlb_v_table[mmu_idx][idx];
+                target_ulong vaddr = lookup_virt_addr(tlbe);
+                if (vaddr != -1)
+                    tlb_flush_page(cpu, vaddr);
+            }
         }
     }
 }

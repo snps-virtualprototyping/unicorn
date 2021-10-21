@@ -163,7 +163,6 @@ typedef struct CPUIOTLBEntry {
     MemTxAttrs attrs;
 
     hwaddr phys; // SNPS added
-    CPUTLBEntry* p2v; // SNPS added
 } CPUIOTLBEntry;
 
 typedef struct CPUTLBDesc {
