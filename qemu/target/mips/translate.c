@@ -5863,6 +5863,7 @@ static void gen_loongson_multimedia(DisasContext *ctx, int rd, int rs, int rt)
 
     gen_store_fpr64(ctx, t0, rd);
 
+no_rd:
     tcg_temp_free_i64(tcg_ctx, t0);
     tcg_temp_free_i64(tcg_ctx, t1);
 }
@@ -13822,6 +13823,8 @@ static void gen_cache_operation(DisasContext *ctx, uint32_t op, int base,
     TCGv t1 = tcg_temp_new(tcg_ctx);
     gen_base_offset_addr(ctx, t1, base, offset);
     gen_helper_cache(tcg_ctx, tcg_ctx->cpu_env, t1, t0);
+    tcg_temp_free(tcg_ctx, t1);
+    tcg_temp_free_i32(tcg_ctx, t0);
 }
 
 #if defined(TARGET_MIPS64)

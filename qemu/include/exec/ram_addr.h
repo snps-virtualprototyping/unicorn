@@ -93,8 +93,8 @@ static inline bool cpu_physical_memory_get_dirty(struct uc_struct *uc, ram_addr_
     // Unicorn: commented out
     //rcu_read_lock();
 
-    // Unicorn: atomic_read used instead of atomic_rcu_read
-    blocks = atomic_read(&uc->ram_list.dirty_memory[client]);
+    // Unicorn: qatomic_read used instead of qatomic_rcu_read
+    blocks = qatomic_read(&uc->ram_list.dirty_memory[client]);
 
     idx = page / DIRTY_MEMORY_BLOCK_SIZE;
     offset = page % DIRTY_MEMORY_BLOCK_SIZE;
@@ -138,8 +138,8 @@ static inline bool cpu_physical_memory_all_dirty(struct uc_struct *uc, ram_addr_
     // Unicorn: commented out
     //rcu_read_lock();
 
-    // Unicorn: atomic_read used instead of atomic_rcu_read
-    blocks = atomic_read(&uc->ram_list.dirty_memory[client]);
+    // Unicorn: qatomic_read used instead of qatomic_rcu_read
+    blocks = qatomic_read(&uc->ram_list.dirty_memory[client]);
 
     idx = page / DIRTY_MEMORY_BLOCK_SIZE;
     offset = page % DIRTY_MEMORY_BLOCK_SIZE;
@@ -192,8 +192,8 @@ static inline void cpu_physical_memory_set_dirty_flag(struct uc_struct *uc, ram_
     // Unicorn: commented out
     //rcu_read_lock();
 
-    // Unicorn: atomic_read used instead of atomic_rcu_read
-    blocks = atomic_read(&uc->ram_list.dirty_memory[client]);
+    // Unicorn: qatomic_read used instead of qatomic_rcu_read
+    blocks = qatomic_read(&uc->ram_list.dirty_memory[client]);
 
     set_bit_atomic(offset, blocks->blocks[idx]);
 

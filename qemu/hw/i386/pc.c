@@ -144,27 +144,16 @@ static void pc_machine_class_init(struct uc_struct *uc, ObjectClass *oc, void *d
 }
 
 static const TypeInfo pc_machine_info = {
-    TYPE_PC_MACHINE,
-    TYPE_MACHINE,
+    .name = TYPE_PC_MACHINE,
+    .parent = TYPE_MACHINE,
 
-    sizeof(PCMachineClass),
-    sizeof(PCMachineState),
-    NULL,
+    .class_size = sizeof(PCMachineClass),
+    .instance_size = sizeof(PCMachineState),
 
-    pc_machine_initfn,
-    NULL,
-    NULL,
+    .instance_init = pc_machine_initfn,
+    .class_init = pc_machine_class_init,
 
-    NULL,
-
-    pc_machine_class_init,
-    NULL,
-    NULL,
-
-    true,
-
-    NULL,
-    NULL,
+    .abstract = true,
 
     // should this be added somehow?
     //.interfaces = (InterfaceInfo[]) { { } },

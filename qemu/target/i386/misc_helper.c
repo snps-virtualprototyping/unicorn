@@ -6,7 +6,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -207,7 +207,8 @@ void helper_rdtscp(CPUX86State *env)
 
 void helper_rdpmc(CPUX86State *env)
 {
-    if ((env->cr[4] & CR4_PCE_MASK) && ((env->hflags & HF_CPL_MASK) != 0)) {
+    if (((env->cr[4] & CR4_PCE_MASK) == 0 ) &&
+        ((env->hflags & HF_CPL_MASK) != 0)) {
         raise_exception_ra(env, EXCP0D_GPF, GETPC());
     }
     cpu_svm_check_intercept_param(env, SVM_EXIT_RDPMC, 0, GETPC());
@@ -229,6 +230,7 @@ void helper_rdmsr(CPUX86State *env)
 void helper_wrmsr(CPUX86State *env)
 {
     uint64_t val;
+    CPUState *cs = env_cpu(env);
 
     cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 1, GETPC());
 
@@ -280,6 +282,13 @@ void helper_wrmsr(CPUX86State *env)
         break;
     case MSR_PAT:
         env->pat = val;
+        break;
+    case MSR_IA32_PKRS:
+        if (val & 0xFFFFFFFF00000000ull) {
+            goto error;
+        }
+        env->pkrs = val;
+        tlb_flush(cs);
         break;
     case MSR_VM_HSAVE_PA:
         env->vm_hsave = val;
@@ -384,6 +393,10 @@ void helper_wrmsr(CPUX86State *env)
         /* XXX: exception? */
         break;
     }
+    return;
+error:
+    raise_exception_err_ra(env, EXCP0D_GPF, 0, GETPC());
+
 }
 
 void helper_rdmsr(CPUX86State *env)
@@ -413,6 +426,9 @@ void helper_rdmsr(CPUX86State *env)
         break;
     case MSR_PAT:
         val = env->pat;
+        break;
+    case MSR_IA32_PKRS:
+        val = env->pkrs;
         break;
     case MSR_VM_HSAVE_PA:
         val = env->vm_hsave;

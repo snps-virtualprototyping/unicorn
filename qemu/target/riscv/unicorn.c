@@ -54,10 +54,6 @@ static int riscv_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals,
             memcpy(value, &state->fpr[reg_id - UC_RISCV_REG_F0], sizeof(state->fpr[0]));
         } else if (reg_id == UC_RISCV_REG_PC) {
             memcpy(value, &state->pc, sizeof(state->pc));
-        } else if (reg_id == UC_RISCV_REG_MHARTID) { // SNPS added
-            memcpy(value, &state->mhartid, sizeof(state->mhartid));
-        } else if (reg_id == UC_RISCV_REG_MSTATUS) { // SNPS added
-            memcpy(value, &state->mstatus, sizeof(state->mstatus));
         }
     }
 
@@ -82,10 +78,6 @@ static int riscv_reg_write(struct uc_struct *uc, unsigned int *regs, void *const
             // force to quit execution and flush TB
             uc->quit_request = true;
             uc_emu_stop(uc);
-        } else if (reg_id == UC_RISCV_REG_MHARTID) { // SNPS added
-            memcpy(&state->mhartid, value, sizeof(state->mhartid));
-        } else if (reg_id == UC_RISCV_REG_MSTATUS) { // SNPS added
-            memcpy(&state->mstatus, value, sizeof(state->mstatus));
         }
     }
 

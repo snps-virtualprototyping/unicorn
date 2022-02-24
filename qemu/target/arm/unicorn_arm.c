@@ -9,6 +9,7 @@
 #include "unicorn.h"
 #include "unicorn_common.h"
 #include "uc_priv.h"
+#include "exec/helper-proto.h"
 
 const int ARM_REGS_STORAGE_SIZE = offsetof(CPUARMState, tlb_table);
 
@@ -50,6 +51,7 @@ void arm_reg_reset(struct uc_struct *uc)
     env->pc = 0;
 }
 
+// SNPS added
 static const uint32_t r13_14_mode_map[] = {
     ARM_CPU_MODE_USR,
     ARM_CPU_MODE_SVC,
@@ -65,6 +67,7 @@ static const uint32_t r13_14_mode_map[] = {
 uint32_t helper_v7m_mrs(CPUARMState *env, uint32_t reg);
 void helper_v7m_msr(CPUARMState *env, uint32_t maskreg, uint32_t val);
 
+// SNPS added
 static uint32_t calc_pc_offset(struct uc_struct *uc, CPUARMState *state) {
     if (!uc->is_memcb)
         return 0;
@@ -83,7 +86,7 @@ int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
         unsigned int regid = regs[i];
         uint32_t* value = vals[i];
         if (regid >= UC_ARM_REG_R0 && regid <= UC_ARM_REG_R12) {
-            *(int32_t *)value = state->regs[regid - UC_ARM_REG_R0];
+            *(uint32_t *)value = state->regs[regid - UC_ARM_REG_R0];
         } else if (regid >= UC_ARM_REG_D0 && regid <= UC_ARM_REG_D31) {
             const float64 *d_reg = aa32_vfp_dreg(state, regid - UC_ARM_REG_D0);
             *(float64 *)value = *d_reg;
@@ -725,7 +728,7 @@ int arm_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals, i
     return 0;
 }
 
-#ifdef jhw
+#ifdef SNPS
 static bool arm_stop_interrupt(int intno)
 {
     switch(intno) {
@@ -757,7 +760,7 @@ static uc_err arm_query(struct uc_struct *uc, uc_query_type type, size_t *result
     }
 }
 
-// JHW
+// SNPS added
 void arm_timer_recalc(CPUState *cpu, int timeridx);
 
 void arm_timer_recalc(CPUState *cpu, int timeridx)
@@ -793,16 +796,15 @@ void arm_uc_init(struct uc_struct* uc)
 {
     register_accel_types(uc);
     arm_cpu_register_types(uc);
-    //tosa_machine_init_register_types(uc);
-    machvirt_machine_init(uc);
+    machvirt_machine_init(uc); // SNPS changed
     uc->reg_read = arm_reg_read;
     uc->reg_write = arm_reg_write;
     uc->reg_reset = arm_reg_reset;
     uc->set_pc = arm_set_pc;
-    //uc->stop_interrupt = arm_stop_interrupt; // jhw
+    //uc->stop_interrupt = arm_stop_interrupt; // SNPS removed
     uc->release = arm_release;
     uc->query = arm_query;
     uc_common_init(uc);
 
-    uc->timer_recalc = arm_timer_recalc;
+    uc->timer_recalc = arm_timer_recalc; // SNPS added
 }

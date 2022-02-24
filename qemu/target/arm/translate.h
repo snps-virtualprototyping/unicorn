@@ -29,6 +29,7 @@ typedef struct DisasContext {
     ARMMMUIdx mmu_idx; /* MMU index to use for normal loads/stores */
     uint8_t tbii;      /* TBI1|TBI0 for insns */
     uint8_t tbid;      /* TBI1|TBI0 for data */
+    uint8_t tcma;      /* TCMA1|TCMA0 for MTE */
     bool ns;        /* Use non-secure CPREG bank on access */
     int fp_excp_el; /* FP exception EL or 0 if enabled */
     int sve_excp_el; /* SVE exception EL or 0 if enabled */
@@ -62,6 +63,7 @@ typedef struct DisasContext {
      * that it is set at the point where we actually touch the FP regs.
      */
     bool fp_access_checked;
+    bool sve_access_checked;
     /* ARMv8 single-step state (this is distinct from the QEMU gdbstub
      * single-step support).
      */
@@ -76,6 +78,10 @@ typedef struct DisasContext {
     bool unpriv;
     /* True if v8.3-PAuth is active.  */
     bool pauth_active;
+    /* True if v8.5-MTE access to tags is enabled.  */
+    bool ata;
+    /* True if v8.5-MTE tag checks affect the PE; index with is_unpriv.  */
+    bool mte_active[2];
     /* Bottom two bits of XScale c15_cpar coprocessor access control reg */
     int c15_cpar;
     /* True with v8.5-BTI and SCTLR_ELx.BT* set.  */
@@ -87,6 +93,8 @@ typedef struct DisasContext {
      *  < 0, set by the current instruction.
      */
     int8_t btype;
+    /* A copy of cpu->dcz_blocksize. */
+    uint8_t dcz_blocksize;
     /* True if this page is guarded.  */
     bool guarded_page;
     /* TCG op of the current insn_start.  */
@@ -96,6 +104,7 @@ typedef struct DisasContext {
     TCGv_i64 tmp_a64[TMP_A64_MAX];
 
     // Unicorn: Moved here to avoid global state.
+    /* These are TCG temporaries used only by the legacy iwMMXt decoder */
     TCGv_i64 V0;
     TCGv_i64 V1;
     TCGv_i64 M0;
@@ -151,7 +160,8 @@ static inline void disas_set_insn_syndrome(DisasContext *s, uint32_t syn)
 /* target-specific extra values for is_jmp */
 /* is_jmp field values */
 #define DISAS_JUMP      DISAS_TARGET_0 /* only pc was modified dynamically */
-#define DISAS_UPDATE    DISAS_TARGET_1 /* cpu state was modified dynamically */
+/* CPU state was modified dynamically; exit to main loop for interrupts. */
+#define DISAS_UPDATE_EXIT  DISAS_TARGET_1
 /* These instructions trap after executing, so the A32/T32 decoder must
  * defer them until after the conditional execution state has been updated.
  * WFI also needs special handling when single-stepping.
@@ -167,13 +177,16 @@ static inline void disas_set_insn_syndrome(DisasContext *s, uint32_t syn)
  * custom end-of-TB code)
  */
 #define DISAS_BX_EXCRET DISAS_TARGET_8
-/* For instructions which want an immediate exit to the main loop,
- * as opposed to attempting to use lookup_and_goto_ptr. Unlike
- * DISAS_UPDATE this doesn't write the PC on exiting the translation
- * loop so you need to ensure something (gen_a64_set_pc_im or runtime
- * helper) has done so before we reach return from cpu_tb_exec.
+/*
+ * For instructions which want an immediate exit to the main loop, as opposed
+ * to attempting to use lookup_and_goto_ptr.  Unlike DISAS_UPDATE_EXIT, this
+ * doesn't write the PC on exiting the translation loop so you need to ensure
+ * something (gen_a64_set_pc_im or runtime helper) has done so before we reach
+ * return from cpu_tb_exec.
  */
 #define DISAS_EXIT      DISAS_TARGET_9
+/* CPU state was modified dynamically; no need to exit, but do not chain. */
+#define DISAS_UPDATE_NOCHAIN  DISAS_TARGET_10
 
 #ifdef TARGET_AARCH64
 void a64_translate_init(struct uc_struct *uc);
@@ -370,6 +383,7 @@ typedef void GVecGen4Fn(TCGContext *, unsigned, uint32_t, uint32_t, uint32_t,
                         uint32_t, uint32_t, uint32_t);
 
 /* Function prototype for gen_ functions for calling Neon helpers */
+typedef void NeonGenOneOpFn(TCGContext *t, TCGv_i32, TCGv_i32);
 typedef void NeonGenOneOpEnvFn(TCGContext *t, TCGv_i32, TCGv_ptr, TCGv_i32);
 typedef void NeonGenTwoOpFn(TCGContext *t, TCGv_i32, TCGv_i32, TCGv_i32);
 typedef void NeonGenTwoOpEnvFn(TCGContext *t, TCGv_i32, TCGv_ptr, TCGv_i32, TCGv_i32);
@@ -379,12 +393,65 @@ typedef void NeonGenNarrowFn(TCGContext *t, TCGv_i32, TCGv_i64);
 typedef void NeonGenNarrowEnvFn(TCGContext *t, TCGv_i32, TCGv_ptr, TCGv_i64);
 typedef void NeonGenWidenFn(TCGContext *t, TCGv_i64, TCGv_i32);
 typedef void NeonGenTwoOpWidenFn(TCGContext *t, TCGv_i64, TCGv_i32, TCGv_i32);
-typedef void NeonGenTwoSingleOPFn(TCGContext *t, TCGv_i32, TCGv_i32, TCGv_i32, TCGv_ptr);
-typedef void NeonGenTwoDoubleOPFn(TCGContext *t, TCGv_i64, TCGv_i64, TCGv_i64, TCGv_ptr);
-typedef void NeonGenOneOpFn(TCGContext *t, TCGv_i64, TCGv_i64);
+typedef void NeonGenOneSingleOpFn(TCGContext *t, TCGv_i32, TCGv_i32, TCGv_ptr);
+typedef void NeonGenTwoSingleOpFn(TCGContext *t, TCGv_i32, TCGv_i32, TCGv_i32, TCGv_ptr);
+typedef void NeonGenTwoDoubleOpFn(TCGContext *t, TCGv_i64, TCGv_i64, TCGv_i64, TCGv_ptr);
+typedef void NeonGenOne64OpFn(TCGContext *t, TCGv_i64, TCGv_i64);
 typedef void CryptoTwoOpFn(TCGContext *, TCGv_ptr, TCGv_ptr);
 typedef void CryptoThreeOpIntFn(TCGContext *, TCGv_ptr, TCGv_ptr, TCGv_i32);
 typedef void CryptoThreeOpFn(TCGContext *, TCGv_ptr, TCGv_ptr, TCGv_ptr);
 typedef void AtomicThreeOpFn(TCGContext *, TCGv_i64, TCGv_i64, TCGv_i64, TCGArg, MemOp);
+
+/*
+ * Enum for argument to fpstatus_ptr().
+ */
+typedef enum ARMFPStatusFlavour {
+    FPST_FPCR,
+    FPST_FPCR_F16,
+    FPST_STD,
+    FPST_STD_F16,
+} ARMFPStatusFlavour;
+
+/**
+ * fpstatus_ptr: return TCGv_ptr to the specified fp_status field
+ *
+ * We have multiple softfloat float_status fields in the Arm CPU state struct
+ * (see the comment in cpu.h for details). Return a TCGv_ptr which has
+ * been set up to point to the requested field in the CPU state struct.
+ * The options are:
+ *
+ * FPST_FPCR
+ *   for non-FP16 operations controlled by the FPCR
+ * FPST_FPCR_F16
+ *   for operations controlled by the FPCR where FPCR.FZ16 is to be used
+ * FPST_STD
+ *   for A32/T32 Neon operations using the "standard FPSCR value"
+ * FPST_STD_F16
+ *   as FPST_STD, but where FPCR.FZ16 is to be used
+ */
+static inline TCGv_ptr fpstatus_ptr(TCGContext *s, ARMFPStatusFlavour flavour)
+{
+    TCGv_ptr statusptr = tcg_temp_new_ptr(s);
+    int offset;
+
+    switch (flavour) {
+    case FPST_FPCR:
+        offset = offsetof(CPUARMState, vfp.fp_status);
+        break;
+    case FPST_FPCR_F16:
+        offset = offsetof(CPUARMState, vfp.fp_status_f16);
+        break;
+    case FPST_STD:
+        offset = offsetof(CPUARMState, vfp.standard_fp_status);
+        break;
+    case FPST_STD_F16:
+        offset = offsetof(CPUARMState, vfp.standard_fp_status_f16);
+        break;
+    default:
+        g_assert_not_reached();
+    }
+    tcg_gen_addi_ptr(s, statusptr, s->cpu_env, offset);
+    return statusptr;
+}
 
 #endif /* TARGET_ARM_TRANSLATE_H */

@@ -470,12 +470,12 @@ static void flatview_destroy(FlatView *view)
 
 static void flatview_ref(FlatView *view)
 {
-    atomic_inc(&view->ref);
+    qatomic_inc(&view->ref);
 }
 
 static void flatview_unref(FlatView *view)
 {
-    if (atomic_fetch_dec(&view->ref) == 1) {
+    if (qatomic_fetch_dec(&view->ref) == 1) {
         flatview_destroy(view);
     }
 }
@@ -491,8 +491,8 @@ void unicorn_free_empty_flat_view(struct uc_struct *uc)
 
 FlatView *address_space_to_flatview(AddressSpace *as)
 {
-    // Unicorn: atomic_read used instead of atomic_rcu_read
-    return atomic_read(&as->current_map);
+    // Unicorn: qatomic_read used instead of qatomic_rcu_read
+    return qatomic_read(&as->current_map);
 }
 
 AddressSpaceDispatch *flatview_to_dispatch(FlatView *fv)
@@ -1036,7 +1036,7 @@ static void address_space_set_flatview(AddressSpace *as)
     }
 
     /* Writes are protected by the BQL.  */
-    atomic_set(&as->current_map, new_view);
+    qatomic_set(&as->current_map, new_view);
     if (old_view) {
         flatview_unref(old_view);
     }
@@ -2166,16 +2166,14 @@ struct MemoryRegionList {
 typedef QTAILQ_HEAD(queue, MemoryRegionList) MemoryRegionListHead;
 
 static const TypeInfo memory_region_info = {
-    TYPE_MEMORY_REGION,
-    TYPE_OBJECT,
+    .name = TYPE_MEMORY_REGION,
+    .parent = TYPE_OBJECT,
 
-    0,
-    sizeof(MemoryRegion),
-    NULL,
+    .class_size = 0,
+    .instance_size = sizeof(MemoryRegion),
 
-    memory_region_initfn,
-    NULL,
-    memory_region_finalize,
+    .instance_init = memory_region_initfn,
+    .instance_finalize = memory_region_finalize,
 };
 
 void memory_register_types(struct uc_struct *uc)

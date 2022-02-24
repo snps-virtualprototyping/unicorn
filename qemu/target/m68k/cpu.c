@@ -43,6 +43,11 @@ static void m68k_set_feature(CPUM68KState *env, int feature)
     env->features |= (1u << feature);
 }
 
+static void m68k_unset_feature(CPUM68KState *env, int feature)
+{
+    env->features &= (-1u - (1u << feature));
+}
+
 /* CPUClass::reset() */
 static void m68k_cpu_reset(CPUState *s)
 {
@@ -99,6 +104,7 @@ static void m5206_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     m68k_set_feature(env, M68K_FEATURE_CF_ISA_A);
 }
 
+/* Base feature set, including isns. for m68k family */
 static void m68000_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
 {
     M68kCPU *cpu = M68K_CPU(uc, obj);
@@ -108,6 +114,21 @@ static void m68000_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     m68k_set_feature(env, M68K_FEATURE_USP);
     m68k_set_feature(env, M68K_FEATURE_WORD_INDEX);
     m68k_set_feature(env, M68K_FEATURE_MOVEP);
+}
+
+/*
+ * Adds BKPT, MOVE-from-SR *now priv instr, and MOVEC, MOVES, RTD
+ */
+static void m68010_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
+{
+    M68kCPU *cpu = M68K_CPU(uc, obj);
+    CPUM68KState *env = &cpu->env;
+
+    m68000_cpu_initfn(uc, obj, opaque);
+    m68k_set_feature(env, M68K_FEATURE_M68010);
+    m68k_set_feature(env, M68K_FEATURE_RTD);
+    m68k_set_feature(env, M68K_FEATURE_BKPT);
+    m68k_set_feature(env, M68K_FEATURE_MOVEC);
 }
 
 /* common features for 68020, 68030 and 68040 */
@@ -131,15 +152,43 @@ static void m680x0_cpu_common(CPUM68KState *env)
     m68k_set_feature(env, M68K_FEATURE_MOVEP);
 }
 
+/*
+ * Adds BFCHG, BFCLR, BFEXTS, BFEXTU, BFFFO, BFINS, BFSET, BFTST, CAS, CAS2,
+ *      CHK2, CMP2, DIVSL, DIVUL, EXTB, PACK, TRAPcc, UNPK.
+ *
+ * 68020/30 only:
+ *      CALLM, cpBcc, cpDBcc, cpGEN, cpRESTORE, cpSAVE, cpScc, cpTRAPcc
+ */
 static void m68020_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
 {
     M68kCPU *cpu = M68K_CPU(uc, obj);
     CPUM68KState *env = &cpu->env;
 
-    m680x0_cpu_common(env);
+    m68010_cpu_initfn(uc, obj, opaque);
+    m68k_unset_feature(env, M68K_FEATURE_M68010);
     m68k_set_feature(env, M68K_FEATURE_M68020);
+    m68k_set_feature(env, M68K_FEATURE_QUAD_MULDIV);
+    m68k_set_feature(env, M68K_FEATURE_BRAL);
+    m68k_set_feature(env, M68K_FEATURE_BCCL);
+    m68k_set_feature(env, M68K_FEATURE_BITFIELD);
+    m68k_set_feature(env, M68K_FEATURE_EXT_FULL);
+    m68k_set_feature(env, M68K_FEATURE_SCALED_INDEX);
+    m68k_set_feature(env, M68K_FEATURE_LONG_MULDIV);
+    m68k_set_feature(env, M68K_FEATURE_FPU);
+    m68k_set_feature(env, M68K_FEATURE_CAS);
+    m68k_set_feature(env, M68K_FEATURE_CHK2);
+    m68k_set_feature(env, M68K_FEATURE_MSP);
+    m68k_set_feature(env, M68K_FEATURE_UNALIGNED_DATA);
 }
 
+/*
+ * Adds: PFLUSH (*5)
+ * 68030 Only: PFLUSHA (*5), PLOAD (*5), PMOVE
+ * 68030/40 Only: PTEST
+ *
+ * NOTES:
+ *  5. Not valid on MC68EC030
+ */
 static void m68030_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
 {
     M68kCPU *cpu = M68K_CPU(uc, obj);
@@ -149,6 +198,23 @@ static void m68030_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     m68k_set_feature(env, M68K_FEATURE_M68030);
 }
 
+/*
+ * Adds: CINV, CPUSH
+ * Adds all with Note *2: FABS, FSABS, FDABS, FADD, FSADD, FDADD, FBcc, FCMP,
+ *                        FDBcc, FDIV, FSDIV, FDDIV, FMOVE, FSMOVE, FDMOVE,
+ *                        FMOVEM, FMUL, FSMUL, FDMUL, FNEG, FSNEG, FDNEG, FNOP,
+ *                        FRESTORE, FSAVE, FScc, FSQRT, FSSQRT, FDSQRT, FSUB,
+ *                        FSSUB, FDSUB, FTRAPcc, FTST
+ *
+ * Adds with Notes *2, and *3: FACOS, FASIN, FATAN, FATANH, FCOS, FCOSH, FETOX,
+ *                             FETOXM, FGETEXP, FGETMAN, FINT, FINTRZ, FLOG10,
+ *                             FLOG2, FLOGN, FLOGNP1, FMOD, FMOVECR, FREM,
+ *                             FSCALE, FSGLDIV, FSGLMUL, FSIN, FSINCOS, FSINH,
+ *                             FTAN, FTANH, FTENTOX, FTWOTOX
+ * NOTES:
+ * 2. Not applicable to the MC68EC040, MC68LC040, MC68EC060, and MC68LC060.
+ * 3. These are software-supported instructions on the MC68040 and MC68060.
+ */
 static void m68040_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
 {
     M68kCPU *cpu = M68K_CPU(uc, obj);
@@ -158,6 +224,17 @@ static void m68040_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     m68k_set_feature(env, M68K_FEATURE_M68040);
 }
 
+/*
+ * Adds: PLPA
+ * Adds all with Note *2: CAS, CAS2, MULS, MULU, CHK2, CMP2, DIVS, DIVU
+ * All Fxxxx instructions are as per m68040 with exception to; FMOVEM NOTE3
+ *
+ * Does NOT implement MOVEP
+ *
+ * NOTES:
+ * 2. Not applicable to the MC68EC040, MC68LC040, MC68EC060, and MC68LC060.
+ * 3. These are software-supported instructions on the MC68040 and MC68060.
+ */
 static void m68060_cpu_initfn(struct uc_struct *uc, Object *obj, void *opaque)
 {
     M68kCPU *cpu = M68K_CPU(uc, obj);
@@ -265,51 +342,40 @@ static void m68k_cpu_class_init(struct uc_struct *uc, ObjectClass *c, void *data
 
     cc->class_by_name = m68k_cpu_class_by_name;
     cc->has_work = m68k_cpu_has_work;
-    cc->do_interrupt = m68k_cpu_do_interrupt;
-    cc->cpu_exec_interrupt = m68k_cpu_exec_interrupt;
+    cc->tcg_ops.do_interrupt = m68k_cpu_do_interrupt;
+    cc->tcg_ops.cpu_exec_interrupt = m68k_cpu_exec_interrupt;
     cc->set_pc = m68k_cpu_set_pc;
-    cc->tlb_fill = m68k_cpu_tlb_fill;
+    cc->tcg_ops.tlb_fill = m68k_cpu_tlb_fill;
 #if defined(CONFIG_SOFTMMU)
-    cc->do_transaction_failed = m68k_cpu_transaction_failed;
+    cc->tcg_ops.do_transaction_failed = m68k_cpu_transaction_failed;
     cc->get_phys_page_debug = m68k_cpu_get_phys_page_debug;
 #endif
-    cc->tcg_initialize = m68k_tcg_init;
+    cc->tcg_ops.initialize = m68k_tcg_init;
 }
 
 #define DEFINE_M68K_CPU_TYPE(cpu_model, initfn) \
     {                                           \
-        M68K_CPU_TYPE_NAME(cpu_model),          \
-        TYPE_M68K_CPU,                          \
+        .name = M68K_CPU_TYPE_NAME(cpu_model),  \
+        .parent = TYPE_M68K_CPU,                \
                                                 \
-        0,                                      \
-        0,                                      \
-        NULL,                                   \
-                                                \
-        initfn,                                 \
+        .instance_init = initfn,                \
     }
 
 static TypeInfo m68k_cpus_type_infos[] = {
     { /* base class should be registered first */
-        TYPE_M68K_CPU,
-        TYPE_CPU,
+        .name = TYPE_M68K_CPU,
+        .parent = TYPE_CPU,
 
-        sizeof(M68kCPUClass),
-        sizeof(M68kCPU),
-        NULL,
+        .class_size = sizeof(M68kCPUClass),
+        .instance_size = sizeof(M68kCPU),
 
-        m68k_cpu_initfn,
-        NULL,
-        NULL,
+        .instance_init = m68k_cpu_initfn,
+        .class_init = m68k_cpu_class_init,
 
-        NULL,
-
-        m68k_cpu_class_init,
-        NULL,
-        NULL,
-
-        true,
+        .abstract = true,
     },
     DEFINE_M68K_CPU_TYPE("m68000", m68000_cpu_initfn),
+    DEFINE_M68K_CPU_TYPE("m68010", m68010_cpu_initfn),
     DEFINE_M68K_CPU_TYPE("m68020", m68020_cpu_initfn),
     DEFINE_M68K_CPU_TYPE("m68030", m68030_cpu_initfn),
     DEFINE_M68K_CPU_TYPE("m68040", m68040_cpu_initfn),

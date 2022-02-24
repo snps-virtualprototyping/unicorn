@@ -116,12 +116,13 @@ static bool v7m_stack_write(ARMCPU *cpu, uint32_t addr, uint32_t value,
     hwaddr physaddr;
     int prot;
     ARMMMUFaultInfo fi = {0};
+    ARMCacheAttrs cacheattrs = {};
     bool secure = mmu_idx & ARM_MMU_IDX_M_S;
     int exc;
     bool exc_secure;
 
     if (get_phys_addr(env, addr, MMU_DATA_STORE, mmu_idx, &physaddr,
-                      &attrs, &prot, &page_size, &fi, NULL)) {
+                      &attrs, &prot, &page_size, &fi, &cacheattrs)) {
         /* MPU/SAU lookup failed */
         if (fi.type == ARMFault_QEMU_SFault) {
             if (mode == STACK_LAZYFP) {
@@ -209,13 +210,14 @@ static bool v7m_stack_read(ARMCPU *cpu, uint32_t *dest, uint32_t addr,
     hwaddr physaddr;
     int prot;
     ARMMMUFaultInfo fi = {0};
+    ARMCacheAttrs cacheattrs = {};
     bool secure = mmu_idx & ARM_MMU_IDX_M_S;
     int exc;
     bool exc_secure;
     uint32_t value;
 
     if (get_phys_addr(env, addr, MMU_DATA_LOAD, mmu_idx, &physaddr,
-                      &attrs, &prot, &page_size, &fi, NULL)) {
+                      &attrs, &prot, &page_size, &fi, &cacheattrs)) {
         /* MPU/SAU lookup failed */
         if (fi.type == ARMFault_QEMU_SFault) {
             qemu_log_mask(CPU_LOG_INT,
@@ -818,10 +820,13 @@ static void v7m_exception_taken(ARMCPU *cpu, uint32_t lr, bool dotailchain,
          * Clear registers if necessary to prevent non-secure exception
          * code being able to see register values from secure code.
          * Where register values become architecturally UNKNOWN we leave
-         * them with their previous values.
+         * them with their previous values. v8.1M is tighter than v8.0M
+         * here and always zeroes the caller-saved registers regardless
+         * of the security state the exception is targeting.
          */
         if (arm_feature(env, ARM_FEATURE_M_SECURITY)) {
-            if (!targets_secure) {
+            if (!targets_secure || arm_feature(env, ARM_FEATURE_V8_1M)) {
+
                 /*
                  * Always clear the caller-saved registers (they have been
                  * pushed to the stack earlier in v7m_push_stack()).
@@ -830,10 +835,16 @@ static void v7m_exception_taken(ARMCPU *cpu, uint32_t lr, bool dotailchain,
                  * v7m_push_callee_stack()).
                  */
                 int i;
+                /*
+                 * r4..r11 are callee-saves, zero only if background
+                 * state was Secure (EXCRET.S == 1) and exception
+                 * targets Non-secure state
+                 */
+                bool zero_callee_saves = !targets_secure &&
+                    (lr & R_V7M_EXCRET_S_MASK);
 
                 for (i = 0; i < 13; i++) {
-                    /* r4..r11 are callee-saves, zero only if EXCRET.S == 1 */
-                    if (i < 4 || i > 11 || (lr & R_V7M_EXCRET_S_MASK)) {
+                    if (i < 4 || i > 11 || zero_callee_saves) {
                         env->regs[i] = 0;
                     }
                 }
@@ -1255,7 +1266,7 @@ static void do_v7m_exception_exit(ARMCPU *cpu)
     bool exc_secure = false;
     bool return_to_secure;
     bool ftype;
-    bool restore_s16_s31;
+    bool restore_s16_s31 = false;
 
     /*
      * If we're not in Handler mode then jumps to magic exception-exit
@@ -1427,7 +1438,27 @@ static void do_v7m_exception_exit(ARMCPU *cpu)
             v7m_exception_taken(cpu, excret, true, false);
             return;
         } else {
-            /* Clear s0..s15 and FPSCR */
+            if (arm_feature(env, ARM_FEATURE_V8_1M)) {
+                /* v8.1M adds this NOCP check */
+                bool nsacr_pass = exc_secure ||
+                    extract32(env->v7m.nsacr, 10, 1);
+                bool cpacr_pass = v7m_cpacr_pass(env, exc_secure, true);
+                if (!nsacr_pass) {
+                    //armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_USAGE, true);
+                    env->v7m.cfsr[M_REG_S] |= R_V7M_CFSR_NOCP_MASK;
+                    qemu_log_mask(CPU_LOG_INT, "...taking UsageFault on existing "
+                        "stackframe: NSACR prevents clearing FPU registers\n");
+                    v7m_exception_taken(cpu, excret, true, false);
+                } else if (!cpacr_pass) {
+                    //armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_USAGE,
+                    //                        exc_secure);
+                    env->v7m.cfsr[exc_secure] |= R_V7M_CFSR_NOCP_MASK;
+                    qemu_log_mask(CPU_LOG_INT, "...taking UsageFault on existing "
+                        "stackframe: CPACR prevents clearing FPU registers\n");
+                    v7m_exception_taken(cpu, excret, true, false);
+                }
+            }
+            /* Clear s0..s15 and FPSCR; TODO also VPR when MVE is implemented */
             int i;
 
             for (i = 0; i < 16; i += 2) {
@@ -1859,6 +1890,7 @@ static bool v7m_read_half_insn(ARMCPU *cpu, ARMMMUIdx mmu_idx,
     V8M_SAttributes sattrs = {0};
     MemTxAttrs attrs = {0};
     ARMMMUFaultInfo fi = {0};
+    ARMCacheAttrs cacheattrs = {};
     MemTxResult txres;
     target_ulong page_size;
     hwaddr physaddr;
@@ -1877,8 +1909,8 @@ static bool v7m_read_half_insn(ARMCPU *cpu, ARMMMUIdx mmu_idx,
                       "...really SecureFault with SFSR.INVEP\n");
         return false;
     }
-    if (get_phys_addr(env, addr, MMU_INST_FETCH, mmu_idx,
-                      &physaddr, &attrs, &prot, &page_size, &fi, NULL)) {
+    if (get_phys_addr(env, addr, MMU_INST_FETCH, mmu_idx, &physaddr,
+                      &attrs, &prot, &page_size, &fi, &cacheattrs)) {
         /* the MPU lookup failed */
         env->v7m.cfsr[env->v7m.secure] |= R_V7M_CFSR_IACCVIOL_MASK;
         // Unicorn: commented out
@@ -1895,6 +1927,64 @@ static bool v7m_read_half_insn(ARMCPU *cpu, ARMMMUIdx mmu_idx,
         qemu_log_mask(CPU_LOG_INT, "...really BusFault with CFSR.IBUSERR\n");
         return false;
     }
+    return true;
+}
+
+static bool v7m_read_sg_stack_word(ARMCPU *cpu, ARMMMUIdx mmu_idx,
+                                   uint32_t addr, uint32_t *spdata)
+{
+    /*
+     * Read a word of data from the stack for the SG instruction,
+     * writing the value into *spdata. If the load succeeds, return
+     * true; otherwise pend an appropriate exception and return false.
+     * (We can't use data load helpers here that throw an exception
+     * because of the context we're called in, which is halfway through
+     * arm_v7m_cpu_do_interrupt().)
+     */
+    CPUState *cs = CPU(cpu);
+    CPUARMState *env = &cpu->env;
+    MemTxAttrs attrs = {};
+    MemTxResult txres;
+    target_ulong page_size;
+    hwaddr physaddr;
+    int prot;
+    ARMMMUFaultInfo fi = {};
+    ARMCacheAttrs cacheattrs = {};
+    uint32_t value;
+
+    if (get_phys_addr(env, addr, MMU_DATA_LOAD, mmu_idx, &physaddr,
+                      &attrs, &prot, &page_size, &fi, &cacheattrs)) {
+        /* MPU/SAU lookup failed */
+        if (fi.type == ARMFault_QEMU_SFault) {
+            qemu_log_mask(CPU_LOG_INT,
+                          "...SecureFault during stack word read\n");
+            env->v7m.sfsr |= R_V7M_SFSR_AUVIOL_MASK | R_V7M_SFSR_SFARVALID_MASK;
+            env->v7m.sfar = addr;
+            //armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_SECURE, false);
+        } else {
+            qemu_log_mask(CPU_LOG_INT,
+                          "...MemManageFault during stack word read\n");
+            env->v7m.cfsr[M_REG_S] |= R_V7M_CFSR_DACCVIOL_MASK |
+                R_V7M_CFSR_MMARVALID_MASK;
+            env->v7m.mmfar[M_REG_S] = addr;
+            //armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_MEM, false);
+        }
+        return false;
+    }
+    value = address_space_ldl(arm_addressspace(cs, attrs), physaddr,
+                              attrs, &txres);
+    if (txres != MEMTX_OK) {
+        /* BusFault trying to read the data */
+        qemu_log_mask(CPU_LOG_INT,
+                      "...BusFault during stack word read\n");
+        env->v7m.cfsr[M_REG_NS] |=
+            (R_V7M_CFSR_PRECISERR_MASK | R_V7M_CFSR_BFARVALID_MASK);
+        env->v7m.bfar = addr;
+        //armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_BUS, false);
+        return false;
+    }
+
+    *spdata = value;
     return true;
 }
 
@@ -1954,6 +2044,34 @@ static bool v7m_handle_execute_nsc(ARMCPU *cpu)
      */
     qemu_log_mask(CPU_LOG_INT, "...really an SG instruction at 0x%08" PRIx32
                   ", executing it\n", env->regs[15]);
+
+    if (cpu_isar_feature(aa32_m_sec_state, cpu) &&
+        !arm_v7m_is_handler_mode(env)) {
+        /*
+         * v8.1M exception stack frame integrity check. Note that we
+         * must perform the memory access even if CCR_S.TRD is zero
+         * and we aren't going to check what the data loaded is.
+         */
+        uint32_t spdata, sp;
+
+        /*
+         * We know we are currently NS, so the S stack pointers must be
+         * in other_ss_{psp,msp}, not in regs[13]/other_sp.
+         */
+        sp = v7m_using_psp(env) ? env->v7m.other_ss_psp : env->v7m.other_ss_msp;
+        if (!v7m_read_sg_stack_word(cpu, mmu_idx, sp, &spdata)) {
+            /* Stack access failed and an exception has been pended */
+            return false;
+        }
+
+        if (env->v7m.ccr[M_REG_S] & R_V7M_CCR_TRD_MASK) {
+            if (((spdata & ~1) == 0xfefa125a) ||
+                !(env->v7m.control[M_REG_S] & 1)) {
+                goto gen_invep;
+            }
+        }
+    }
+
     env->regs[14] &= ~1;
     env->v7m.control[M_REG_S] &= ~R_V7M_CONTROL_SFPA_MASK;
     switch_v7m_security_state(env, true);
@@ -2664,7 +2782,8 @@ ARMMMUIdx arm_v7m_mmu_idx_for_secstate_and_priv(CPUARMState *env,
 /* Return the MMU index for a v7M CPU in the specified security state */
 ARMMMUIdx arm_v7m_mmu_idx_for_secstate(CPUARMState *env, bool secstate)
 {
-    bool priv = arm_current_el(env) != 0;
+    bool priv = arm_v7m_is_handler_mode(env) ||
+        !(env->v7m.control[secstate] & 1);
 
     return arm_v7m_mmu_idx_for_secstate_and_priv(env, secstate, priv);
 }

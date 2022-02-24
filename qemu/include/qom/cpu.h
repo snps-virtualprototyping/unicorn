@@ -75,6 +75,80 @@ typedef void (*CPUUnassignedAccess)(CPUState *cpu, hwaddr addr,
 struct TranslationBlock;
 
 /**
+ * struct TcgCpuOperations: TCG operations specific to a CPU class
+ */
+typedef struct TcgCpuOperations {
+    /**
+     * @initialize: Initalize TCG state
+     *
+     * Called when the first CPU is realized.
+     */
+    void (*initialize)(struct uc_struct *uc);
+
+    /**
+     * @synchronize_from_tb: Synchronize state from a TCG #TranslationBlock
+     *
+     * This is called when we abandon execution of a TB before starting it,
+     * and must set all parts of the CPU state which the previous TB in the
+     * chain may not have updated.
+     * By default, when this is NULL, a call is made to @set_pc(tb->pc).
+     *
+     * If more state needs to be restored, the target must implement a
+     * function to restore all the state, and register it here.
+     */
+    void (*synchronize_from_tb)(CPUState *cpu,
+                                const struct TranslationBlock *tb);
+    /** @cpu_exec_enter: Callback for cpu_exec preparation */
+    void (*cpu_exec_enter)(CPUState *cpu);
+    /** @cpu_exec_exit: Callback for cpu_exec cleanup */
+    void (*cpu_exec_exit)(CPUState *cpu);
+    /** @cpu_exec_interrupt: Callback for processing interrupts in cpu_exec */
+    bool (*cpu_exec_interrupt)(CPUState *cpu, int interrupt_request);
+    /** @do_interrupt: Callback for interrupt handling. */
+    void (*do_interrupt)(CPUState *cpu);
+    /**
+     * @tlb_fill: Handle a softmmu tlb miss or user-only address fault
+     *
+     * For system mode, if the access is valid, call tlb_set_page
+     * and return true; if the access is invalid, and probe is
+     * true, return false; otherwise raise an exception and do
+     * not return.  For user-only mode, always raise an exception
+     * and do not return.
+     */
+    bool (*tlb_fill)(CPUState *cpu, vaddr address, int size,
+                     MMUAccessType access_type, int mmu_idx,
+                     bool probe, uintptr_t retaddr);
+    /** @debug_excp_handler: Callback for handling debug exceptions */
+    void (*debug_excp_handler)(CPUState *cpu);
+
+    /**
+     * @do_transaction_failed: Callback for handling failed memory transactions
+     * (ie bus faults or external aborts; not MMU faults)
+     */
+    void (*do_transaction_failed)(CPUState *cpu, hwaddr physaddr, vaddr addr,
+                                  unsigned size, MMUAccessType access_type,
+                                  int mmu_idx, MemTxAttrs attrs,
+                                  MemTxResult response, uintptr_t retaddr);
+    /**
+     * @do_unaligned_access: Callback for unaligned access handling
+     */
+    void (*do_unaligned_access)(CPUState *cpu, vaddr addr,
+                                MMUAccessType access_type,
+                                int mmu_idx, uintptr_t retaddr);
+    /**
+     * @adjust_watchpoint_address: hack for cpu_check_watchpoint used by ARM
+     */
+    vaddr (*adjust_watchpoint_address)(CPUState *cpu, vaddr addr, int len);
+
+    /**
+     * @debug_check_watchpoint: return true if the architectural
+     * watchpoint whose address has matched should really fire, used by ARM
+     */
+    bool (*debug_check_watchpoint)(CPUState *cpu, CPUWatchpoint *wp);
+
+} TcgCpuOperations;
+
+/**
  * CPUClass:
  * @class_by_name: Callback to map -cpu command line model name to an
  * instantiatable CPU type.
@@ -82,13 +156,8 @@ struct TranslationBlock;
  * @reset: Callback to reset the #CPUState to its initial state.
  * @reset_dump_flags: #CPUDumpFlags to use for reset logging.
  * @has_work: Callback for checking if there is work to do.
- * @do_interrupt: Callback for interrupt handling.
  * @do_unassigned_access: Callback for unassigned access handling.
  * (this is deprecated: new targets should use do_transaction_failed instead)
- * @do_unaligned_access: Callback for unaligned access handling, if
- * the target defines #TARGET_ALIGNED_ONLY.
- * @do_transaction_failed: Callback for handling failed memory transactions
- * (ie bus faults or external aborts; not MMU faults)
  * @memory_rw_debug: Callback for GDB memory access.
  * @dump_state: Callback for dumping state.
  * @dump_statistics: Callback for dumping statistics.
@@ -103,19 +172,6 @@ struct TranslationBlock;
  *       If the target behaviour here is anything other than "set
  *       the PC register to the value passed in" then the target must
  *       also implement the synchronize_from_tb hook.
- * @synchronize_from_tb: Callback for synchronizing state from a TCG
- *       #TranslationBlock. This is called when we abandon execution
- *       of a TB before starting it, and must set all parts of the CPU
- *       state which the previous TB in the chain may not have updated.
- *       This always includes at least the program counter; some targets
- *       will need to do more. If this hook is not implemented then the
- *       default is to call @set_pc(tb->pc).
- * @tlb_fill: Callback for handling a softmmu tlb miss or user-only
- *       address fault.  For system mode, if the access is valid, call
- *       tlb_set_page and return true; if the access is invalid, and
- *       probe is true, return false; otherwise raise an exception and
- *       do not return.  For user-only mode, always raise an exception
- *       and do not return.
  * @get_phys_page_debug: Callback for obtaining a physical address.
  * @get_phys_page_attrs_debug: Callback for obtaining a physical address and the
  *       associated memory transaction attributes to use for the access.
@@ -123,13 +179,7 @@ struct TranslationBlock;
  *       instead of get_phys_page_debug.
  * @asidx_from_attrs: Callback to return the CPU AddressSpace to use for
  *       a memory access with the specified memory transaction attributes.
- * @debug_excp_handler: Callback for handling debug exceptions.
- * @debug_check_watchpoint: Callback: return true if the architectural
- *       watchpoint whose address has matched should really fire.
  * @vmsd: State description for migration.
- * @cpu_exec_enter: Callback for cpu_exec preparation.
- * @cpu_exec_exit: Callback for cpu_exec cleanup.
- * @cpu_exec_interrupt: Callback for processing interrupts in cpu_exec.
  * @adjust_watchpoint_address: Perform a target-specific adjustment to an
  * address before attempting to match it against watchpoints.
  *
@@ -147,15 +197,7 @@ typedef struct CPUClass {
     void (*reset)(CPUState *cpu);
     int reset_dump_flags;
     bool (*has_work)(CPUState *cpu);
-    void (*do_interrupt)(CPUState *cpu);
     CPUUnassignedAccess do_unassigned_access;
-    void (*do_unaligned_access)(CPUState *cpu, vaddr addr,
-                                MMUAccessType access_type,
-                                int mmu_idx, uintptr_t retaddr);
-    void (*do_transaction_failed)(CPUState *cpu, hwaddr physaddr, vaddr addr,
-                                  unsigned size, MMUAccessType access_type,
-                                  int mmu_idx, MemTxAttrs attrs,
-                                  MemTxResult response, uintptr_t retaddr);
     int (*memory_rw_debug)(CPUState *cpu, vaddr addr,
                            uint8_t *buf, int len, bool is_write);
     void (*dump_state)(CPUState *cpu, FILE *f, fprintf_function cpu_fprintf,
@@ -167,26 +209,15 @@ typedef struct CPUClass {
     void (*get_memory_mapping)(CPUState *cpu, MemoryMappingList *list,
                                Error **errp);
     void (*set_pc)(CPUState *cpu, vaddr value);
-    void (*synchronize_from_tb)(CPUState *cpu, struct TranslationBlock *tb);
-    bool (*tlb_fill)(CPUState *cpu, vaddr address, int size,
-                     MMUAccessType access_type, int mmu_idx,
-                     bool probe, uintptr_t retaddr);
     hwaddr (*get_phys_page_debug)(CPUState *cpu, vaddr addr);
     hwaddr (*get_phys_page_attrs_debug)(CPUState *cpu, vaddr addr,
                                         MemTxAttrs *attrs);
     int (*asidx_from_attrs)(CPUState *cpu, MemTxAttrs attrs);
-    bool (*debug_check_watchpoint)(CPUState *cpu, CPUWatchpoint *wp);
-    void (*debug_excp_handler)(CPUState *cpu);
 
     const struct VMStateDescription *vmsd;
 
-    void (*cpu_exec_enter)(CPUState *cpu);
-    void (*cpu_exec_exit)(CPUState *cpu);
-    bool (*cpu_exec_interrupt)(CPUState *cpu, int interrupt_request);
-    vaddr (*adjust_watchpoint_address)(CPUState *cpu, vaddr addr, int len);
-    void (*tcg_initialize)(struct uc_struct *uc);
-
     /* Keep non-pointer data at the end to minimize holes.  */
+    TcgCpuOperations tcg_ops;
     bool tcg_initialized;
 } CPUClass;
 
@@ -410,7 +441,7 @@ static inline void cpu_tb_jmp_cache_clear(CPUState *cpu)
     unsigned int i;
 
     for (i = 0; i < TB_JMP_CACHE_SIZE; i++) {
-        atomic_set(&cpu->tb_jmp_cache[i], NULL);
+        qatomic_set(&cpu->tb_jmp_cache[i], NULL);
     }
 }
 
@@ -725,7 +756,6 @@ void cpu_interrupt(CPUState *cpu, int mask);
 
 #endif /* USER_ONLY */
 
-#ifdef CONFIG_SOFTMMU
 static inline void cpu_unassigned_access(CPUState *cpu, hwaddr addr,
                                          bool is_write, bool is_exec,
                                          int opaque, unsigned size)
@@ -743,7 +773,7 @@ static inline void cpu_unaligned_access(CPUState *cpu, vaddr addr,
 {
     CPUClass *cc = CPU_GET_CLASS(cpu->uc, cpu);
 
-    cc->do_unaligned_access(cpu, addr, access_type, mmu_idx, retaddr);
+    cc->tcg_ops.do_unaligned_access(cpu, addr, access_type, mmu_idx, retaddr);
 }
 
 static inline void cpu_transaction_failed(CPUState *cpu, hwaddr physaddr,
@@ -755,13 +785,13 @@ static inline void cpu_transaction_failed(CPUState *cpu, hwaddr physaddr,
 {
     CPUClass *cc = CPU_GET_CLASS(cpu->uc, cpu);
 
-    if (!cpu->ignore_memory_transaction_failures && cc->do_transaction_failed) {
-        cc->do_transaction_failed(cpu, physaddr, addr, size, access_type,
-                                  mmu_idx, attrs, response, retaddr);
+    if (!cpu->ignore_memory_transaction_failures &&
+        cc->tcg_ops.do_transaction_failed) {
+        cc->tcg_ops.do_transaction_failed(cpu, physaddr, addr, size,
+                                          access_type, mmu_idx, attrs,
+                                          response, retaddr);
     }
 }
-
-#endif
 
 /**
  * cpu_set_pc:

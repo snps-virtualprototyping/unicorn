@@ -44,6 +44,17 @@
 # define QEMU_NONSTRING
 #endif
 
+/*
+ * Forced inlining may be desired to encourage constant propagation
+ * of function parameters.  However, it can also make debugging harder,
+ * so disable it for a non-optimizing build.
+ */
+#if defined(__OPTIMIZE__)
+#define QEMU_ALWAYS_INLINE  __attribute__((always_inline))
+#else
+#define QEMU_ALWAYS_INLINE
+#endif
+
 #ifdef _MSC_VER
 // MSVC support
 
@@ -194,10 +205,6 @@ static union MSVC_FLOAT_HACK __NAN = {{0x00, 0x00, 0xC0, 0x7F}};
 #endif
 
 #ifndef likely
-#if __GNUC__ < 3
-#define __builtin_expect(x, n) (x)
-#endif
-
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x)   __builtin_expect(!!(x), 0)
 #endif
@@ -239,6 +246,53 @@ static union MSVC_FLOAT_HACK __NAN = {{0x00, 0x00, 0xC0, 0x7F}};
 #define inline always_inline
 #endif
 
+#if defined __GNUC__
+# if !QEMU_GNUC_PREREQ(4, 4)
+   /* gcc versions before 4.4.x don't support gnu_printf, so use printf. */
+#  define GCC_FMT_ATTR(n, m) __attribute__((format(printf, n, m)))
+# else
+   /* Use gnu_printf when supported (qemu uses standard format strings). */
+#  define GCC_FMT_ATTR(n, m) __attribute__((format(gnu_printf, n, m)))
+#  if defined(_WIN32)
+    /* Map __printf__ to __gnu_printf__ because we want standard format strings
+     * even when MinGW or GLib include files use __printf__. */
+#   define __printf__ __gnu_printf__
+#  endif
+# endif
+#else
+#define GCC_FMT_ATTR(n, m)
+#endif
+
+#endif // _MSC_VER
+
+/**
+ * In most cases, normal "fallthrough" comments are good enough for
+ * switch-case statements, but sometimes the compiler has problems
+ * with those. In that case you can use QEMU_FALLTHROUGH instead.
+ */
+#if __has_attribute(fallthrough)
+# define QEMU_FALLTHROUGH __attribute__((fallthrough))
+#else
+# define QEMU_FALLTHROUGH do {} while (0) /* fallthrough */
+#endif
+
+// SNPS moved
+/**
+ * qemu_build_not_reached()
+ *
+ * The compiler, during optimization, is expected to prove that a call
+ * to this function cannot be reached and remove it.  If the compiler
+ * supports QEMU_ERROR, this will be reported at compile time; otherwise
+ * this will be reported at link time due to the missing symbol.
+ */
+#if defined(__OPTIMIZE__) && !defined(__NO_INLINE__)
+extern void QEMU_NORETURN QEMU_ERROR("code path is reachable")
+    qemu_build_not_reached_always(void);
+#define qemu_build_not_reached()  qemu_build_not_reached_always()
+#else
+#define qemu_build_not_reached()  g_assert_not_reached()
+#endif
+
 #define QEMU_BUILD_BUG_ON_STRUCT(x) \
     struct { \
         int:(x) ? -1 : 1; \
@@ -261,24 +315,6 @@ static union MSVC_FLOAT_HACK __NAN = {{0x00, 0x00, 0xC0, 0x7F}};
 
 #define QEMU_BUILD_BUG_ON_ZERO(x) (sizeof(QEMU_BUILD_BUG_ON_STRUCT(x)) - \
                                    sizeof(QEMU_BUILD_BUG_ON_STRUCT(x)))
-
-#if defined __GNUC__
-# if !QEMU_GNUC_PREREQ(4, 4)
-   /* gcc versions before 4.4.x don't support gnu_printf, so use printf. */
-#  define GCC_FMT_ATTR(n, m) __attribute__((format(printf, n, m)))
-# else
-   /* Use gnu_printf when supported (qemu uses standard format strings). */
-#  define GCC_FMT_ATTR(n, m) __attribute__((format(gnu_printf, n, m)))
-#  if defined(_WIN32)
-    /* Map __printf__ to __gnu_printf__ because we want standard format strings
-     * even when MinGW or GLib include files use __printf__. */
-#   define __printf__ __gnu_printf__
-#  endif
-# endif
-#else
-#define GCC_FMT_ATTR(n, m)
-#endif
-
-#endif // _MSC_VER
+// SNPS /moved
 
 #endif /* COMPILER_H */

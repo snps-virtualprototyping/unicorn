@@ -306,7 +306,7 @@ int x86_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
             case UC_X86_REG_YMM15:
                 {
                     float64 *dst = (float64*)value;
-                    ZMMReg *reg = &state->xmm_regs[regid - UC_X86_REG_YMM0];
+                    ZMMReg *reg = &state->xmm_regs[regid - UC_X86_REG_XMM0];
                     dst[0] = reg->ZMM_D(0);
                     dst[1] = reg->ZMM_D(1);
                     dst[2] = reg->ZMM_D(2);
@@ -315,9 +315,7 @@ int x86_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
                 }
         }
 
-// SNPS forced X86_64 register access
-        uc_mode mode = UC_MODE_64;
-        switch(mode) {
+        switch(uc->mode) {
             default:
                 break;
             case UC_MODE_16:
@@ -792,9 +790,6 @@ int x86_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
                             dst[1] = reg->ZMM_D(1);
                             break;
                         }
-                    case UC_X86_REG_CS_BASE:
-                        *(uint64_t *)value = (uint64_t)state->segs[R_CS].base;
-                        break;
                     case UC_X86_REG_FS_BASE:
                         *(uint64_t *)value = (uint64_t)state->segs[R_FS].base;
                         break;
@@ -889,7 +884,7 @@ int x86_reg_write(struct uc_struct *uc, unsigned int *regs, void *const *vals, i
             case UC_X86_REG_YMM15:
                 {
                     float64 *src = (float64*)value;
-                    ZMMReg *reg = &state->xmm_regs[regid - UC_X86_REG_YMM0];
+                    ZMMReg *reg = &state->xmm_regs[regid - UC_X86_REG_XMM0];
                     reg->ZMM_D(4) = src[0];
                     reg->ZMM_D(5) = src[1];
                     reg->ZMM_D(6) = src[2];
@@ -898,10 +893,7 @@ int x86_reg_write(struct uc_struct *uc, unsigned int *regs, void *const *vals, i
                 }
         }
 
-        // SNPS forced X86_64 register access
-        uc_mode mode = UC_MODE_64;
-
-        switch(mode) {
+        switch(uc->mode) {
             default:
                 break;
 
@@ -1426,12 +1418,9 @@ int x86_reg_write(struct uc_struct *uc, unsigned int *regs, void *const *vals, i
                             reg->ZMM_D(1) = src[1];
                             break;
                         }
-                    case UC_X86_REG_CS_BASE:
-                        state->segs[R_CS].base = *(uint64_t *)value;
-                        break;
                     case UC_X86_REG_FS_BASE:
                         state->segs[R_FS].base = *(uint64_t *)value;
-                        break;
+                        continue;
                 }
                 break;
 #endif

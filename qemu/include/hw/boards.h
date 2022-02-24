@@ -124,16 +124,9 @@ struct MachineState {
         machine_initfn(uc, mc); \
     } \
     static const TypeInfo machine_initfn##_typeinfo = { \
-        MACHINE_TYPE_NAME(namestr), \
-        TYPE_MACHINE, \
-        0, \
-        0, \
-        NULL, \
-        NULL, \
-        NULL, \
-        NULL, \
-        NULL, \
-        machine_initfn##_class_init, \
+        .name = MACHINE_TYPE_NAME(namestr), \
+        .parent = TYPE_MACHINE, \
+        .class_init = machine_initfn##_class_init, \
     }; \
     void machine_initfn##_register_types(struct uc_struct *uc) \
     { \

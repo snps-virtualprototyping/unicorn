@@ -490,26 +490,32 @@ typedef enum TCGTempVal {
     TEMP_VAL_CONST,
 } TCGTempVal;
 
+typedef enum TCGTempKind {
+    /* Temp is dead at the end of all basic blocks. */
+    TEMP_NORMAL,
+    /* Temp is saved across basic blocks but dead at the end of TBs. */
+    TEMP_LOCAL,
+    /* Temp is saved across both basic blocks and translation blocks. */
+    TEMP_GLOBAL,
+    /* Temp is in a fixed register. */
+    TEMP_FIXED,
+    /* Temp is a fixed constant. */
+    TEMP_CONST,
+} TCGTempKind;
+
 typedef struct TCGTemp {
     TCGReg reg:8;
     TCGTempVal val_type:8;
     TCGType base_type:8;
     TCGType type:8;
-    unsigned int fixed_reg:1;
+    TCGTempKind kind:3;
     unsigned int indirect_reg:1;
     unsigned int indirect_base:1;
     unsigned int mem_coherent:1;
     unsigned int mem_allocated:1;
-    /* If true, the temp is saved across both basic blocks and
-       translation blocks.  */
-    unsigned int temp_global:1;
-    /* If true, the temp is saved across basic blocks but dead
-       at the end of translation blocks.  If false, the temp is
-       dead at the end of basic blocks.  */
-    unsigned int temp_local:1;
     unsigned int temp_allocated:1;
 
-    tcg_target_long val;
+    int64_t val;
     struct TCGTemp *mem_base;
     intptr_t mem_offset;
     const char *name;
@@ -609,33 +615,25 @@ void tcg_set_frame(TCGContext *s, TCGReg reg, intptr_t start, intptr_t size);
  * calling tcg_check_temp_count() at the end of the section will
  * return 1 if the section did in fact leak a temporary.
  */
-void tcg_clear_temp_count(TCGContext *s);
-int tcg_check_temp_count(TCGContext *s);
-#else // SNPS changed
-#  ifdef tcg_clear_temp_count
-#    undef tcg_clear_temp_count
-#    define tcg_clear_temp_count(...) do { } while (0)
-#  endif
-#  ifdef tcg_check_temp_count
-#    undef tcg_check_temp_count
-#    define tcg_check_temp_count(...) 0
-#  endif
+void tcg_clear_temp_count(void);
+int tcg_check_temp_count(void);
+#else
+#define tcg_clear_temp_count() do { } while (0)
+#define tcg_check_temp_count() 0
 #endif
 
 void tcg_dump_info(void);
 
-#define TCG_CT_ALIAS  0x80
-#define TCG_CT_IALIAS 0x40
-#define TCG_CT_NEWREG 0x20 /* output requires a new register */
-#define TCG_CT_REG    0x01
-#define TCG_CT_CONST  0x02 /* any constant of register size */
+#define TCG_CT_CONST  1 /* any constant of register size */
 
 typedef struct TCGArgConstraint {
-    uint16_t ct;
-    uint8_t alias_index;
-    union {
-        TCGRegSet regs;
-    } u;
+    unsigned ct : 16;
+    unsigned alias_index : 4;
+    unsigned sort_index : 4;
+    bool oalias : 1;
+    bool ialias : 1;
+    bool newreg : 1;
+    TCGRegSet regs;
 } TCGArgConstraint;
 
 #define TCG_MAX_OP_ARGS 16
@@ -665,19 +663,15 @@ typedef struct TCGOpDef {
     uint8_t nb_oargs, nb_iargs, nb_cargs, nb_args;
     uint8_t flags;
     TCGArgConstraint *args_ct;
-    int *sorted_args;
-#if defined(CONFIG_DEBUG_TCG)
-    int used;
-#endif
 } TCGOpDef;
 
-struct tcg_temp_info {
+typedef struct TempOptInfo {
     bool is_const;
     TCGTemp *prev_copy;
     TCGTemp *next_copy;
-    tcg_target_ulong val;
-    tcg_target_ulong mask;
-};
+    uint64_t val;
+    uint64_t mask;
+} TempOptInfo;
 
 struct TCGContext {
     uint8_t *pool_cur, *pool_end;
@@ -743,6 +737,7 @@ struct TCGContext {
     struct TCGLabelPoolData *pool_labels;
 #endif
 
+    GHashTable *const_table[TCG_TYPE_COUNT];
     TCGTempSet free_temps[TCG_TYPE_COUNT * 2];
     TCGTemp temps[TCG_MAX_TEMPS]; /* globals first, temps after */
 
@@ -759,6 +754,9 @@ struct TCGContext {
 
     uint16_t gen_insn_end_off[TCG_MAX_INSNS];
     target_ulong gen_insn_data[TCG_MAX_INSNS][TARGET_INSN_START_WORDS];
+
+    /* Exit to translator on overflow. */
+    sigjmp_buf jmp_trans;
 
     // Unicorn engine variables
     struct uc_struct *uc;
@@ -791,7 +789,7 @@ struct TCGContext {
     TCGOpDef *tcg_op_defs;
 
     /* qemu/tcg/optimize.c */
-    struct tcg_temp_info temps2[TCG_MAX_TEMPS];
+    TempOptInfo temps2[TCG_MAX_TEMPS];
     TCGTempSet temps2_used;
 
     /* qemu/target-m68k/translate.c */
@@ -816,7 +814,6 @@ struct TCGContext {
     TCGv store_dummy;
 
     /* qemu/target-arm/translate.c */
-    /* We reuse the same 64-bit temporaries for efficiency.  */
     TCGv_i32 cpu_R[16];
     TCGv_i32 cpu_CF, cpu_NF, cpu_VF, cpu_ZF;
     TCGv_i64 cpu_exclusive_addr;
@@ -853,6 +850,7 @@ struct TCGContext {
     TCGv_i64 cpu_fpr_risc[32]; /* assume F and D extensions */
     TCGv load_res_risc;
     TCGv load_val_risc;
+    TCGv cpu_vl_risc;
 
     /* qemu/target-sparc/translate.c */
     /* global register indexes */
@@ -884,6 +882,11 @@ struct TCGContext {
     TCGLabel *icount_label; // SNPS added
     TCGOp* icount_op; // SNPS added
 };
+
+static inline bool temp_readonly(TCGTemp *ts)
+{
+    return ts->kind >= TEMP_FIXED;
+}
 
 static inline size_t temp_idx(TCGContext *tcg_ctx, TCGTemp *ts)
 {
@@ -1102,7 +1105,7 @@ static inline TCGv_ptr tcg_temp_local_new_ptr(TCGContext *s)
 }
 
 // UNICORN: Added
-#define TCG_OP_DEFS_TABLE_SIZE 189
+#define TCG_OP_DEFS_TABLE_SIZE 187
 extern const TCGOpDef tcg_op_defs_org[TCG_OP_DEFS_TABLE_SIZE];
 
 typedef struct TCGTargetOpDef {
@@ -1145,6 +1148,7 @@ static inline void *tcg_malloc(TCGContext *s, int size)
     }
 }
 
+/* Allocate a new temporary and initialize it with a constant. */
 TCGv_i32 tcg_const_i32(TCGContext *s, int32_t val);
 TCGv_i64 tcg_const_i64(TCGContext *s, int64_t val);
 TCGv_i32 tcg_const_local_i32(TCGContext *s, int32_t val);
@@ -1153,6 +1157,25 @@ TCGv_vec tcg_const_zeros_vec(TCGContext *s, TCGType);
 TCGv_vec tcg_const_ones_vec(TCGContext *s, TCGType);
 TCGv_vec tcg_const_zeros_vec_matching(TCGContext *s, TCGv_vec);
 TCGv_vec tcg_const_ones_vec_matching(TCGContext *s, TCGv_vec);
+
+/*
+ * Locate or create a read-only temporary that is a constant.
+ * This kind of temporary need not and should not be freed.
+ */
+TCGTemp *tcg_constant_internal(TCGContext *s, TCGType type, int64_t val);
+
+static inline TCGv_i32 tcg_constant_i32(TCGContext *s, int32_t val)
+{
+    return temp_tcgv_i32(s, tcg_constant_internal(s, TCG_TYPE_I32, val));
+}
+
+static inline TCGv_i64 tcg_constant_i64(TCGContext *s, int64_t val)
+{
+    return temp_tcgv_i64(s, tcg_constant_internal(s, TCG_TYPE_I64, val));
+}
+
+TCGv_vec tcg_constant_vec(TCGContext *s, TCGType type, unsigned vece, int64_t val);
+TCGv_vec tcg_constant_vec_matching(TCGContext *s, TCGv_vec match, unsigned vece, int64_t val);
 
 #if UINTPTR_MAX == UINT32_MAX
 # define tcg_const_ptr(t, x)             ((TCGv_ptr)tcg_const_i32((t), (intptr_t)(x)))

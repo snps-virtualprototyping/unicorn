@@ -88,6 +88,15 @@ const char * const riscv_intr_names[] = {
     "reserved"
 };
 
+bool riscv_cpu_is_32bit(CPURISCVState *env)
+{
+    if (env->misa & RV64) {
+        return false;
+    }
+
+    return true;
+}
+
 static void set_misa(CPURISCVState *env, target_ulong misa)
 {
     env->misa_mask = env->misa = misa;
@@ -96,6 +105,11 @@ static void set_misa(CPURISCVState *env, target_ulong misa)
 static void set_priv_version(CPURISCVState *env, int priv_ver)
 {
     env->priv_ver = priv_ver;
+}
+
+static void set_vext_version(CPURISCVState *env, int vext_ver)
+{
+    env->vext_ver = vext_ver;
 }
 
 static void set_feature(CPURISCVState *env, int feature)
@@ -114,7 +128,8 @@ static void riscv_any_cpu_init(struct uc_struct *uc, Object *obj, void *opaque)
 {
     CPURISCVState *env = &RISCV_CPU(uc, obj)->env;
     set_misa(env, RVXLEN | RVI | RVM | RVA | RVF | RVD | RVC | RVU);
-set_priv_version(env, PRIV_VERSION_1_11_0);
+    set_priv_version(env, PRIV_VERSION_1_11_0);
+    set_vext_version(env, VEXT_VERSION_0_07_1);
     set_resetvec(env, DEFAULT_RSTVEC);
 }
 
@@ -223,7 +238,7 @@ static void riscv_cpu_dump_state(CPUState *cs, FILE *f,
     cpu_fprintf(f, " %s " TARGET_FMT_lx "\n", "mhartid ", env->mhartid);
     cpu_fprintf(f, " %s " TARGET_FMT_lx "\n", "mstatus ", env->mstatus);
     cpu_fprintf(f, " %s " TARGET_FMT_lx "\n", "mip     ",
-        (target_ulong)atomic_read(&env->mip));
+        (target_ulong)qatomic_read(&env->mip));
     cpu_fprintf(f, " %s " TARGET_FMT_lx "\n", "mie     ", env->mie);
     cpu_fprintf(f, " %s " TARGET_FMT_lx "\n", "mideleg ", env->mideleg);
     cpu_fprintf(f, " %s " TARGET_FMT_lx "\n", "medeleg ", env->medeleg);
@@ -258,7 +273,7 @@ static void riscv_cpu_set_pc(CPUState *cs, vaddr value)
     env->pc = value;
 }
 
-static void riscv_cpu_synchronize_from_tb(CPUState *cs, TranslationBlock *tb)
+static void riscv_cpu_synchronize_from_tb(CPUState *cs, const TranslationBlock *tb)
 {
     RISCVCPU *cpu = RISCV_CPU(cs->uc, cs);
     CPURISCVState *env = &cpu->env;
@@ -274,7 +289,7 @@ static bool riscv_cpu_has_work(CPUState *cs)
      * Definition of the WFI instruction requires it to ignore the privilege
      * mode and delegation registers, but respect individual enables
      */
-    return (atomic_read(&env->mip) & env->mie) != 0;
+    return (qatomic_read(&env->mip) & env->mie) != 0;
 #else
     return true;
 #endif
@@ -298,10 +313,16 @@ static void riscv_cpu_reset(CPUState *cs)
     env->mstatus &= ~(MSTATUS_MIE | MSTATUS_MPRV);
     env->mcause = 0;
     env->pc = env->resetvec;
+    env->two_stage_lookup = false;
 #endif
     cs->exception_index = EXCP_NONE;
     env->load_res = -1;
     set_default_nan_mode(1, &env->fp_status);
+
+    // Unicorn: Allow vector operations.
+    cpu->cfg.ext_v = true;
+    cpu->cfg.elen = 64;
+    cpu->cfg.vlen = 128;
 }
 
 // Unicorn: if'd out
@@ -351,11 +372,11 @@ static void riscv_cpu_class_init(struct uc_struct *uc, ObjectClass *oc, void *da
 
     cc->class_by_name = riscv_cpu_class_by_name;
     cc->has_work = riscv_cpu_has_work;
-    cc->do_interrupt = riscv_cpu_do_interrupt;
-    cc->cpu_exec_interrupt = riscv_cpu_exec_interrupt;
+    cc->tcg_ops.do_interrupt = riscv_cpu_do_interrupt;
+    cc->tcg_ops.cpu_exec_interrupt = riscv_cpu_exec_interrupt;
     //cc->dump_state = riscv_cpu_dump_state;
     cc->set_pc = riscv_cpu_set_pc;
-    cc->synchronize_from_tb = riscv_cpu_synchronize_from_tb;
+    cc->tcg_ops.synchronize_from_tb = riscv_cpu_synchronize_from_tb;
     //cc->gdb_read_register = riscv_cpu_gdb_read_register;
     //cc->gdb_write_register = riscv_cpu_gdb_write_register;
     //cc->gdb_num_core_regs = 65;
@@ -363,13 +384,11 @@ static void riscv_cpu_class_init(struct uc_struct *uc, ObjectClass *oc, void *da
     //cc->disas_set_info = riscv_cpu_disas_set_info;
 #ifndef CONFIG_USER_ONLY
     cc->do_unassigned_access = riscv_cpu_unassigned_access;
-    cc->do_unaligned_access = riscv_cpu_do_unaligned_access;
+    cc->tcg_ops.do_unaligned_access = riscv_cpu_do_unaligned_access;
     cc->get_phys_page_debug = riscv_cpu_get_phys_page_debug;
 #endif
-#ifdef CONFIG_TCG
-    cc->tcg_initialize = riscv_translate_init;
-    cc->tlb_fill = riscv_cpu_tlb_fill;
-#endif
+    cc->tcg_ops.initialize = riscv_translate_init;
+    cc->tcg_ops.tlb_fill = riscv_cpu_tlb_fill;
     /* For now, mark unmigratable: */
     //cc->vmsd = &vmstate_riscv_cpu;
 }
@@ -405,6 +424,7 @@ void riscv_cpu_register_types(void *opaque) {
         .parent = TYPE_CPU,
         .instance_userdata = opaque,
         .instance_size = sizeof(RISCVCPU),
+        .instance_align = __alignof__(RISCVCPU),
         .instance_init = riscv_cpu_init,
         .abstract = true,
         .class_size = sizeof(RISCVCPUClass),

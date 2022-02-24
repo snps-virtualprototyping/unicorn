@@ -79,7 +79,7 @@ static void release_common(void *t)
     // Clean TCG.
     TCGOpDef* def = &s->tcg_op_defs[0];
     g_free(def->args_ct);
-    g_free(def->sorted_args);
+    //g_free(def->sorted_args); // SNPS removed
     g_free(s->tcg_op_defs);
 
     for (po = s->pool_first; po; po = to) {

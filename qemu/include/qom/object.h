@@ -439,6 +439,9 @@ struct Object
  * @instance_size: The size of the object (derivative of #Object).  If
  *   @instance_size is 0, then the size of the object will be the size of the
  *   parent object.
+ * @instance_align: The required alignment of the object.  If @instance_align
+ *   is 0, then normal malloc alignment is sufficient; if non-zero, then we
+ *   must use qemu_memalign for allocation.
  * @instance_init: This function is called to initialize an object.  The parent
  *   class will have already been initialized so the type is only responsible
  *   for initializing its own members.
@@ -479,6 +482,7 @@ struct TypeInfo
 
     size_t class_size;
     size_t instance_size;
+    size_t instance_align;
     void *instance_userdata;
 
     void (*instance_init)(struct uc_struct *uc, Object *obj, void *opaque);
@@ -729,7 +733,7 @@ type_init(do_qemu_init_ ## type_array)
  * of this function.  The only difference in behavior is that this function
  * asserts instead of returning #NULL on failure if QOM cast debugging is
  * enabled.  This function is not meant to be called directly, but only through
- * the wrapper macros OBJECT_CLASS_CHECK and INTERFACE_CHECK.
+ * the wrapper macro OBJECT_CLASS_CHECK.
  */
 ObjectClass *object_class_dynamic_cast_assert(struct uc_struct *uc, ObjectClass *klass,
                                               const char *typename,
@@ -1012,7 +1016,7 @@ void object_property_set_bool(struct uc_struct *uc, Object *obj, bool value,
  * @name: the name of the property
  * @errp: returns an error if this function fails
  *
- * Returns: the value of the property, converted to a boolean, or NULL if
+ * Returns: the value of the property, converted to a boolean, or false if
  * an error occurs (including when the property value is not a bool).
  */
 bool object_property_get_bool(struct uc_struct *uc, Object *obj,
@@ -1035,7 +1039,7 @@ void object_property_set_int(struct uc_struct *uc, Object *obj, int64_t value,
  * @name: the name of the property
  * @errp: returns an error if this function fails
  *
- * Returns: the value of the property, converted to an integer, or negative if
+ * Returns: the value of the property, converted to an integer, or -1 if
  * an error occurs (including when the property value is not an integer).
  */
 int64_t object_property_get_int(struct uc_struct *uc, Object *obj,

@@ -54,26 +54,18 @@ typedef struct DisasContext {
        to reset this known value.  */
     int frm;
     bool ext_ifencei;
+    bool hlsx;
+    /* vector extension */
+    bool vill;
+    uint8_t lmul;
+    uint8_t sew;
+    uint16_t vlen;
+    uint16_t mlen;
+    bool vl_eq_vlmax;
 
     // Unicorn engine
     struct uc_struct *uc;
 } DisasContext;
-
-#ifdef TARGET_RISCV64
-/* convert riscv funct3 to qemu memop for load/store */
-static const int tcg_memop_lookup[8] = {
-    [0 ... 7] = -1,
-    [0] = MO_SB,
-    [1] = MO_TESW,
-    [2] = MO_TESL,
-    [4] = MO_UB,
-    [5] = MO_TEUW,
-#ifdef TARGET_RISCV64
-    [3] = MO_TEQ,
-    [6] = MO_TEUL,
-#endif
-};
-#endif
 
 #ifdef TARGET_RISCV64
 #define CASE_OP_32_64(X) case X: case glue(X, W)
@@ -81,15 +73,40 @@ static const int tcg_memop_lookup[8] = {
 #define CASE_OP_32_64(X) case X
 #endif
 
-// SNPS added
-static inline void gen_sync_pc(const DisasContext *ctx) {
-    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-    tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, ctx->base.pc_next);
-}
-
 static inline bool has_ext(DisasContext *ctx, uint32_t ext)
 {
     return ctx->misa & ext;
+}
+
+/*
+ * RISC-V requires NaN-boxing of narrower width floating point values.
+ * This applies when a 32-bit value is assigned to a 64-bit FP register.
+ * For consistency and simplicity, we nanbox results even when the RVD
+ * extension is not present.
+ */
+static void gen_nanbox_s(DisasContext *s, TCGv_i64 out, TCGv_i64 in)
+{
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+    tcg_gen_ori_i64(tcg_ctx, out, in, MAKE_64BIT_MASK(32, 32));
+}
+
+/*
+ * A narrow n-bit operation, where n < FLEN, checks that input operands
+ * are correctly Nan-boxed, i.e., all upper FLEN - n bits are 1.
+ * If so, the least-significant bits of the input are used, otherwise the
+ * input value is treated as an n-bit canonical NaN (v2.2 section 9.2).
+ *
+ * Here, the result is always nan-boxed, even the canonical nan.
+ */
+static void gen_check_nanbox_s(DisasContext *s, TCGv_i64 out, TCGv_i64 in)
+{
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+    TCGv_i64 t_max = tcg_const_i64(tcg_ctx, 0xffffffff00000000ull);
+    TCGv_i64 t_nan = tcg_const_i64(tcg_ctx, 0xffffffff7fc00000ull);
+
+    tcg_gen_movcond_i64(tcg_ctx, TCG_COND_GEU, out, in, t_max, in, t_nan);
+    tcg_temp_free_i64(tcg_ctx, t_max);
+    tcg_temp_free_i64(tcg_ctx, t_nan);
 }
 
 static void generate_exception(DisasContext *ctx, int excp)
@@ -118,6 +135,7 @@ static void generate_exception_mbadaddr(DisasContext *ctx, int excp)
 static void gen_exception_debug(const DisasContext *ctx)
 {
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+
     TCGv_i32 helper_tmp = tcg_const_i32(tcg_ctx, EXCP_DEBUG);
     gen_helper_raise_exception(tcg_ctx, tcg_ctx->cpu_env, helper_tmp);
     tcg_temp_free_i32(tcg_ctx, helper_tmp);
@@ -176,8 +194,8 @@ static void gen_goto_tb(DisasContext *ctx, int n, target_ulong dest)
 
     if (use_goto_tb(ctx, dest)) {
         /* chaining is only allowed when the jump is to the same page */
-        tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, dest); // SNPS moved
         tcg_gen_goto_tb(tcg_ctx, n);
+        tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, dest);
 
         /* No need to check for single stepping here as use_goto_tb() will
          * return false in case of single stepping.
@@ -360,52 +378,6 @@ static void gen_jal(DisasContext *ctx, int rd, target_ulong imm)
     ctx->base.is_jmp = DISAS_NORETURN;
 }
 
-#ifdef TARGET_RISCV64
-static void gen_load_c(DisasContext *ctx, uint32_t opc, int rd, int rs1,
-        target_long imm)
-{
-    gen_sync_pc(ctx); // SNPS added
-    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-    TCGv t0 = tcg_temp_new(tcg_ctx);
-    TCGv t1 = tcg_temp_new(tcg_ctx);
-    gen_get_gpr(ctx, t0, rs1);
-    tcg_gen_addi_tl(tcg_ctx, t0, t0, imm);
-    int memop = tcg_memop_lookup[(opc >> 12) & 0x7];
-
-    if (memop < 0) {
-        gen_exception_illegal(ctx);
-        return;
-    }
-
-    tcg_gen_qemu_ld_tl(ctx->uc, t1, t0, ctx->mem_idx, memop);
-    gen_set_gpr(ctx, rd, t1);
-    tcg_temp_free(tcg_ctx, t0);
-    tcg_temp_free(tcg_ctx, t1);
-}
-
-static void gen_store_c(DisasContext *ctx, uint32_t opc, int rs1, int rs2,
-        target_long imm)
-{
-    gen_sync_pc(ctx); // SNPS added
-    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-    TCGv t0 = tcg_temp_new(tcg_ctx);
-    TCGv dat = tcg_temp_new(tcg_ctx);
-    gen_get_gpr(ctx, t0, rs1);
-    tcg_gen_addi_tl(tcg_ctx, t0, t0, imm);
-    gen_get_gpr(ctx, dat, rs2);
-    int memop = tcg_memop_lookup[(opc >> 12) & 0x7];
-
-    if (memop < 0) {
-        gen_exception_illegal(ctx);
-        return;
-    }
-
-    tcg_gen_qemu_st_tl(ctx->uc, dat, t0, ctx->mem_idx, memop);
-    tcg_temp_free(tcg_ctx, t0);
-    tcg_temp_free(tcg_ctx, dat);
-}
-#endif
-
 #ifndef CONFIG_USER_ONLY
 /* The states of mstatus_fs are:
  * 0 = disabled, 1 = initial, 2 = clean, 3 = dirty
@@ -438,89 +410,6 @@ static void mark_fs_dirty(DisasContext *ctx)
 static inline void mark_fs_dirty(DisasContext *ctx) { }
 #endif
 
-#if !defined(TARGET_RISCV64)
-static void gen_fp_load(DisasContext *ctx, uint32_t opc, int rd,
-        int rs1, target_long imm)
-{
-    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-    TCGv t0;
-
-    if (ctx->mstatus_fs == 0) {
-        gen_exception_illegal(ctx);
-        return;
-    }
-
-    gen_sync_pc(ctx); // SNPS added
-
-    t0 = tcg_temp_new(tcg_ctx);
-    gen_get_gpr(ctx, t0, rs1);
-    tcg_gen_addi_tl(tcg_ctx, t0, t0, imm);
-
-    switch (opc) {
-    case OPC_RISC_FLW:
-        if (!has_ext(ctx, RVF)) {
-            goto do_illegal;
-        }
-        tcg_gen_qemu_ld_i64(ctx->uc, tcg_ctx->cpu_fpr_risc[rd], t0, ctx->mem_idx, MO_TEUL);
-        /* RISC-V requires NaN-boxing of narrower width floating point values */
-        tcg_gen_ori_i64(tcg_ctx, tcg_ctx->cpu_fpr_risc[rd], tcg_ctx->cpu_fpr_risc[rd], 0xffffffff00000000ULL);
-        break;
-    case OPC_RISC_FLD:
-        if (!has_ext(ctx, RVD)) {
-            goto do_illegal;
-        }
-        tcg_gen_qemu_ld_i64(ctx->uc, tcg_ctx->cpu_fpr_risc[rd], t0, ctx->mem_idx, MO_TEQ);
-        break;
-    do_illegal:
-    default:
-        gen_exception_illegal(ctx);
-        break;
-    }
-    tcg_temp_free(tcg_ctx, t0);
-
-    mark_fs_dirty(ctx);
-}
-
-static void gen_fp_store(DisasContext *ctx, uint32_t opc, int rs1,
-        int rs2, target_long imm)
-{
-    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-    TCGv t0;
-
-    if (ctx->mstatus_fs == 0) {
-        gen_exception_illegal(ctx);
-        return;
-    }
-
-    gen_sync_pc(ctx); // SNPS added
-
-    t0 = tcg_temp_new(tcg_ctx);
-    gen_get_gpr(ctx, t0, rs1);
-    tcg_gen_addi_tl(tcg_ctx, t0, t0, imm);
-
-    switch (opc) {
-    case OPC_RISC_FSW:
-        if (!has_ext(ctx, RVF)) {
-            goto do_illegal;
-        }
-        tcg_gen_qemu_st_i64(ctx->uc, tcg_ctx->cpu_fpr_risc[rs2], t0, ctx->mem_idx, MO_TEUL);
-        break;
-    case OPC_RISC_FSD:
-        if (!has_ext(ctx, RVD)) {
-            goto do_illegal;
-        }
-        tcg_gen_qemu_st_i64(ctx->uc, tcg_ctx->cpu_fpr_risc[rs2], t0, ctx->mem_idx, MO_TEQ);
-        break;
-    do_illegal:
-    default:
-        gen_exception_illegal(ctx);
-        break;
-    }
-
-    tcg_temp_free(tcg_ctx, t0);
-}
-#endif
-
 static void gen_set_rm(DisasContext *ctx, int rm)
 {
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
@@ -535,47 +424,9 @@ static void gen_set_rm(DisasContext *ctx, int rm)
     tcg_temp_free_i32(tcg_ctx, t0);
 }
 
-static void decode_RV32_64C0(DisasContext *ctx)
+static int ex_plus_1(DisasContext *ctx, int nf)
 {
-    uint8_t funct3 = extract32(ctx->opcode, 13, 3);
-    uint8_t rd_rs2 = GET_C_RS2S(ctx->opcode);
-    uint8_t rs1s = GET_C_RS1S(ctx->opcode);
-
-    switch (funct3) {
-    case 3:
-#if defined(TARGET_RISCV64)
-        /* C.LD(RV64/128) -> ld rd', offset[7:3](rs1')*/
-        gen_load_c(ctx, OPC_RISC_LD, rd_rs2, rs1s,
-                 GET_C_LD_IMM(ctx->opcode));
-#else
-        /* C.FLW (RV32) -> flw rd', offset[6:2](rs1')*/
-        gen_fp_load(ctx, OPC_RISC_FLW, rd_rs2, rs1s,
-                    GET_C_LW_IMM(ctx->opcode));
-#endif
-        break;
-    case 7:
-#if defined(TARGET_RISCV64)
-        /* C.SD (RV64/128) -> sd rs2', offset[7:3](rs1')*/
-        gen_store_c(ctx, OPC_RISC_SD, rs1s, rd_rs2,
-                  GET_C_LD_IMM(ctx->opcode));
-#else
-        /* C.FSW (RV32) -> fsw rs2', offset[6:2](rs1')*/
-        gen_fp_store(ctx, OPC_RISC_FSW, rs1s, rd_rs2,
-                     GET_C_LW_IMM(ctx->opcode));
-#endif
-        break;
-    }
-}
-
-static void decode_RV32_64C(DisasContext *ctx)
-{
-    uint8_t op = extract32(ctx->opcode, 0, 2);
-
-    switch (op) {
-    case 0:
-        decode_RV32_64C0(ctx);
-        break;
-    }
+    return nf + 1;
 }
 
 #define EX_SH(amount) \
@@ -747,21 +598,14 @@ static bool gen_shift(DisasContext *ctx, arg_r *a,
     return true;
 }
 
-// SNPS integrated semihosting support
-static uint32_t opcode_at(DisasContextBase *dcbase, target_ulong addr)
-{
-    DisasContext *ctx = container_of(dcbase, DisasContext, base);
-    CPURISCVState *env = ctx->uc->cpu->env_ptr;
-
-    return cpu_ldl_code(env, addr);
-}
-
 /* Include insn module translation function */
 #include "insn_trans/trans_rvi.inc.c"
 #include "insn_trans/trans_rvm.inc.c"
 #include "insn_trans/trans_rva.inc.c"
 #include "insn_trans/trans_rvf.inc.c"
 #include "insn_trans/trans_rvd.inc.c"
+#include "insn_trans/trans_rvh.inc.c"
+#include "insn_trans/trans_rvv.inc.c"
 #include "insn_trans/trans_privileged.inc.c"
 
 /* Include the auto-generated decoder for 16 bit insn */
@@ -776,8 +620,7 @@ static void decode_opc(DisasContext *ctx)
         } else {
             ctx->pc_succ_insn = ctx->base.pc_next + 2;
             if (!decode_insn16(ctx, ctx->opcode)) {
-                /* fall back to old decoder */
-                decode_RV32_64C(ctx);
+                gen_exception_illegal(ctx);
             }
         }
     } else {
@@ -793,25 +636,16 @@ static void riscv_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     DisasContext *ctx = container_of(dcbase, DisasContext, base);
     CPURISCVState *env = cs->env_ptr;
     RISCVCPU *cpu = RISCV_CPU(cs->uc, cs);
+    uint32_t tb_flags = ctx->base.tb->flags;
 
     ctx->uc = cs->uc;
     ctx->pc_succ_insn = ctx->base.pc_first;
-    ctx->mem_idx = ctx->base.tb->flags & TB_FLAGS_MMU_MASK;
-    ctx->mstatus_fs = ctx->base.tb->flags & TB_FLAGS_MSTATUS_FS;
+    ctx->mem_idx = tb_flags & TB_FLAGS_MMU_MASK;
+    ctx->mstatus_fs = tb_flags & TB_FLAGS_MSTATUS_FS;
     ctx->priv_ver = env->priv_ver;
 #if !defined(CONFIG_USER_ONLY)
     if (riscv_has_ext(env, RVH)) {
         ctx->virt_enabled = riscv_cpu_virt_enabled(env);
-        if (env->priv_ver == PRV_M &&
-            get_field(env->mstatus, MSTATUS_MPRV) &&
-            MSTATUS_MPV_ISSET(env)) {
-            ctx->virt_enabled = true;
-        } else if (env->priv == PRV_S &&
-                   !riscv_cpu_virt_enabled(env) &&
-                   get_field(env->hstatus, HSTATUS_SPRV) &&
-                   get_field(env->hstatus, HSTATUS_SPV)) {
-            ctx->virt_enabled = true;
-        }
     } else {
         ctx->virt_enabled = false;
     }
@@ -821,6 +655,13 @@ static void riscv_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     ctx->misa = env->misa;
     ctx->frm = -1;  /* unknown rounding mode */
     ctx->ext_ifencei = cpu->cfg.ext_ifencei;
+    ctx->vlen = cpu->cfg.vlen;
+    ctx->hlsx = FIELD_EX32(tb_flags, TB_FLAGS, HLSX);
+    ctx->vill = FIELD_EX32(tb_flags, TB_FLAGS, VILL);
+    ctx->sew = FIELD_EX32(tb_flags, TB_FLAGS, SEW);
+    ctx->lmul = FIELD_EX32(tb_flags, TB_FLAGS, LMUL);
+    ctx->mlen = 1 << (ctx->sew  + 3 - ctx->lmul);
+    ctx->vl_eq_vlmax = FIELD_EX32(tb_flags, TB_FLAGS, VL_EQ_VLMAX);
 }
 
 static void riscv_tr_tb_start(DisasContextBase *db, CPUState *cpu)
@@ -842,13 +683,6 @@ static bool riscv_tr_breakpoint_check(DisasContextBase *dcbase, CPUState *cpu,
     TCGContext *tcg_ctx = cpu->uc->tcg_ctx;
 
     tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, ctx->base.pc_next);
-
-    if (bp->flags & BP_CALL) { // SNPS added
-        gen_helper_call_breakpoints(tcg_ctx, tcg_ctx->cpu_env);
-        ctx->base.is_jmp = DISAS_TOO_MANY;
-        return true;
-    }
-
     ctx->base.is_jmp = DISAS_NORETURN;
     gen_exception_debug(ctx);
     /* The address covered by the breakpoint must be included in
@@ -952,6 +786,7 @@ void riscv_translate_init(struct uc_struct *uc)
     }
 
     tcg_ctx->cpu_pc_risc = tcg_global_mem_new(tcg_ctx, tcg_ctx->cpu_env, offsetof(CPURISCVState, pc), "pc");
+    tcg_ctx->cpu_vl_risc = tcg_global_mem_new(tcg_ctx, tcg_ctx->cpu_env, offsetof(CPURISCVState, vl), "vl");
     tcg_ctx->load_res_risc = tcg_global_mem_new(tcg_ctx, tcg_ctx->cpu_env, offsetof(CPURISCVState, load_res),
                              "load_res");
     tcg_ctx->load_val_risc = tcg_global_mem_new(tcg_ctx, tcg_ctx->cpu_env, offsetof(CPURISCVState, load_val),

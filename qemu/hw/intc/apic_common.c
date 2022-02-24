@@ -242,28 +242,18 @@ static void apic_common_class_init(struct uc_struct *uc, ObjectClass *klass, voi
      * x86_cpu_apic_create()
      */
     dc->cannot_instantiate_with_device_add_yet = true;
-    //printf("... init apic common class\n");
 }
 
 static const TypeInfo apic_common_type = {
-    TYPE_APIC_COMMON,
-    TYPE_DEVICE,
+    .name = TYPE_APIC_COMMON,
+    .parent = TYPE_DEVICE,
 
-    sizeof(APICCommonClass),
-    sizeof(APICCommonState),
-    NULL,
+    .class_size = sizeof(APICCommonClass),
+    .instance_size = sizeof(APICCommonState),
 
-    NULL,
-    NULL,
-    NULL,
+    .class_init = apic_common_class_init,
 
-    NULL,
-
-    apic_common_class_init,
-    NULL,
-    NULL,
-
-    true,
+    .abstract = true,
 };
 
 void apic_common_register_types(struct uc_struct *uc)

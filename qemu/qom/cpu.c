@@ -87,11 +87,11 @@ void cpu_reset_interrupt(CPUState *cpu, int mask)
 
 void cpu_exit(CPUState *cpu)
 {
-    atomic_set(&cpu->exit_request, 1);
+    qatomic_set(&cpu->exit_request, 1);
     /* Ensure cpu_exec will see the exit request after TCG has exited.  */
     smp_wmb();
-    atomic_set(&cpu->tcg_exit_req, 1);
-    atomic_set(&cpu->icount_decr_ptr->u16.high, -1);
+    qatomic_set(&cpu->tcg_exit_req, 1);
+    qatomic_set(&cpu->icount_decr_ptr->u16.high, -1);
 }
 
 static void cpu_common_noop(CPUState *cpu)
@@ -146,7 +146,7 @@ static void cpu_common_reset(CPUState *cpu)
     cpu->mem_io_pc = 0;
     cpu->mem_io_vaddr = 0;
     cpu->icount_extra = 0;
-    atomic_set(&cpu->icount_decr_ptr->u32, 0);
+    qatomic_set(&cpu->icount_decr_ptr->u32, 0);
     cpu->can_do_io = 1; // SNPS changed
     cpu->exception_index = -1;
     cpu->crash_occurred = false;
@@ -293,12 +293,12 @@ static void cpu_class_init(struct uc_struct *uc, ObjectClass *klass, void *data)
     k->has_work = cpu_common_has_work;
     k->get_paging_enabled = cpu_common_get_paging_enabled;
     k->get_memory_mapping = cpu_common_get_memory_mapping;
-    k->debug_excp_handler = cpu_common_noop;
-    k->debug_check_watchpoint = cpu_common_debug_check_watchpoint;
-    k->cpu_exec_enter = cpu_common_noop;
-    k->cpu_exec_exit = cpu_common_noop;
-    k->cpu_exec_interrupt = cpu_common_exec_interrupt;
-    k->adjust_watchpoint_address = cpu_adjust_watchpoint_address;
+    k->tcg_ops.debug_excp_handler = cpu_common_noop;
+    k->tcg_ops.debug_check_watchpoint = cpu_common_debug_check_watchpoint;
+    k->tcg_ops.adjust_watchpoint_address = cpu_adjust_watchpoint_address;
+    k->tcg_ops.cpu_exec_enter = cpu_common_noop;
+    k->tcg_ops.cpu_exec_exit = cpu_common_noop;
+    k->tcg_ops.cpu_exec_interrupt = cpu_common_exec_interrupt;
     dc->realize = cpu_common_realizefn;
     /*
      * Reason: CPUs still need special care by board code: wiring up
@@ -308,24 +308,18 @@ static void cpu_class_init(struct uc_struct *uc, ObjectClass *klass, void *data)
 }
 
 static const TypeInfo cpu_type_info = {
-    TYPE_CPU,
-    TYPE_DEVICE,
+    .name = TYPE_CPU,
+    .parent = TYPE_DEVICE,
 
-    sizeof(CPUClass),
-    sizeof(CPUState),
-    NULL,
+    .class_size = sizeof(CPUClass),
+    .instance_size = sizeof(CPUState),
 
-    cpu_common_initfn,
-    NULL,
-    cpu_common_finalize,
+    .instance_init = cpu_common_initfn,
+    .instance_finalize = cpu_common_finalize,
 
-    NULL,
+    .class_init = cpu_class_init,
 
-    cpu_class_init,
-    NULL,
-    NULL,
-
-    true,
+    .abstract = true,
 };
 
 void cpu_register_types(struct uc_struct *uc)

@@ -29,30 +29,6 @@ static bool trans_ecall(DisasContext *ctx, arg_ecall *a)
 
 static bool trans_ebreak(DisasContext *ctx, arg_ebreak *a)
 {
-    // SNPS pulled in semihosting support
-    uint32_t pre    = opcode_at(&ctx->base, ctx->base.pc_next - 4);
-    uint32_t ebreak = opcode_at(&ctx->base, ctx->base.pc_next);
-    uint32_t post   = opcode_at(&ctx->base, ctx->base.pc_next + 4);
-    /*
-     * The RISC-V semihosting spec specifies the following
-     * three-instruction sequence to flag a semihosting call:
-     *
-     *      slli zero, zero, 0x1f       0x01f01013
-     *      ebreak                      0x00100073
-     *      srai zero, zero, 0x7        0x40705013
-     *
-     * The two shift operations on the zero register are no-ops, used
-     * here to signify a semihosting exception, rather than a breakpoint.
-     *
-     * Uncompressed instructions are used so that the sequence is easy
-     * to validate.
-     */
-    if  (pre == 0x01f01013 && ebreak == 0x00100073 && post == 0x40705013) {
-        generate_exception(ctx, RISCV_EXCP_SEMIHOST);
-    } else {
-        generate_exception(ctx, RISCV_EXCP_BREAKPOINT);
-    }
-
     generate_exception(ctx, RISCV_EXCP_BREAKPOINT);
     exit_tb(ctx); /* no chaining */
     ctx->base.is_jmp = DISAS_NORETURN;
@@ -121,45 +97,5 @@ static bool trans_sfence_vma(DisasContext *ctx, arg_sfence_vma *a)
 
 static bool trans_sfence_vm(DisasContext *ctx, arg_sfence_vm *a)
 {
-    return false;
-}
-
-static bool trans_hfence_gvma(DisasContext *ctx, arg_sfence_vma *a)
-{
-#ifndef CONFIG_USER_ONLY
-    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-    if (has_ext(ctx, RVH)) {
-        /* Hpervisor extensions exist */
-        /*
-         * if (env->priv == PRV_M ||
-         *   (env->priv == PRV_S &&
-         *    !riscv_cpu_virt_enabled(env) &&
-         *    get_field(ctx->mstatus_fs, MSTATUS_TVM))) {
-         */
-            gen_helper_tlb_flush(tcg_ctx, tcg_ctx->cpu_env);
-            return true;
-        /* } */
-    }
-#endif
-    return false;
-}
-
-static bool trans_hfence_bvma(DisasContext *ctx, arg_sfence_vma *a)
-{
-#ifndef CONFIG_USER_ONLY
-    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-    if (has_ext(ctx, RVH)) {
-        /* Hpervisor extensions exist */
-        /*
-         * if (env->priv == PRV_M ||
-         *   (env->priv == PRV_S &&
-         *    !riscv_cpu_virt_enabled(env) &&
-         *    get_field(ctx->mstatus_fs, MSTATUS_TVM))) {
-         */
-            gen_helper_tlb_flush(tcg_ctx, tcg_ctx->cpu_env);
-            return true;
-        /* } */
-    }
-#endif
     return false;
 }

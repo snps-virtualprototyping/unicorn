@@ -68,36 +68,26 @@ static uint64_t calc_pc_offset(struct uc_struct *uc, CPUARMState *state) {
 
 int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int count)
 {
-    CPUState *mycpu = uc->cpu;
-    ARMCPU *cpu = ARM_CPU(uc, mycpu);
-    CPUARMState *state = &cpu->env;
-
+    ARMCPU* mycpu = ARM_CPU(uc, uc->cpu); // SNPS changed
+    CPUARMState* state = &mycpu->env; // SNPS changed
     int i;
 
     for (i = 0; i < count; i++) {
         unsigned int regid = regs[i];
         void *value = vals[i];
-
-#ifdef UNICORN_HAS_ARM // SNPS added
-        if (regid < UC_ARM64_REG_INVALID) {
-            int res = arm_reg_read_arm(uc, &regid, &value, 1);
-            if (res != 0)
-                return res;
-            continue;
+        // V & Q registers are the same
+        if (regid >= UC_ARM64_REG_V0 && regid <= UC_ARM64_REG_V31) {
+            regid += UC_ARM64_REG_Q0 - UC_ARM64_REG_V0;
         }
-#endif
-
         if (regid >= UC_ARM64_REG_X0 && regid <= UC_ARM64_REG_X28) {
             *(int64_t *)value = state->xregs[regid - UC_ARM64_REG_X0];
         } else if (regid >= UC_ARM64_REG_W0 && regid <= UC_ARM64_REG_W30) {
             *(int32_t *)value = READ_DWORD(state->xregs[regid - UC_ARM64_REG_W0]);
-            // V & Q registers are the same
-        } else if (regid >= UC_ARM64_REG_V0 && regid <= UC_ARM64_REG_V31) {
-            const float64 *q_reg = aa64_vfp_qreg(state, regid - UC_ARM64_REG_V0);
-            memcpy(value, q_reg, 8);
         } else if (regid >= UC_ARM64_REG_Q0 && regid <= UC_ARM64_REG_Q31) {
+            float64 *dst = (float64*) value;
             const float64 *q_reg = aa64_vfp_qreg(state, regid - UC_ARM64_REG_Q0);
-            memcpy(value, q_reg, 16);
+            dst[0] = q_reg[0];
+            dst[1] = q_reg[1];
         } else if (regid >= UC_ARM64_REG_D0 && regid <= UC_ARM64_REG_D31) {
             const float64 *q_reg = aa64_vfp_qreg(state, regid - UC_ARM64_REG_D0);
             *(float64*)value = *q_reg;
@@ -150,10 +140,10 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
                 *(int32_t *)value = state->vfp.xregs[ARM_VFP_FPEXC];
                 break;
             case UC_ARM64_REG_MIDR:
-                *(uint32_t *)value = cpu->midr;
+                *(uint32_t *)value = mycpu->midr;
                 break;
             case UC_ARM64_REG_MPIDR:
-                *(uint64_t *)value = cpu->mp_affinity;
+                *(uint64_t *)value = mycpu->mp_affinity;
                 break;
             case UC_ARM64_REG_VPIDR:
                 *(uint64_t *)value = state->cp15.vpidr_el2;
@@ -162,7 +152,7 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
                 *(uint64_t *)value = state->cp15.vmpidr_el2;
                 break;
             case UC_ARM64_REG_RVBAR:
-                *(uint64_t *)value = cpu->rvbar;
+                *(uint64_t *)value = mycpu->rvbar;
                 break;
             case UC_ARM64_VREG_AA64:
                 *(uint32_t *)value = state->aarch64;
@@ -292,35 +282,25 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
 
 int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals, int count)
 {
-    CPUState *mycpu = uc->cpu;
-    ARMCPU *cpu = ARM_CPU(uc, mycpu);
-    CPUARMState *state = &cpu->env;
-
+    ARMCPU *mycpu = ARM_CPU(uc, uc->cpu); // SNPS changed
+    CPUARMState *state = &mycpu->env; // SNPS changed
     int i;
 
     for (i = 0; i < count; i++) {
         unsigned int regid = regs[i];
         const void *value = vals[i];
-
-#ifdef UNICORN_HAS_ARM
-        if (regid < UC_ARM64_REG_INVALID) {
-            int res = arm_reg_write_arm(uc, &regid, (void* const*)&value, 1);
-            if (res != 0)
-                return res;
-            continue;
+        if (regid >= UC_ARM64_REG_V0 && regid <= UC_ARM64_REG_V31) {
+            regid += UC_ARM64_REG_Q0 - UC_ARM64_REG_V0;
         }
-#endif
-
         if (regid >= UC_ARM64_REG_X0 && regid <= UC_ARM64_REG_X28) {
             state->xregs[regid - UC_ARM64_REG_X0] = *(uint64_t *)value;
         } else if (regid >= UC_ARM64_REG_W0 && regid <= UC_ARM64_REG_W30) {
             WRITE_DWORD(state->xregs[regid - UC_ARM64_REG_W0], *(uint32_t *)value);
-        } else if (regid >= UC_ARM64_REG_V0 && regid <= UC_ARM64_REG_V31) {
-            float64 *q_reg = aa64_vfp_qreg(state, regid - UC_ARM64_REG_V0);
-            memcpy(q_reg, value, 8);
         } else if (regid >= UC_ARM64_REG_Q0 && regid <= UC_ARM64_REG_Q31) {
+            const float64 *src = (const float64*) value;
             float64 *q_reg = aa64_vfp_qreg(state, regid - UC_ARM64_REG_Q0);
-            memcpy(q_reg, value, 16);
+            q_reg[0] = src[0];
+            q_reg[1] = src[1];
         } else if (regid >= UC_ARM64_REG_D0 && regid <= UC_ARM64_REG_D31) {
             float64 *q_reg = aa64_vfp_qreg(state, regid - UC_ARM64_REG_D0);
             *q_reg = *(float64*) value;
@@ -378,11 +358,11 @@ int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals,
                 state->vfp.xregs[ARM_VFP_FPEXC] = *(int32_t *)value;
                 break;
             case UC_ARM64_REG_MIDR:
-                cpu->midr = *(uint32_t*)value;
+                mycpu->midr = *(uint32_t*)value;
                 break;
             case UC_ARM64_REG_MPIDR:
-                cpu->mp_affinity = *(uint64_t*)value | (1ull << 31);
-                cpu->mp_affinity &= 0xffc1fffffull;
+                mycpu->mp_affinity = *(uint64_t*)value | (1ull << 31);
+                mycpu->mp_affinity &= 0xffc1fffffull;
                 break;
             case UC_ARM64_REG_VPIDR:
                 state->cp15.vpidr_el2 = *(uint64_t*)value & 0xffffffffull;
@@ -392,11 +372,11 @@ int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals,
                 state->cp15.vmpidr_el2 &= 0xffc1fffffull;
                 break;
             case UC_ARM64_REG_RVBAR:
-                cpu->rvbar = *(uint64_t*)value;
-                state->cp15.vbar_el[0] = cpu->rvbar;
-                state->cp15.vbar_el[1] = cpu->rvbar;
-                state->cp15.vbar_el[2] = cpu->rvbar;
-                state->cp15.vbar_el[3] = cpu->rvbar;
+                mycpu->rvbar = *(uint64_t*)value;
+                state->cp15.vbar_el[0] = mycpu->rvbar;
+                state->cp15.vbar_el[1] = mycpu->rvbar;
+                state->cp15.vbar_el[2] = mycpu->rvbar;
+                state->cp15.vbar_el[3] = mycpu->rvbar;
                 break;
 
             case UC_ARM64_REG_SP_EL0:

@@ -157,7 +157,7 @@ static bool tcg_exec_all(struct uc_struct* uc)
 
     cpu->is_idle = false;
 
-    atomic_set(&cpu->exit_request, 0);
+    qatomic_set(&cpu->exit_request, 0);
     while (!uc->cpu->exit_request) {
         //qemu_clock_enable(QEMU_CLOCK_VIRTUAL,
         //                  (cpu->singlestep_enabled & SSTEP_NOTIMER) == 0);
@@ -200,7 +200,7 @@ static bool tcg_exec_all(struct uc_struct* uc)
     }
 
     if (uc->cpu && uc->cpu->exit_request) {
-        atomic_mb_set(&uc->cpu->exit_request, 0);
+        qatomic_mb_set(&uc->cpu->exit_request, 0);
     }
 
     return finish;

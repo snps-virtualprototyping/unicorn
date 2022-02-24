@@ -103,8 +103,8 @@ static void aarch64_a57_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->isar.mvfr2 = 0x00000043;
     cpu->ctr = 0x8444c004;
     cpu->reset_sctlr = 0x00c50838;
-    cpu->id_pfr0 = 0x00000131;
-    cpu->id_pfr1 = 0x00011011;
+    cpu->isar.id_pfr0 = 0x00000131;
+    cpu->isar.id_pfr1 = 0x00011011;
     cpu->isar.id_dfr0 = 0x03010066;
     cpu->id_afr0 = 0x00000000;
     cpu->isar.id_mmfr0 = 0x10101105;
@@ -128,6 +128,7 @@ static void aarch64_a57_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->ccsidr[1] = 0x201fe012; /* 48KB L1 icache */
     cpu->ccsidr[2] = 0x70ffe07a; /* 2048KB L2 cache */
     cpu->dcz_blocksize = 4; /* 64 bytes */
+    cpu->isar.reset_pmcr_el0 = 0x41013000;
     define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
     gicv3_init_cpuif(cpu); // SNPS added
 }
@@ -154,8 +155,8 @@ static void aarch64_a53_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->isar.mvfr2 = 0x00000043;
     cpu->ctr = 0x84448004; /* L1Ip = VIPT */
     cpu->reset_sctlr = 0x00c50838;
-    cpu->id_pfr0 = 0x00000131;
-    cpu->id_pfr1 = 0x00011011;
+    cpu->isar.id_pfr0 = 0x00000131;
+    cpu->isar.id_pfr1 = 0x00011011;
     cpu->isar.id_dfr0 = 0x03010066;
     cpu->id_afr0 = 0x00000000;
     cpu->isar.id_mmfr0 = 0x10101105;
@@ -179,6 +180,7 @@ static void aarch64_a53_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->ccsidr[1] = 0x201fe00a; /* 32KB L1 icache */
     cpu->ccsidr[2] = 0x707fe07a; /* 1024KB L2 cache */
     cpu->dcz_blocksize = 4; /* 64 bytes */
+    cpu->isar.reset_pmcr_el0 = 0x41033000;
     define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
     gicv3_init_cpuif(cpu); // SNPS added
 }
@@ -204,8 +206,8 @@ static void aarch64_a72_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->isar.mvfr2 = 0x00000043;
     cpu->ctr = 0x8444c004;
     cpu->reset_sctlr = 0x00c50838;
-    cpu->id_pfr0 = 0x00000131;
-    cpu->id_pfr1 = 0x00011011;
+    cpu->isar.id_pfr0 = 0x00000131;
+    cpu->isar.id_pfr1 = 0x00011011;
     cpu->isar.id_dfr0 = 0x03010066;
     cpu->id_afr0 = 0x00000000;
     cpu->isar.id_mmfr0 = 0x10201105;
@@ -228,6 +230,7 @@ static void aarch64_a72_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->ccsidr[1] = 0x201fe012; /* 48KB L1 icache */
     cpu->ccsidr[2] = 0x707fe07a; /* 1MB L2 cache */
     cpu->dcz_blocksize = 4; /* 64 bytes */
+    cpu->isar.reset_pmcr_el0 = 0x41023000;
     define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
     gicv3_init_cpuif(cpu); // SNPS added
 }
@@ -298,11 +301,23 @@ static void aarch64_max_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     t = FIELD_DP64(t, ID_AA64PFR0, SVE, 1);
     t = FIELD_DP64(t, ID_AA64PFR0, FP, 1);
     t = FIELD_DP64(t, ID_AA64PFR0, ADVSIMD, 1);
+    t = FIELD_DP64(t, ID_AA64PFR0, SEL2, 1);
+    t = FIELD_DP64(t, ID_AA64PFR0, DIT, 1);
     cpu->isar.id_aa64pfr0 = t;
 
     t = cpu->isar.id_aa64pfr1;
     t = FIELD_DP64(t, ID_AA64PFR1, BT, 1);
+    t = FIELD_DP64(t, ID_AA64PFR1, SSBS, 2);
+    /*
+     * Begin with full support for MTE; will be downgraded to MTE=1
+     * during realize if the board provides no tag memory.
+     */
+    t = FIELD_DP64(t, ID_AA64PFR1, MTE, 2);
     cpu->isar.id_aa64pfr1 = t;
+
+    t = cpu->isar.id_aa64mmfr0;
+    t = FIELD_DP64(t, ID_AA64MMFR0, PARANGE, 5); /* PARange: 48 bits */
+    cpu->isar.id_aa64mmfr0 = t;
 
     t = cpu->isar.id_aa64mmfr1;
     t = FIELD_DP64(t, ID_AA64MMFR1, HPDS, 1); /* HPD */
@@ -315,6 +330,8 @@ static void aarch64_max_initfn(struct uc_struct *uc, Object *obj, void *opaque)
 
     t = cpu->isar.id_aa64mmfr2;
     t = FIELD_DP64(t, ID_AA64MMFR2, UAO, 1);
+    t = FIELD_DP64(t, ID_AA64MMFR2, CNP, 1); /* TTCNP */
+    t = FIELD_DP64(t, ID_AA64MMFR2, ST, 1); /* TTST */
     cpu->isar.id_aa64mmfr2 = t;
 
     /* Replicate the same data to the 32-bit id registers.  */
@@ -335,6 +352,14 @@ static void aarch64_max_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     u = FIELD_DP32(u, ID_ISAR6, SPECRES, 1);
     cpu->isar.id_isar6 = u;
 
+    u = cpu->isar.id_pfr0;
+    u = FIELD_DP32(u, ID_PFR0, DIT, 1);
+    cpu->isar.id_pfr0 = u;
+
+    u = cpu->isar.id_pfr2;
+    u = FIELD_DP32(u, ID_PFR2, SSBS, 1);
+    cpu->isar.id_pfr2 = u;
+
     u = cpu->isar.id_mmfr3;
     u = FIELD_DP32(u, ID_MMFR3, PAN, 2); /* ATS1E1 */
     cpu->isar.id_mmfr3 = u;
@@ -354,13 +379,11 @@ static void aarch64_max_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     u = FIELD_DP32(u, ID_DFR0, PERFMON, 5); /* v8.4-PMU */
     cpu->isar.id_dfr0 = u;
 
-    // Unicorn: we lie and enable them anyway
-    /*
-     * FIXME: We do not yet support ARMv8.2-fp16 for AArch32 yet,
-     * so do not set MVFR1.FPHP.  Strictly speaking this is not legal,
-     * but it is also not legal to enable SVE without support for FP16,
-     * and enabling SVE in system mode is more useful in the short term.
-     */
+    u = cpu->isar.mvfr1;
+    u = FIELD_DP32(u, MVFR1, FPHP, 3);      /* v8.2-FP16 */
+    u = FIELD_DP32(u, MVFR1, SIMDHP, 2);    /* v8.2-FP16 */
+    cpu->isar.mvfr1 = u;
+
     /* For usermode -cpu max we can use a larger and more efficient DCZ
      * blocksize since we don't have to follow what the hardware does.
      */
@@ -400,7 +423,9 @@ static void aarch64_cpu_class_init(struct uc_struct *uc, ObjectClass *oc, void *
 {
     CPUClass *cc = CPU_CLASS(uc, oc);
 
-    cc->cpu_exec_interrupt = arm_cpu_exec_interrupt;
+#ifdef CONFIG_TCG
+    cc->tcg_ops.cpu_exec_interrupt = arm_cpu_exec_interrupt;
+#endif /* CONFIG_TCG */
 }
 
 void aarch64_cpu_register(struct uc_struct *uc, const ARMCPUInfo *info)

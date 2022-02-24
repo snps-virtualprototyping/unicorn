@@ -58,16 +58,9 @@ void x86_cpu_register_types(struct uc_struct *uc);
         mc->arch = UC_ARCH_X86; \
     } \
     static const TypeInfo pc_machine_type_##suffix = { \
-        namestr TYPE_MACHINE_SUFFIX, \
-        TYPE_PC_MACHINE, \
-        0, \
-        0, \
-        NULL, \
-        NULL, \
-        NULL, \
-        NULL, \
-        NULL, \
-        pc_machine_##suffix##_class_init, \
+        .name = namestr TYPE_MACHINE_SUFFIX, \
+        .parent = TYPE_PC_MACHINE, \
+        .class_init = pc_machine_##suffix##_class_init, \
     }; \
     void pc_machine_init_##suffix(struct uc_struct *uc); \
     void pc_machine_init_##suffix(struct uc_struct *uc) \

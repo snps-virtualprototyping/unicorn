@@ -40,6 +40,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 typedef void* gpointer;
 typedef const void *gconstpointer;
 typedef int gint;
+typedef int32_t gint32;
+typedef int64_t gint64;
 typedef uint32_t guint32;
 typedef uint64_t guint64;
 typedef unsigned int guint;
@@ -67,6 +69,9 @@ gboolean g_str_has_prefix(const gchar *str, const gchar *prefix);
 
 guint g_int_hash(gconstpointer v);
 gboolean g_int_equal(gconstpointer v1, gconstpointer v2);
+
+guint g_int64_hash(gconstpointer v);
+gboolean g_int64_equal(gconstpointer v1, gconstpointer v2);
 
 typedef struct _GList {
   gpointer data;

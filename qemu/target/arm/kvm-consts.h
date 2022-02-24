@@ -14,8 +14,9 @@
 #ifndef ARM_KVM_CONSTS_H
 #define ARM_KVM_CONSTS_H
 
+#include "qemu/compiler.h" // SNPS changed
+
 #ifdef CONFIG_KVM
-#include "qemu/compiler.h"
 #include <linux/kvm.h>
 #include <linux/psci.h>
 
@@ -23,7 +24,7 @@
 
 #else
 
-#define MISMATCH_CHECK(X, Y) //QEMU_BUILD_BUG_ON(0)
+#define MISMATCH_CHECK(X, Y) QEMU_BUILD_BUG_ON(0)
 
 #endif
 

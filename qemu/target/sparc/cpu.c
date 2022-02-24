@@ -730,7 +730,7 @@ static void sparc_cpu_set_pc(CPUState *cs, vaddr value)
     cpu->env.npc = value + 4;
 }
 
-static void sparc_cpu_synchronize_from_tb(CPUState *cs, TranslationBlock *tb)
+static void sparc_cpu_synchronize_from_tb(CPUState *cs, const TranslationBlock *tb)
 {
     SPARCCPU *cpu = SPARC_CPU(cs->uc, cs);
 
@@ -840,23 +840,23 @@ static void sparc_cpu_class_init(struct uc_struct *uc, ObjectClass *oc, void *da
     cc->class_by_name = sparc_cpu_class_by_name;
     cc->parse_features = sparc_cpu_parse_features;
     cc->has_work = sparc_cpu_has_work;
-    cc->do_interrupt = sparc_cpu_do_interrupt;
-    cc->cpu_exec_interrupt = sparc_cpu_exec_interrupt;
+    cc->tcg_ops.do_interrupt = sparc_cpu_do_interrupt;
+    cc->tcg_ops.cpu_exec_interrupt = sparc_cpu_exec_interrupt;
     //cc->dump_state = sparc_cpu_dump_state;
 #if !defined(TARGET_SPARC64) && !defined(CONFIG_USER_ONLY)
     cc->memory_rw_debug = sparc_cpu_memory_rw_debug;
 #endif
     cc->set_pc = sparc_cpu_set_pc;
-    cc->synchronize_from_tb = sparc_cpu_synchronize_from_tb;
-    cc->tlb_fill = sparc_cpu_tlb_fill;
+    cc->tcg_ops.synchronize_from_tb = sparc_cpu_synchronize_from_tb;
+    cc->tcg_ops.tlb_fill = sparc_cpu_tlb_fill;
 #ifndef CONFIG_USER_ONLY
-    cc->do_transaction_failed = sparc_cpu_do_transaction_failed;
-    cc->do_unaligned_access = sparc_cpu_do_unaligned_access;
+    cc->tcg_ops.do_transaction_failed = sparc_cpu_do_transaction_failed;
+    cc->tcg_ops.do_unaligned_access = sparc_cpu_do_unaligned_access;
     cc->get_phys_page_debug = sparc_cpu_get_phys_page_debug;
     // Unicorn: commented out
     //cc->vmsd = &vmstate_sparc_cpu;
 #endif
-    cc->tcg_initialize = sparc_tcg_init;
+    cc->tcg_ops.initialize = sparc_tcg_init;
 }
 
 static void sparc_cpu_cpudef_class_init(struct uc_struct *uc, ObjectClass *oc, void *data)
@@ -869,19 +869,13 @@ static void sparc_register_cpudef_type(struct uc_struct *uc, const struct sparc_
 {
     char *typename = sparc_cpu_type_name(def->name);
     const TypeInfo ti = {
-        typename,
-        TYPE_SPARC_CPU,
-        0,
-        0,
-        uc,
+        .name = typename,
+        .parent = TYPE_SPARC_CPU,
 
-        NULL,
-        NULL,
-        NULL,
+        .instance_userdata = uc,
 
-        (void *)def,
-
-        sparc_cpu_cpudef_class_init,
+        .class_data = (void *)def,
+        .class_init = sparc_cpu_cpudef_class_init,
     };
 
     type_register(uc, &ti);
@@ -893,24 +887,17 @@ void sparc_cpu_register_types(void *opaque)
     int i;
 
     const TypeInfo sparc_cpu_type_info = {
-        TYPE_SPARC_CPU,
-        TYPE_CPU,
+        .name = TYPE_SPARC_CPU,
+        .parent = TYPE_CPU,
 
-        sizeof(SPARCCPUClass),
-        sizeof(SPARCCPU),
-        opaque,
+        .class_size = sizeof(SPARCCPUClass),
+        .instance_size = sizeof(SPARCCPU),
+        .instance_userdata = opaque,
 
-        sparc_cpu_initfn,
-        NULL,
-        NULL,
+        .instance_init = sparc_cpu_initfn,
+        .class_init = sparc_cpu_class_init,
 
-        NULL,
-
-        sparc_cpu_class_init,
-        NULL,
-        NULL,
-
-        true,
+        .abstract = true,
     };
 
     type_register(opaque, &sparc_cpu_type_info);

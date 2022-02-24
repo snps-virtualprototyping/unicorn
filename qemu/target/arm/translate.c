@@ -9,7 +9,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -47,8 +47,6 @@
 #define ENABLE_ARCH_6T2   arm_dc_feature(s, ARM_FEATURE_THUMB2)
 #define ENABLE_ARCH_7     arm_dc_feature(s, ARM_FEATURE_V7)
 #define ENABLE_ARCH_8     arm_dc_feature(s, ARM_FEATURE_V8)
-
-#define ARCH(x) do { if (!ENABLE_ARCH_##x) goto illegal_op; } while(0)
 
 #include "translate.h"
 
@@ -93,6 +91,40 @@ void arm_translate_init(struct uc_struct *uc)
         offsetof(CPUARMState, exclusive_val), "exclusive_val");
 
     a64_translate_init(uc);
+}
+
+/* Generate a label used for skipping this instruction */
+static void arm_gen_condlabel(DisasContext *s)
+{
+    if (!s->condjmp) {
+        TCGContext *tcg_ctx = s->uc->tcg_ctx;
+        s->condlabel = gen_new_label(tcg_ctx);
+        s->condjmp = 1;
+    }
+}
+
+/*
+ * Constant expanders for the decoders.
+ */
+
+static int negate(DisasContext *s, int x)
+{
+    return -x;
+}
+
+static int plus_2(DisasContext *s, int x)
+{
+    return x + 2;
+}
+
+static int times_2(DisasContext *s, int x)
+{
+    return x * 2;
+}
+
+static int times_4(DisasContext *s, int x)
+{
+    return x * 4;
 }
 
 /* Flags for the disas_set_da_iss info argument:
@@ -362,9 +394,8 @@ static void gen_smul_dual(DisasContext *s, TCGv_i32 a, TCGv_i32 b)
 }
 
 /* Byteswap each halfword.  */
-static void gen_rev16(DisasContext *s, TCGv_i32 dest, TCGv_i32 var)
+static void gen_rev16(TCGContext *tcg_ctx, TCGv_i32 dest, TCGv_i32 var)
 {
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
     TCGv_i32 tmp = tcg_temp_new_i32(tcg_ctx);
     TCGv_i32 mask = tcg_const_i32(tcg_ctx, 0x00ff00ff);
     tcg_gen_shri_i32(tcg_ctx, tmp, var, 8);
@@ -377,19 +408,17 @@ static void gen_rev16(DisasContext *s, TCGv_i32 dest, TCGv_i32 var)
 }
 
 /* Byteswap low halfword and sign extend.  */
-static void gen_revsh(DisasContext *s, TCGv_i32 dest, TCGv_i32 var)
+static void gen_revsh(TCGContext *tcg_ctx, TCGv_i32 dest, TCGv_i32 var)
 {
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
     tcg_gen_ext16u_i32(tcg_ctx, var, var);
     tcg_gen_bswap16_i32(tcg_ctx, var, var);
     tcg_gen_ext16s_i32(tcg_ctx, dest, var);
 }
 
 /* Swap low and high halfwords.  */
-static void gen_swap_half(DisasContext *s, TCGv_i32 var)
+static void gen_swap_half(TCGContext *s, TCGv_i32 dest, TCGv_i32 var)
 {
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    tcg_gen_rotri_i32(tcg_ctx, var, var, 16);
+    tcg_gen_rotri_i32(s, dest, var, 16);
 }
 
 /* Dual 16-bit add.  Result placed in t0 and t1 is marked as dead.
@@ -1109,6 +1138,23 @@ static void unallocated_encoding(DisasContext *s)
                        default_exception_el(s));
 }
 
+static void gen_exception_el(DisasContext *s, int excp, uint32_t syn,
+                             TCGv_i32 tcg_el)
+{
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+    TCGv_i32 tcg_excp;
+    TCGv_i32 tcg_syn;
+
+    gen_set_condexec(s);
+    gen_set_pc_im(s, s->pc_curr);
+    tcg_excp = tcg_const_i32(tcg_ctx, excp);
+    tcg_syn = tcg_const_i32(tcg_ctx, syn);
+    gen_helper_exception_with_syndrome(tcg_ctx, tcg_ctx->cpu_env, tcg_excp, tcg_syn, tcg_el);
+    tcg_temp_free_i32(tcg_ctx, tcg_syn);
+    tcg_temp_free_i32(tcg_ctx, tcg_excp);
+    s->base.is_jmp = DISAS_NORETURN;
+}
+
 /* Force a TB lookup after an instruction that changes the CPU state.  */
 static inline void gen_lookup_tb(DisasContext *s)
 {
@@ -1131,7 +1177,7 @@ static inline void gen_hlt(DisasContext *s, int imm)
      * semihosting, to provide some semblance of security
      * (and for consistency with our 32-bit semihosting).
      */
-    if (semihosting_enabled(s->uc) &&
+    if (semihosting_enabled(s->uc) && // SNPS changed
 #ifndef CONFIG_USER_ONLY
         s->current_el != 0 &&
 #endif
@@ -1143,186 +1189,150 @@ static inline void gen_hlt(DisasContext *s, int imm)
     unallocated_encoding(s);
 }
 
-static TCGv_ptr get_fpstatus_ptr(TCGContext *tcg_ctx, int neon)
+/*
+ * Return the offset of a "full" NEON Dreg.
+ */
+static long neon_full_reg_offset(unsigned reg)
 {
-    TCGv_ptr statusptr = tcg_temp_new_ptr(tcg_ctx);
-    int offset;
-    if (neon) {
-        offset = offsetof(CPUARMState, vfp.standard_fp_status);
-    } else {
-        offset = offsetof(CPUARMState, vfp.fp_status);
-    }
-    tcg_gen_addi_ptr(tcg_ctx, statusptr, tcg_ctx->cpu_env, offset);
-    return statusptr;
+    return offsetof(CPUARMState, vfp.zregs[reg >> 1].d[reg & 1]);
 }
 
-static inline long vfp_reg_offset(bool dp, unsigned reg)
-{
-    if (dp) {
-        return offsetof(CPUARMState, vfp.zregs[reg >> 1].d[reg & 1]);
-    } else {
-        long ofs = offsetof(CPUARMState, vfp.zregs[reg >> 2].d[(reg >> 1) & 1]);
-        if (reg & 1) {
-            ofs += offsetof(CPU_DoubleU, l.upper);
-        } else {
-            ofs += offsetof(CPU_DoubleU, l.lower);
-        }
-        return ofs;
-    }
-}
-
-/* Return the offset of a 32-bit piece of a NEON register.
-   zero is the least significant end of the register.  */
-static inline long
-neon_reg_offset (int reg, int n)
-{
-    int sreg;
-    sreg = reg * 2 + n;
-    return vfp_reg_offset(0, sreg);
-}
-
-/* Return the offset of a 2**SIZE piece of a NEON register, at index ELE,
+/*
+ * Return the offset of a 2**SIZE piece of a NEON register, at index ELE,
  * where 0 is the least significant end of the register.
  */
-static inline long
-neon_element_offset(int reg, int element, MemOp size)
+static long neon_element_offset(int reg, int element, MemOp memop)
 {
-    int element_size = 1 << size;
+    int element_size = 1 << (memop & MO_SIZE);
     int ofs = element * element_size;
 #ifdef HOST_WORDS_BIGENDIAN
-    /* Calculate the offset assuming fully little-endian,
+    /*
+     * Calculate the offset assuming fully little-endian,
      * then XOR to account for the order of the 8-byte units.
      */
     if (element_size < 8) {
         ofs ^= 8 - element_size;
     }
 #endif
-    return neon_reg_offset(reg, 0) + ofs;
+    return neon_full_reg_offset(reg) + ofs;
 }
 
-static TCGv_i32 neon_load_reg(DisasContext *s, int reg, int pass)
+/* Return the offset of a VFP Dreg (dp = true) or VFP Sreg (dp = false). */
+static long vfp_reg_offset(bool dp, unsigned reg)
 {
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    TCGv_i32 tmp = tcg_temp_new_i32(tcg_ctx);
-    tcg_gen_ld_i32(tcg_ctx, tmp, tcg_ctx->cpu_env, neon_reg_offset(reg, pass));
-    return tmp;
-}
-
-static void neon_load_element(DisasContext *s, TCGv_i32 var, int reg, int ele, MemOp mop)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    long offset = neon_element_offset(reg, ele, mop & MO_SIZE);
-
-    switch (mop) {
-    case MO_UB:
-        tcg_gen_ld8u_i32(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_UW:
-        tcg_gen_ld16u_i32(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_UL:
-        tcg_gen_ld_i32(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    default:
-        g_assert_not_reached();
+    if (dp) {
+        return neon_element_offset(reg, 0, MO_64);
+    } else {
+        return neon_element_offset(reg >> 1, reg & 1, MO_32);
     }
 }
 
-static void neon_load_element64(DisasContext *s, TCGv_i64 var, int reg, int ele, MemOp mop)
+static inline void vfp_load_reg64(DisasContext *s, TCGv_i64 var, int reg)
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    long offset = neon_element_offset(reg, ele, mop & MO_SIZE);
-
-    switch (mop) {
-    case MO_UB:
-        tcg_gen_ld8u_i64(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_UW:
-        tcg_gen_ld16u_i64(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_UL:
-        tcg_gen_ld32u_i64(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_Q:
-        tcg_gen_ld_i64(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    default:
-        g_assert_not_reached();
-    }
+    tcg_gen_ld_i64(tcg_ctx, var, tcg_ctx->cpu_env, vfp_reg_offset(true, reg));
 }
 
-static void neon_store_reg(DisasContext *s, int reg, int pass, TCGv_i32 var)
+static inline void vfp_store_reg64(DisasContext *s, TCGv_i64 var, int reg)
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    tcg_gen_st_i32(tcg_ctx, var, tcg_ctx->cpu_env, neon_reg_offset(reg, pass));
-    tcg_temp_free_i32(tcg_ctx, var);
+    tcg_gen_st_i64(tcg_ctx, var, tcg_ctx->cpu_env, vfp_reg_offset(true, reg));
 }
 
-static void neon_store_element(DisasContext *s, int reg, int ele, MemOp size, TCGv_i32 var)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    long offset = neon_element_offset(reg, ele, size);
-
-    switch (size) {
-    case MO_8:
-        tcg_gen_st8_i32(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_16:
-        tcg_gen_st16_i32(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_32:
-        tcg_gen_st_i32(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    default:
-        g_assert_not_reached();
-    }
-}
-
-static void neon_store_element64(DisasContext *s, int reg, int ele, MemOp size, TCGv_i64 var)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    long offset = neon_element_offset(reg, ele, size);
-
-    switch (size) {
-    case MO_8:
-        tcg_gen_st8_i64(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_16:
-        tcg_gen_st16_i64(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_32:
-        tcg_gen_st32_i64(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    case MO_64:
-        tcg_gen_st_i64(tcg_ctx, var, tcg_ctx->cpu_env, offset);
-        break;
-    default:
-        g_assert_not_reached();
-    }
-}
-
-static inline void neon_load_reg64(DisasContext *s, TCGv_i64 var, int reg)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    tcg_gen_ld_i64(tcg_ctx, var, tcg_ctx->cpu_env, vfp_reg_offset(1, reg));
-}
-
-static inline void neon_store_reg64(DisasContext *s, TCGv_i64 var, int reg)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    tcg_gen_st_i64(tcg_ctx, var, tcg_ctx->cpu_env, vfp_reg_offset(1, reg));
-}
-
-static inline void neon_load_reg32(DisasContext *s, TCGv_i32 var, int reg)
+static inline void vfp_load_reg32(DisasContext *s, TCGv_i32 var, int reg)
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     tcg_gen_ld_i32(tcg_ctx, var, tcg_ctx->cpu_env, vfp_reg_offset(false, reg));
 }
 
-static inline void neon_store_reg32(DisasContext *s, TCGv_i32 var, int reg)
+static inline void vfp_store_reg32(DisasContext *s, TCGv_i32 var, int reg)
 {
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     tcg_gen_st_i32(tcg_ctx, var, tcg_ctx->cpu_env, vfp_reg_offset(false, reg));
+}
+
+static void read_neon_element32(DisasContext *s, TCGv_i32 dest, int reg, int ele, MemOp memop)
+{
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+    long off = neon_element_offset(reg, ele, memop);
+
+    switch (memop) {
+    case MO_SB:
+        tcg_gen_ld8s_i32(tcg_ctx, dest, tcg_ctx->cpu_env, off);
+        break;
+    case MO_UB:
+        tcg_gen_ld8u_i32(tcg_ctx, dest, tcg_ctx->cpu_env, off);
+        break;
+    case MO_SW:
+        tcg_gen_ld16s_i32(tcg_ctx, dest, tcg_ctx->cpu_env, off);
+        break;
+    case MO_UW:
+        tcg_gen_ld16u_i32(tcg_ctx, dest, tcg_ctx->cpu_env, off);
+        break;
+    case MO_UL:
+    case MO_SL:
+        tcg_gen_ld_i32(tcg_ctx, dest, tcg_ctx->cpu_env, off);
+        break;
+    default:
+        g_assert_not_reached();
+    }
+}
+
+static void read_neon_element64(DisasContext *s, TCGv_i64 dest, int reg, int ele, MemOp memop)
+{
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+    long off = neon_element_offset(reg, ele, memop);
+
+    switch (memop) {
+    case MO_SL:
+        tcg_gen_ld32s_i64(tcg_ctx, dest, tcg_ctx->cpu_env, off);
+        break;
+    case MO_UL:
+        tcg_gen_ld32u_i64(tcg_ctx, dest, tcg_ctx->cpu_env, off);
+        break;
+    case MO_Q:
+        tcg_gen_ld_i64(tcg_ctx, dest, tcg_ctx->cpu_env, off);
+        break;
+    default:
+        g_assert_not_reached();
+    }
+}
+
+static void write_neon_element32(DisasContext *s, TCGv_i32 src, int reg, int ele, MemOp memop)
+{
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+    long off = neon_element_offset(reg, ele, memop);
+
+    switch (memop) {
+    case MO_8:
+        tcg_gen_st8_i32(tcg_ctx, src, tcg_ctx->cpu_env, off);
+        break;
+    case MO_16:
+        tcg_gen_st16_i32(tcg_ctx, src, tcg_ctx->cpu_env, off);
+        break;
+    case MO_32:
+        tcg_gen_st_i32(tcg_ctx, src, tcg_ctx->cpu_env, off);
+        break;
+    default:
+        g_assert_not_reached();
+    }
+}
+
+static void write_neon_element64(DisasContext *s, TCGv_i64 src, int reg, int ele, MemOp memop)
+{
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+    long off = neon_element_offset(reg, ele, memop);
+
+    switch (memop) {
+    case MO_32:
+        tcg_gen_st32_i64(tcg_ctx, src, tcg_ctx->cpu_env, off);
+        break;
+    case MO_64:
+        tcg_gen_st_i64(tcg_ctx, src, tcg_ctx->cpu_env, off);
+        break;
+    default:
+        g_assert_not_reached();
+    }
 }
 
 static TCGv_ptr vfp_reg_ptr(DisasContext *s, bool dp, int reg)
@@ -1336,6 +1346,7 @@ static TCGv_ptr vfp_reg_ptr(DisasContext *s, bool dp, int reg)
 #define ARM_CP_RW_BIT   (1 << 20)
 
 /* Include the VFP and Neon decoders */
+#include "decode-m-nocp.inc.c"
 #include "translate-vfp.inc.c"
 #include "translate-neon.inc.c"
 
@@ -2649,21 +2660,6 @@ static int disas_dsp_insn(DisasContext *s, uint32_t insn)
     return 1;
 }
 
-#define VFP_REG_SHR(x, n) (((n) > 0) ? (x) >> (n) : (x) << -(n))
-#define VFP_DREG(reg, insn, bigbit, smallbit) do { \
-    if (dc_isar_feature(aa32_simd_r32, s)) { \
-        reg = (((insn) >> (bigbit)) & 0x0f) \
-              | (((insn) >> ((smallbit) - 4)) & 0x10); \
-    } else { \
-        if (insn & (1 << (smallbit))) \
-            return 1; \
-        reg = ((insn) >> (bigbit)) & 0x0f; \
-    }} while (0)
-
-#define VFP_DREG_D(reg, insn) VFP_DREG(reg, insn, 12, 22)
-#define VFP_DREG_N(reg, insn) VFP_DREG(reg, insn, 16,  7)
-#define VFP_DREG_M(reg, insn) VFP_DREG(reg, insn,  0,  5)
-
 static inline bool use_goto_tb(DisasContext *s, target_ulong dest)
 {
 #ifndef CONFIG_USER_ONLY
@@ -2699,15 +2695,21 @@ static void gen_goto_tb(DisasContext *s, int n, target_ulong dest)
     s->base.is_jmp = DISAS_NORETURN;
 }
 
-static inline void gen_jmp(DisasContext *s, uint32_t dest)
+/* Jump, specifying which TB number to use if we gen_goto_tb() */
+static inline void gen_jmp_tb(DisasContext *s, uint32_t dest, int tbno)
 {
     if (unlikely(is_singlestepping(s))) {
         /* An indirect jump so that we still trigger the debug exception.  */
         gen_set_pc_im(s, dest);
         s->base.is_jmp = DISAS_JUMP;
     } else {
-        gen_goto_tb(s, 0, dest);
+        gen_goto_tb(s, tbno, dest);
     }
+}
+
+static inline void gen_jmp(DisasContext *s, uint32_t dest)
+{
+    gen_jmp_tb(s, dest, 0);
 }
 
 static inline void gen_mulxy(DisasContext *s, TCGv_i32 t0, TCGv_i32 t1, int x, int y)
@@ -2793,6 +2795,8 @@ static int gen_set_psr_im(DisasContext *s, uint32_t mask, int spsr, uint32_t val
 static bool msr_banked_access_decode(DisasContext *s, int r, int sysm, int rn,
                                      int *tgtmode, int *regno)
 {
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+
     /* Decode the r and sysm fields of MSR/MRS banked accesses into
      * the target mode and register number, and identify the various
      * unpredictable cases.
@@ -2927,10 +2931,24 @@ static bool msr_banked_access_decode(DisasContext *s, int r, int sysm, int rn,
         }
         if (s->current_el == 1) {
             /* If we're in Secure EL1 (which implies that EL3 is AArch64)
-             * then accesses to Mon registers trap to EL3
+             * then accesses to Mon registers trap to Secure EL2, if it exists,
+             * otherwise EL3.
              */
-            exc_target = 3;
-            goto undef;
+            TCGv_i32 tcg_el;
+
+            if (arm_dc_feature(s, ARM_FEATURE_AARCH64) &&
+                dc_isar_feature(aa64_sel2, s)) {
+                /* Target EL is EL<3 minus SCR_EL3.EEL2> */
+                tcg_el = load_cpu_field(s, cp15.scr_el3);
+                tcg_gen_sextract_i32(tcg_ctx, tcg_el, tcg_el, ctz32(SCR_EEL2), 1);
+                tcg_gen_addi_i32(tcg_ctx, tcg_el, tcg_el, 3);
+            } else {
+                tcg_el = tcg_const_i32(tcg_ctx, 3);
+            }
+
+            gen_exception_el(s, EXCP_UDEF, syn_uncategorized(), tcg_el);
+            tcg_temp_free_i32(tcg_ctx, tcg_el);
+            return false;
         }
         break;
     case ARM_CPU_MODE_HYP:
@@ -2978,7 +2996,7 @@ static void gen_msr_banked(DisasContext *s, int r, int sysm, int rn)
     tcg_temp_free_i32(tcg_ctx, tcg_tgtmode);
     tcg_temp_free_i32(tcg_ctx, tcg_regno);
     tcg_temp_free_i32(tcg_ctx, tcg_reg);
-    s->base.is_jmp = DISAS_UPDATE;
+    s->base.is_jmp = DISAS_UPDATE_EXIT;
 }
 
 static void gen_mrs_banked(DisasContext *s, int r, int sysm, int rn)
@@ -3001,7 +3019,7 @@ static void gen_mrs_banked(DisasContext *s, int r, int sysm, int rn)
     tcg_temp_free_i32(tcg_ctx, tcg_tgtmode);
     tcg_temp_free_i32(tcg_ctx, tcg_regno);
     store_reg(s, rn, tcg_reg);
-    s->base.is_jmp = DISAS_UPDATE;
+    s->base.is_jmp = DISAS_UPDATE_EXIT;
 }
 
 /* Store value to PC as for an exception return (ie don't
@@ -3037,387 +3055,6 @@ static void gen_exception_return(DisasContext *s, TCGv_i32 pc)
 {
     gen_rfe(s, pc, load_cpu_field(s, spsr));
 }
-
-#define CPU_V001 s->V0, s->V0, s->V1
-
-static int gen_neon_unzip(DisasContext *s, int rd, int rm, int size, int q)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    TCGv_ptr pd, pm;
-
-    if (!q && size == 2) {
-        return 1;
-    }
-    pd = vfp_reg_ptr(s, true, rd);
-    pm = vfp_reg_ptr(s, true, rm);
-    if (q) {
-        switch (size) {
-        case 0:
-            gen_helper_neon_qunzip8(tcg_ctx, pd, pm);
-            break;
-        case 1:
-            gen_helper_neon_qunzip16(tcg_ctx, pd, pm);
-            break;
-        case 2:
-            gen_helper_neon_qunzip32(tcg_ctx, pd, pm);
-            break;
-        default:
-            abort();
-        }
-    } else {
-        switch (size) {
-        case 0:
-            gen_helper_neon_unzip8(tcg_ctx, pd, pm);
-            break;
-        case 1:
-            gen_helper_neon_unzip16(tcg_ctx, pd, pm);
-            break;
-        default:
-            abort();
-        }
-    }
-    tcg_temp_free_ptr(tcg_ctx, pd);
-    tcg_temp_free_ptr(tcg_ctx, pm);
-    return 0;
-}
-
-static int gen_neon_zip(DisasContext *s, int rd, int rm, int size, int q)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    TCGv_ptr pd, pm;
-
-    if (!q && size == 2) {
-        return 1;
-    }
-    pd = vfp_reg_ptr(s, true, rd);
-    pm = vfp_reg_ptr(s, true, rm);
-    if (q) {
-        switch (size) {
-        case 0:
-            gen_helper_neon_qzip8(tcg_ctx, pd, pm);
-            break;
-        case 1:
-            gen_helper_neon_qzip16(tcg_ctx, pd, pm);
-            break;
-        case 2:
-            gen_helper_neon_qzip32(tcg_ctx, pd, pm);
-            break;
-        default:
-            abort();
-        }
-    } else {
-        switch (size) {
-        case 0:
-            gen_helper_neon_zip8(tcg_ctx, pd, pm);
-            break;
-        case 1:
-            gen_helper_neon_zip16(tcg_ctx, pd, pm);
-            break;
-        default:
-            abort();
-        }
-    }
-    tcg_temp_free_ptr(tcg_ctx, pd);
-    tcg_temp_free_ptr(tcg_ctx, pm);
-    return 0;
-}
-
-static void gen_neon_trn_u8(DisasContext *s, TCGv_i32 t0, TCGv_i32 t1)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    TCGv_i32 rd, tmp;
-
-    rd = tcg_temp_new_i32(tcg_ctx);
-    tmp = tcg_temp_new_i32(tcg_ctx);
-
-    tcg_gen_shli_i32(tcg_ctx, rd, t0, 8);
-    tcg_gen_andi_i32(tcg_ctx, rd, rd, 0xff00ff00);
-    tcg_gen_andi_i32(tcg_ctx, tmp, t1, 0x00ff00ff);
-    tcg_gen_or_i32(tcg_ctx, rd, rd, tmp);
-
-    tcg_gen_shri_i32(tcg_ctx, t1, t1, 8);
-    tcg_gen_andi_i32(tcg_ctx, t1, t1, 0x00ff00ff);
-    tcg_gen_andi_i32(tcg_ctx, tmp, t0, 0xff00ff00);
-    tcg_gen_or_i32(tcg_ctx, t1, t1, tmp);
-    tcg_gen_mov_i32(tcg_ctx, t0, rd);
-
-    tcg_temp_free_i32(tcg_ctx, tmp);
-    tcg_temp_free_i32(tcg_ctx, rd);
-}
-
-static void gen_neon_trn_u16(DisasContext *s, TCGv_i32 t0, TCGv_i32 t1)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    TCGv_i32 rd, tmp;
-
-    rd = tcg_temp_new_i32(tcg_ctx);
-    tmp = tcg_temp_new_i32(tcg_ctx);
-
-    tcg_gen_shli_i32(tcg_ctx, rd, t0, 16);
-    tcg_gen_andi_i32(tcg_ctx, tmp, t1, 0xffff);
-    tcg_gen_or_i32(tcg_ctx, rd, rd, tmp);
-    tcg_gen_shri_i32(tcg_ctx, t1, t1, 16);
-    tcg_gen_andi_i32(tcg_ctx, tmp, t0, 0xffff0000);
-    tcg_gen_or_i32(tcg_ctx, t1, t1, tmp);
-    tcg_gen_mov_i32(tcg_ctx, t0, rd);
-
-    tcg_temp_free_i32(tcg_ctx, tmp);
-    tcg_temp_free_i32(tcg_ctx, rd);
-}
-
-static inline void gen_neon_narrow(DisasContext *s, int size, TCGv_i32 dest, TCGv_i64 src)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    switch (size) {
-    case 0: gen_helper_neon_narrow_u8(tcg_ctx, dest, src); break;
-    case 1: gen_helper_neon_narrow_u16(tcg_ctx, dest, src); break;
-    case 2: tcg_gen_extrl_i64_i32(tcg_ctx, dest, src); break;
-    default: abort();
-    }
-}
-
-static inline void gen_neon_narrow_sats(DisasContext *s, int size, TCGv_i32 dest, TCGv_i64 src)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    switch (size) {
-    case 0: gen_helper_neon_narrow_sat_s8(tcg_ctx, dest, tcg_ctx->cpu_env, src); break;
-    case 1: gen_helper_neon_narrow_sat_s16(tcg_ctx, dest, tcg_ctx->cpu_env, src); break;
-    case 2: gen_helper_neon_narrow_sat_s32(tcg_ctx, dest, tcg_ctx->cpu_env, src); break;
-    default: abort();
-    }
-}
-
-static inline void gen_neon_narrow_satu(DisasContext *s, int size, TCGv_i32 dest, TCGv_i64 src)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    switch (size) {
-    case 0: gen_helper_neon_narrow_sat_u8(tcg_ctx, dest, tcg_ctx->cpu_env, src); break;
-    case 1: gen_helper_neon_narrow_sat_u16(tcg_ctx, dest, tcg_ctx->cpu_env, src); break;
-    case 2: gen_helper_neon_narrow_sat_u32(tcg_ctx, dest, tcg_ctx->cpu_env, src); break;
-    default: abort();
-    }
-}
-
-static inline void gen_neon_unarrow_sats(DisasContext *s, int size, TCGv_i32 dest, TCGv_i64 src)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    switch (size) {
-    case 0: gen_helper_neon_unarrow_sat8(tcg_ctx, dest, tcg_ctx->cpu_env, src); break;
-    case 1: gen_helper_neon_unarrow_sat16(tcg_ctx, dest, tcg_ctx->cpu_env, src); break;
-    case 2: gen_helper_neon_unarrow_sat32(tcg_ctx, dest, tcg_ctx->cpu_env, src); break;
-    default: abort();
-    }
-}
-
-static inline void gen_neon_widen(DisasContext *s, TCGv_i64 dest, TCGv_i32 src, int size, int u)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    if (u) {
-        switch (size) {
-        case 0: gen_helper_neon_widen_u8(tcg_ctx, dest, src); break;
-        case 1: gen_helper_neon_widen_u16(tcg_ctx, dest, src); break;
-        case 2: tcg_gen_extu_i32_i64(tcg_ctx, dest, src); break;
-        default: abort();
-        }
-    } else {
-        switch (size) {
-        case 0: gen_helper_neon_widen_s8(tcg_ctx, dest, src); break;
-        case 1: gen_helper_neon_widen_s16(tcg_ctx, dest, src); break;
-        case 2: tcg_gen_ext_i32_i64(tcg_ctx, dest, src); break;
-        default: abort();
-        }
-    }
-    tcg_temp_free_i32(tcg_ctx, src);
-}
-
-static inline void gen_neon_addl(DisasContext *s, int size)
-{
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    switch (size) {
-    case 0: gen_helper_neon_addl_u16(tcg_ctx, CPU_V001); break;
-    case 1: gen_helper_neon_addl_u32(tcg_ctx, CPU_V001); break;
-    case 2: tcg_gen_add_i64(tcg_ctx, CPU_V001); break;
-    default: abort();
-    }
-}
-
-static void gen_neon_narrow_op(DisasContext *s, int op, int u, int size,
-                               TCGv_i32 dest, TCGv_i64 src)
-{
-    if (op) {
-        if (u) {
-            gen_neon_unarrow_sats(s, size, dest, src);
-        } else {
-            gen_neon_narrow(s, size, dest, src);
-        }
-    } else {
-        if (u) {
-            gen_neon_narrow_satu(s, size, dest, src);
-        } else {
-            gen_neon_narrow_sats(s, size, dest, src);
-        }
-    }
-}
-
-/* Symbolic constants for op fields for Neon 2-register miscellaneous.
- * The values correspond to bits [17:16,10:7]; see the ARM ARM DDI0406B
- * table A7-13.
- */
-#define NEON_2RM_VREV64 0
-#define NEON_2RM_VREV32 1
-#define NEON_2RM_VREV16 2
-#define NEON_2RM_VPADDL 4
-#define NEON_2RM_VPADDL_U 5
-#define NEON_2RM_AESE 6 /* Includes AESD */
-#define NEON_2RM_AESMC 7 /* Includes AESIMC */
-#define NEON_2RM_VCLS 8
-#define NEON_2RM_VCLZ 9
-#define NEON_2RM_VCNT 10
-#define NEON_2RM_VMVN 11
-#define NEON_2RM_VPADAL 12
-#define NEON_2RM_VPADAL_U 13
-#define NEON_2RM_VQABS 14
-#define NEON_2RM_VQNEG 15
-#define NEON_2RM_VCGT0 16
-#define NEON_2RM_VCGE0 17
-#define NEON_2RM_VCEQ0 18
-#define NEON_2RM_VCLE0 19
-#define NEON_2RM_VCLT0 20
-#define NEON_2RM_SHA1H 21
-#define NEON_2RM_VABS 22
-#define NEON_2RM_VNEG 23
-#define NEON_2RM_VCGT0_F 24
-#define NEON_2RM_VCGE0_F 25
-#define NEON_2RM_VCEQ0_F 26
-#define NEON_2RM_VCLE0_F 27
-#define NEON_2RM_VCLT0_F 28
-#define NEON_2RM_VABS_F 30
-#define NEON_2RM_VNEG_F 31
-#define NEON_2RM_VSWP 32
-#define NEON_2RM_VTRN 33
-#define NEON_2RM_VUZP 34
-#define NEON_2RM_VZIP 35
-#define NEON_2RM_VMOVN 36 /* Includes VQMOVN, VQMOVUN */
-#define NEON_2RM_VQMOVN 37 /* Includes VQMOVUN */
-#define NEON_2RM_VSHLL 38
-#define NEON_2RM_SHA1SU1 39 /* Includes SHA256SU0 */
-#define NEON_2RM_VRINTN 40
-#define NEON_2RM_VRINTX 41
-#define NEON_2RM_VRINTA 42
-#define NEON_2RM_VRINTZ 43
-#define NEON_2RM_VCVT_F16_F32 44
-#define NEON_2RM_VRINTM 45
-#define NEON_2RM_VCVT_F32_F16 46
-#define NEON_2RM_VRINTP 47
-#define NEON_2RM_VCVTAU 48
-#define NEON_2RM_VCVTAS 49
-#define NEON_2RM_VCVTNU 50
-#define NEON_2RM_VCVTNS 51
-#define NEON_2RM_VCVTPU 52
-#define NEON_2RM_VCVTPS 53
-#define NEON_2RM_VCVTMU 54
-#define NEON_2RM_VCVTMS 55
-#define NEON_2RM_VRECPE 56
-#define NEON_2RM_VRSQRTE 57
-#define NEON_2RM_VRECPE_F 58
-#define NEON_2RM_VRSQRTE_F 59
-#define NEON_2RM_VCVT_FS 60
-#define NEON_2RM_VCVT_FU 61
-#define NEON_2RM_VCVT_SF 62
-#define NEON_2RM_VCVT_UF 63
-
-static bool neon_2rm_is_v8_op(int op)
-{
-    /* Return true if this neon 2reg-misc op is ARMv8 and up */
-    switch (op) {
-    case NEON_2RM_VRINTN:
-    case NEON_2RM_VRINTA:
-    case NEON_2RM_VRINTM:
-    case NEON_2RM_VRINTP:
-    case NEON_2RM_VRINTZ:
-    case NEON_2RM_VRINTX:
-    case NEON_2RM_VCVTAU:
-    case NEON_2RM_VCVTAS:
-    case NEON_2RM_VCVTNU:
-    case NEON_2RM_VCVTNS:
-    case NEON_2RM_VCVTPU:
-    case NEON_2RM_VCVTPS:
-    case NEON_2RM_VCVTMU:
-    case NEON_2RM_VCVTMS:
-        return true;
-    default:
-        return false;
-    }
-}
-
-/* Each entry in this array has bit n set if the insn allows
- * size value n (otherwise it will UNDEF). Since unallocated
- * op values will have no bits set they always UNDEF.
- */
-static const uint8_t neon_2rm_sizes[] = {
-    [NEON_2RM_VREV64] = 0x7,
-    [NEON_2RM_VREV32] = 0x3,
-    [NEON_2RM_VREV16] = 0x1,
-    [NEON_2RM_VPADDL] = 0x7,
-    [NEON_2RM_VPADDL_U] = 0x7,
-    [NEON_2RM_AESE] = 0x1,
-    [NEON_2RM_AESMC] = 0x1,
-    [NEON_2RM_VCLS] = 0x7,
-    [NEON_2RM_VCLZ] = 0x7,
-    [NEON_2RM_VCNT] = 0x1,
-    [NEON_2RM_VMVN] = 0x1,
-    [NEON_2RM_VPADAL] = 0x7,
-    [NEON_2RM_VPADAL_U] = 0x7,
-    [NEON_2RM_VQABS] = 0x7,
-    [NEON_2RM_VQNEG] = 0x7,
-    [NEON_2RM_VCGT0] = 0x7,
-    [NEON_2RM_VCGE0] = 0x7,
-    [NEON_2RM_VCEQ0] = 0x7,
-    [NEON_2RM_VCLE0] = 0x7,
-    [NEON_2RM_VCLT0] = 0x7,
-    [NEON_2RM_SHA1H] = 0x4,
-    [NEON_2RM_VABS] = 0x7,
-    [NEON_2RM_VNEG] = 0x7,
-    [NEON_2RM_VCGT0_F] = 0x4,
-    [NEON_2RM_VCGE0_F] = 0x4,
-    [NEON_2RM_VCEQ0_F] = 0x4,
-    [NEON_2RM_VCLE0_F] = 0x4,
-    [NEON_2RM_VCLT0_F] = 0x4,
-    [NEON_2RM_VABS_F] = 0x4,
-    [NEON_2RM_VNEG_F] = 0x4,
-    [NEON_2RM_VSWP] = 0x1,
-    [NEON_2RM_VTRN] = 0x7,
-    [NEON_2RM_VUZP] = 0x7,
-    [NEON_2RM_VZIP] = 0x7,
-    [NEON_2RM_VMOVN] = 0x7,
-    [NEON_2RM_VQMOVN] = 0x7,
-    [NEON_2RM_VSHLL] = 0x7,
-    [NEON_2RM_SHA1SU1] = 0x4,
-    [NEON_2RM_VRINTN] = 0x4,
-    [NEON_2RM_VRINTX] = 0x4,
-    [NEON_2RM_VRINTA] = 0x4,
-    [NEON_2RM_VRINTZ] = 0x4,
-    [NEON_2RM_VCVT_F16_F32] = 0x2,
-    [NEON_2RM_VRINTM] = 0x4,
-    [NEON_2RM_VCVT_F32_F16] = 0x2,
-    [NEON_2RM_VRINTP] = 0x4,
-    [NEON_2RM_VCVTAU] = 0x4,
-    [NEON_2RM_VCVTAS] = 0x4,
-    [NEON_2RM_VCVTNU] = 0x4,
-    [NEON_2RM_VCVTNS] = 0x4,
-    [NEON_2RM_VCVTPU] = 0x4,
-    [NEON_2RM_VCVTPS] = 0x4,
-    [NEON_2RM_VCVTMU] = 0x4,
-    [NEON_2RM_VCVTMS] = 0x4,
-    [NEON_2RM_VRECPE] = 0x4,
-    [NEON_2RM_VRSQRTE] = 0x4,
-    [NEON_2RM_VRECPE_F] = 0x4,
-    [NEON_2RM_VRSQRTE_F] = 0x4,
-    [NEON_2RM_VCVT_FS] = 0x4,
-    [NEON_2RM_VCVT_FU] = 0x4,
-    [NEON_2RM_VCVT_SF] = 0x4,
-    [NEON_2RM_VCVT_UF] = 0x4,
-};
 
 static void gen_gvec_fn3_qc(TCGContext *s, uint32_t rd_ofs, uint32_t rn_ofs, uint32_t rm_ofs,
                             uint32_t opr_sz, uint32_t max_sz,
@@ -5128,624 +4765,20 @@ void gen_gvec_uaba(TCGContext *s, unsigned vece, uint32_t rd_ofs, uint32_t rn_of
     tcg_gen_gvec_3(s, rd_ofs, rn_ofs, rm_ofs, opr_sz, max_sz, &ops[vece]);
 }
 
-/* Translate a NEON data processing instruction.  Return nonzero if the
-   instruction is invalid.
-   We process data in a mixture of 32-bit and 64-bit chunks.
-   Mostly we use 32-bit chunks so we can use normal scalar instructions.  */
-
-static int disas_neon_data_insn(DisasContext *s, uint32_t insn)
+static void do_coproc_insn(DisasContext *s, int cpnum, int is64,
+                           int opc1, int crn, int crm, int opc2,
+                           bool isread, int rt, int rt2)
 {
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    int op;
-    int q;
-    int rd, rm, rd_ofs, rm_ofs;
-    int size;
-    int pass;
-    int u;
-    int vec_size;
-    TCGv_i32 tmp, tmp2, tmp3;
-
-    if (!arm_dc_feature(s, ARM_FEATURE_NEON)) {
-        return 1;
-    }
-
-    /* FIXME: this access check should not take precedence over UNDEF
-     * for invalid encodings; we will generate incorrect syndrome information
-     * for attempts to execute invalid vfp/neon encodings with FP disabled.
-     */
-    if (s->fp_excp_el) {
-        gen_exception_insn(s, s->pc_curr, EXCP_UDEF,
-                           syn_simd_access_trap(1, 0xe, false), s->fp_excp_el);
-        return 0;
-    }
-
-    if (!s->vfp_enabled)
-      return 1;
-    q = (insn & (1 << 6)) != 0;
-    u = (insn >> 24) & 1;
-    VFP_DREG_D(rd, insn);
-    VFP_DREG_M(rm, insn);
-    size = (insn >> 20) & 3;
-    vec_size = q ? 16 : 8;
-    rd_ofs = neon_reg_offset(rd, 0);
-    rm_ofs = neon_reg_offset(rm, 0);
-
-    if ((insn & (1 << 23)) == 0) {
-        /* Three register same length: handled by decodetree */
-        return 1;
-    } else if (insn & (1 << 4)) {
-        /* Two registers and shift or reg and imm: handled by decodetree */
-        return 1;
-    } else { /* (insn & 0x00800010 == 0x00800000) */
-        if (size != 3) {
-            /*
-             * Three registers of different lengths, or two registers and
-             * a scalar: handled by decodetree
-             */
-            return 1;
-        } else { /* size == 3 */
-            if (!u) {
-                /* Extract: handled by decodetree */
-                return 1;
-            } else if ((insn & (1 << 11)) == 0) {
-                /* Two register misc.  */
-                op = ((insn >> 12) & 0x30) | ((insn >> 7) & 0xf);
-                size = (insn >> 18) & 3;
-                /* UNDEF for unknown op values and bad op-size combinations */
-                if ((neon_2rm_sizes[op] & (1 << size)) == 0) {
-                    return 1;
-                }
-                if (neon_2rm_is_v8_op(op) &&
-                    !arm_dc_feature(s, ARM_FEATURE_V8)) {
-                    return 1;
-                }
-                if ((op != NEON_2RM_VMOVN && op != NEON_2RM_VQMOVN) &&
-                    q && ((rm | rd) & 1)) {
-                    return 1;
-                }
-                switch (op) {
-                case NEON_2RM_VREV64:
-                    for (pass = 0; pass < (q ? 2 : 1); pass++) {
-                        tmp = neon_load_reg(s, rm, pass * 2);
-                        tmp2 = neon_load_reg(s, rm, pass * 2 + 1);
-                        switch (size) {
-                        case 0: tcg_gen_bswap32_i32(tcg_ctx, tmp, tmp); break;
-                        case 1: gen_swap_half(s, tmp); break;
-                        case 2: /* no-op */ break;
-                        default: abort();
-                        }
-                        neon_store_reg(s, rd, pass * 2 + 1, tmp);
-                        if (size == 2) {
-                            neon_store_reg(s, rd, pass * 2, tmp2);
-                        } else {
-                            switch (size) {
-                            case 0: tcg_gen_bswap32_i32(tcg_ctx, tmp2, tmp2); break;
-                            case 1: gen_swap_half(s, tmp2); break;
-                            default: abort();
-                            }
-                            neon_store_reg(s, rd, pass * 2, tmp2);
-                        }
-                    }
-                    break;
-                case NEON_2RM_VPADDL: case NEON_2RM_VPADDL_U:
-                case NEON_2RM_VPADAL: case NEON_2RM_VPADAL_U:
-                    for (pass = 0; pass < q + 1; pass++) {
-                        tmp = neon_load_reg(s, rm, pass * 2);
-                        gen_neon_widen(s, s->V0, tmp, size, op & 1);
-                        tmp = neon_load_reg(s, rm, pass * 2 + 1);
-                        gen_neon_widen(s, s->V1, tmp, size, op & 1);
-                        switch (size) {
-                        case 0: gen_helper_neon_paddl_u16(tcg_ctx, CPU_V001); break;
-                        case 1: gen_helper_neon_paddl_u32(tcg_ctx, CPU_V001); break;
-                        case 2: tcg_gen_add_i64(tcg_ctx, CPU_V001); break;
-                        default: abort();
-                        }
-                        if (op >= NEON_2RM_VPADAL) {
-                            /* Accumulate.  */
-                            neon_load_reg64(s, s->V1, rd + pass);
-                            gen_neon_addl(s, size);
-                        }
-                        neon_store_reg64(s, s->V0, rd + pass);
-                    }
-                    break;
-                case NEON_2RM_VTRN:
-                    if (size == 2) {
-                        int n;
-                        for (n = 0; n < (q ? 4 : 2); n += 2) {
-                            tmp = neon_load_reg(s, rm, n);
-                            tmp2 = neon_load_reg(s, rd, n + 1);
-                            neon_store_reg(s, rm, n, tmp2);
-                            neon_store_reg(s, rd, n + 1, tmp);
-                        }
-                    } else {
-                        goto elementwise;
-                    }
-                    break;
-                case NEON_2RM_VUZP:
-                    if (gen_neon_unzip(s, rd, rm, size, q)) {
-                        return 1;
-                    }
-                    break;
-                case NEON_2RM_VZIP:
-                    if (gen_neon_zip(s, rd, rm, size, q)) {
-                        return 1;
-                    }
-                    break;
-                case NEON_2RM_VMOVN: case NEON_2RM_VQMOVN:
-                    /* also VQMOVUN; op field and mnemonics don't line up */
-                    if (rm & 1) {
-                        return 1;
-                    }
-                    tmp2 = NULL;
-                    for (pass = 0; pass < 2; pass++) {
-                        neon_load_reg64(s, s->V0, rm + pass);
-                        tmp = tcg_temp_new_i32(tcg_ctx);
-                        gen_neon_narrow_op(s, op == NEON_2RM_VMOVN, q, size,
-                                           tmp, s->V0);
-                        if (pass == 0) {
-                            tmp2 = tmp;
-                        } else {
-                            neon_store_reg(s, rd, 0, tmp2);
-                            neon_store_reg(s, rd, 1, tmp);
-                        }
-                    }
-                    break;
-                case NEON_2RM_VSHLL:
-                    if (q || (rd & 1)) {
-                        return 1;
-                    }
-                    tmp = neon_load_reg(s, rm, 0);
-                    tmp2 = neon_load_reg(s, rm, 1);
-                    for (pass = 0; pass < 2; pass++) {
-                        if (pass == 1)
-                            tmp = tmp2;
-                        gen_neon_widen(s, s->V0, tmp, size, 1);
-                        tcg_gen_shli_i64(tcg_ctx, s->V0, s->V0, 8 << size);
-                        neon_store_reg64(s, s->V0, rd + pass);
-                    }
-                    break;
-                case NEON_2RM_VCVT_F16_F32:
-                {
-                    TCGv_ptr fpst;
-                    TCGv_i32 ahp;
-
-                    if (!dc_isar_feature(aa32_fp16_spconv, s) ||
-                        q || (rm & 1)) {
-                        return 1;
-                    }
-                    fpst = get_fpstatus_ptr(tcg_ctx, true);
-                    ahp = get_ahp_flag(s);
-                    tmp = neon_load_reg(s, rm, 0);
-                    gen_helper_vfp_fcvt_f32_to_f16(tcg_ctx, tmp, tmp, fpst, ahp);
-                    tmp2 = neon_load_reg(s, rm, 1);
-                    gen_helper_vfp_fcvt_f32_to_f16(tcg_ctx, tmp2, tmp2, fpst, ahp);
-                    tcg_gen_shli_i32(tcg_ctx, tmp2, tmp2, 16);
-                    tcg_gen_or_i32(tcg_ctx, tmp2, tmp2, tmp);
-                    tcg_temp_free_i32(tcg_ctx, tmp);
-                    tmp = neon_load_reg(s, rm, 2);
-                    gen_helper_vfp_fcvt_f32_to_f16(tcg_ctx, tmp, tmp, fpst, ahp);
-                    tmp3 = neon_load_reg(s, rm, 3);
-                    neon_store_reg(s, rd, 0, tmp2);
-                    gen_helper_vfp_fcvt_f32_to_f16(tcg_ctx, tmp3, tmp3, fpst, ahp);
-                    tcg_gen_shli_i32(tcg_ctx, tmp3, tmp3, 16);
-                    tcg_gen_or_i32(tcg_ctx, tmp3, tmp3, tmp);
-                    neon_store_reg(s, rd, 1, tmp3);
-                    tcg_temp_free_i32(tcg_ctx, tmp);
-                    tcg_temp_free_i32(tcg_ctx, ahp);
-                    tcg_temp_free_ptr(tcg_ctx, fpst);
-                    break;
-                }
-                case NEON_2RM_VCVT_F32_F16:
-                {
-                    TCGv_ptr fpst;
-                    TCGv_i32 ahp;
-                    if (!dc_isar_feature(aa32_fp16_spconv, s) ||
-                        q || (rd & 1)) {
-                        return 1;
-                    }
-                    fpst = get_fpstatus_ptr(tcg_ctx, true);
-                    ahp = get_ahp_flag(s);
-                    tmp3 = tcg_temp_new_i32(tcg_ctx);
-                    tmp = neon_load_reg(s, rm, 0);
-                    tmp2 = neon_load_reg(s, rm, 1);
-                    tcg_gen_ext16u_i32(tcg_ctx, tmp3, tmp);
-                    gen_helper_vfp_fcvt_f16_to_f32(tcg_ctx, tmp3, tmp3, fpst, ahp);
-                    neon_store_reg(s, rd, 0, tmp3);
-                    tcg_gen_shri_i32(tcg_ctx, tmp, tmp, 16);
-                    gen_helper_vfp_fcvt_f16_to_f32(tcg_ctx, tmp, tmp, fpst, ahp);
-                    neon_store_reg(s, rd, 1, tmp);
-                    tmp3 = tcg_temp_new_i32(tcg_ctx);
-                    tcg_gen_ext16u_i32(tcg_ctx, tmp3, tmp2);
-                    gen_helper_vfp_fcvt_f16_to_f32(tcg_ctx, tmp3, tmp3, fpst, ahp);
-                    neon_store_reg(s, rd, 2, tmp3);
-                    tcg_gen_shri_i32(tcg_ctx, tmp2, tmp2, 16);
-                    gen_helper_vfp_fcvt_f16_to_f32(tcg_ctx, tmp2, tmp2, fpst, ahp);
-                    neon_store_reg(s, rd, 3, tmp2);
-                    tcg_temp_free_i32(tcg_ctx, ahp);
-                    tcg_temp_free_ptr(tcg_ctx, fpst);
-                    break;
-                }
-                case NEON_2RM_AESE: case NEON_2RM_AESMC:
-                    if (!dc_isar_feature(aa32_aes, s) || ((rm | rd) & 1)) {
-                        return 1;
-                    }
-
-                    /*
-                     * Bit 6 is the lowest opcode bit; it distinguishes
-                     * between encryption (AESE/AESMC) and decryption
-                     * (AESD/AESIMC).
-                     */
-                    if (op == NEON_2RM_AESE) {
-                        tcg_gen_gvec_3_ool(tcg_ctx, vfp_reg_offset(true, rd),
-                                           vfp_reg_offset(true, rd),
-                                           vfp_reg_offset(true, rm),
-                                           16, 16, extract32(insn, 6, 1),
-                                           gen_helper_crypto_aese);
-                    } else {
-                        tcg_gen_gvec_2_ool(tcg_ctx, vfp_reg_offset(true, rd),
-                                           vfp_reg_offset(true, rm),
-                                           16, 16, extract32(insn, 6, 1),
-                                           gen_helper_crypto_aesmc);
-                    }
-                    break;
-                case NEON_2RM_SHA1H:
-                    if (!dc_isar_feature(aa32_sha1, s) || ((rm | rd) & 1)) {
-                        return 1;
-                    }
-                    tcg_gen_gvec_2_ool(tcg_ctx, rd_ofs, rm_ofs, 16, 16, 0,
-                                       gen_helper_crypto_sha1h);
-                    break;
-                case NEON_2RM_SHA1SU1:
-                    if ((rm | rd) & 1) {
-                            return 1;
-                    }
-                    /* bit 6 (q): set -> SHA256SU0, cleared -> SHA1SU1 */
-                    if (q) {
-                        if (!dc_isar_feature(aa32_sha2, s)) {
-                            return 1;
-                        }
-                    } else if (!dc_isar_feature(aa32_sha1, s)) {
-                        return 1;
-                    }
-                    tcg_gen_gvec_2_ool(tcg_ctx, rd_ofs, rm_ofs, 16, 16, 0,
-                                       q ? gen_helper_crypto_sha256su0
-                                       : gen_helper_crypto_sha1su1);
-                    break;
-                case NEON_2RM_VMVN:
-                    tcg_gen_gvec_not(tcg_ctx, 0, rd_ofs, rm_ofs, vec_size, vec_size);
-                    break;
-                case NEON_2RM_VNEG:
-                    tcg_gen_gvec_neg(tcg_ctx, size, rd_ofs, rm_ofs, vec_size, vec_size);
-                    break;
-                case NEON_2RM_VABS:
-                    tcg_gen_gvec_abs(tcg_ctx, size, rd_ofs, rm_ofs, vec_size, vec_size);
-                    break;
-
-                case NEON_2RM_VCEQ0:
-                    gen_gvec_ceq0(tcg_ctx, size, rd_ofs, rm_ofs, vec_size, vec_size);
-                    break;
-                case NEON_2RM_VCGT0:
-                    gen_gvec_cgt0(tcg_ctx, size, rd_ofs, rm_ofs, vec_size, vec_size);
-                    break;
-                case NEON_2RM_VCLE0:
-                    gen_gvec_cle0(tcg_ctx, size, rd_ofs, rm_ofs, vec_size, vec_size);
-                    break;
-                case NEON_2RM_VCGE0:
-                    gen_gvec_cge0(tcg_ctx, size, rd_ofs, rm_ofs, vec_size, vec_size);
-                    break;
-                case NEON_2RM_VCLT0:
-                    gen_gvec_clt0(tcg_ctx, size, rd_ofs, rm_ofs, vec_size, vec_size);
-                    break;
-
-                default:
-                elementwise:
-                    for (pass = 0; pass < (q ? 4 : 2); pass++) {
-                        tmp = neon_load_reg(s, rm, pass);
-                        switch (op) {
-                        case NEON_2RM_VREV32:
-                            switch (size) {
-                            case 0: tcg_gen_bswap32_i32(tcg_ctx, tmp, tmp); break;
-                            case 1: gen_swap_half(s, tmp); break;
-                            default: abort();
-                            }
-                            break;
-                        case NEON_2RM_VREV16:
-                            gen_rev16(s, tmp, tmp);
-                            break;
-                        case NEON_2RM_VCLS:
-                            switch (size) {
-                            case 0: gen_helper_neon_cls_s8(tcg_ctx, tmp, tmp); break;
-                            case 1: gen_helper_neon_cls_s16(tcg_ctx, tmp, tmp); break;
-                            case 2: gen_helper_neon_cls_s32(tcg_ctx, tmp, tmp); break;
-                            default: abort();
-                            }
-                            break;
-                        case NEON_2RM_VCLZ:
-                            switch (size) {
-                            case 0: gen_helper_neon_clz_u8(tcg_ctx, tmp, tmp); break;
-                            case 1: gen_helper_neon_clz_u16(tcg_ctx, tmp, tmp); break;
-                            case 2: tcg_gen_clzi_i32(tcg_ctx, tmp, tmp, 32); break;
-                            default: abort();
-                            }
-                            break;
-                        case NEON_2RM_VCNT:
-                            gen_helper_neon_cnt_u8(tcg_ctx, tmp, tmp);
-                            break;
-                        case NEON_2RM_VQABS:
-                            switch (size) {
-                            case 0:
-                                gen_helper_neon_qabs_s8(tcg_ctx, tmp, tcg_ctx->cpu_env, tmp);
-                                break;
-                            case 1:
-                                gen_helper_neon_qabs_s16(tcg_ctx, tmp, tcg_ctx->cpu_env, tmp);
-                                break;
-                            case 2:
-                                gen_helper_neon_qabs_s32(tcg_ctx, tmp, tcg_ctx->cpu_env, tmp);
-                                break;
-                            default: abort();
-                            }
-                            break;
-                        case NEON_2RM_VQNEG:
-                            switch (size) {
-                            case 0:
-                                gen_helper_neon_qneg_s8(tcg_ctx, tmp, tcg_ctx->cpu_env, tmp);
-                                break;
-                            case 1:
-                                gen_helper_neon_qneg_s16(tcg_ctx, tmp, tcg_ctx->cpu_env, tmp);
-                                break;
-                            case 2:
-                                gen_helper_neon_qneg_s32(tcg_ctx, tmp, tcg_ctx->cpu_env, tmp);
-                                break;
-                            default: abort();
-                            }
-                            break;
-                        case NEON_2RM_VCGT0_F:
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            tmp2 = tcg_const_i32(tcg_ctx, 0);
-                            gen_helper_neon_cgt_f32(tcg_ctx, tmp, tmp, tmp2, fpstatus);
-                            tcg_temp_free_i32(tcg_ctx, tmp2);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VCGE0_F:
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            tmp2 = tcg_const_i32(tcg_ctx, 0);
-                            gen_helper_neon_cge_f32(tcg_ctx, tmp, tmp, tmp2, fpstatus);
-                            tcg_temp_free_i32(tcg_ctx, tmp2);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VCEQ0_F:
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            tmp2 = tcg_const_i32(tcg_ctx, 0);
-                            gen_helper_neon_ceq_f32(tcg_ctx, tmp, tmp, tmp2, fpstatus);
-                            tcg_temp_free_i32(tcg_ctx, tmp2);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VCLE0_F:
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            tmp2 = tcg_const_i32(tcg_ctx, 0);
-                            gen_helper_neon_cge_f32(tcg_ctx, tmp, tmp2, tmp, fpstatus);
-                            tcg_temp_free_i32(tcg_ctx, tmp2);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VCLT0_F:
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            tmp2 = tcg_const_i32(tcg_ctx, 0);
-                            gen_helper_neon_cgt_f32(tcg_ctx, tmp, tmp2, tmp, fpstatus);
-                            tcg_temp_free_i32(tcg_ctx, tmp2);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VABS_F:
-                            gen_helper_vfp_abss(tcg_ctx, tmp, tmp);
-                            break;
-                        case NEON_2RM_VNEG_F:
-                            gen_helper_vfp_negs(tcg_ctx, tmp, tmp);
-                            break;
-                        case NEON_2RM_VSWP:
-                            tmp2 = neon_load_reg(s, rd, pass);
-                            neon_store_reg(s, rm, pass, tmp2);
-                            break;
-                        case NEON_2RM_VTRN:
-                            tmp2 = neon_load_reg(s, rd, pass);
-                            switch (size) {
-                            case 0: gen_neon_trn_u8(s, tmp, tmp2); break;
-                            case 1: gen_neon_trn_u16(s, tmp, tmp2); break;
-                            default: abort();
-                            }
-                            neon_store_reg(s, rm, pass, tmp2);
-                            break;
-                        case NEON_2RM_VRINTN:
-                        case NEON_2RM_VRINTA:
-                        case NEON_2RM_VRINTM:
-                        case NEON_2RM_VRINTP:
-                        case NEON_2RM_VRINTZ:
-                        {
-                            TCGv_i32 tcg_rmode;
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            int rmode;
-
-                            if (op == NEON_2RM_VRINTZ) {
-                                rmode = FPROUNDING_ZERO;
-                            } else {
-                                rmode = fp_decode_rm[((op & 0x6) >> 1) ^ 1];
-                            }
-
-                            tcg_rmode = tcg_const_i32(tcg_ctx, arm_rmode_to_sf(rmode));
-                            gen_helper_set_neon_rmode(tcg_ctx, tcg_rmode, tcg_rmode,
-                                                      tcg_ctx->cpu_env);
-                            gen_helper_rints(tcg_ctx, tmp, tmp, fpstatus);
-                            gen_helper_set_neon_rmode(tcg_ctx, tcg_rmode, tcg_rmode,
-                                                      tcg_ctx->cpu_env);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            tcg_temp_free_i32(tcg_ctx, tcg_rmode);
-                            break;
-                        }
-                        case NEON_2RM_VRINTX:
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            gen_helper_rints_exact(tcg_ctx, tmp, tmp, fpstatus);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VCVTAU:
-                        case NEON_2RM_VCVTAS:
-                        case NEON_2RM_VCVTNU:
-                        case NEON_2RM_VCVTNS:
-                        case NEON_2RM_VCVTPU:
-                        case NEON_2RM_VCVTPS:
-                        case NEON_2RM_VCVTMU:
-                        case NEON_2RM_VCVTMS:
-                        {
-                            bool is_signed = !extract32(insn, 7, 1);
-                            TCGv_ptr fpst = get_fpstatus_ptr(tcg_ctx, 1);
-                            TCGv_i32 tcg_rmode, tcg_shift;
-                            int rmode = fp_decode_rm[extract32(insn, 8, 2)];
-
-                            tcg_shift = tcg_const_i32(tcg_ctx, 0);
-                            tcg_rmode = tcg_const_i32(tcg_ctx, arm_rmode_to_sf(rmode));
-                            gen_helper_set_neon_rmode(tcg_ctx, tcg_rmode, tcg_rmode,
-                                                      tcg_ctx->cpu_env);
-
-                            if (is_signed) {
-                                gen_helper_vfp_tosls(tcg_ctx, tmp, tmp,
-                                                     tcg_shift, fpst);
-                            } else {
-                                gen_helper_vfp_touls(tcg_ctx, tmp, tmp,
-                                                     tcg_shift, fpst);
-                            }
-
-                            gen_helper_set_neon_rmode(tcg_ctx, tcg_rmode, tcg_rmode,
-                                                      tcg_ctx->cpu_env);
-                            tcg_temp_free_i32(tcg_ctx, tcg_rmode);
-                            tcg_temp_free_i32(tcg_ctx, tcg_shift);
-                            tcg_temp_free_ptr(tcg_ctx, fpst);
-                            break;
-                        }
-                        case NEON_2RM_VRECPE:
-                            gen_helper_recpe_u32(tcg_ctx, tmp, tmp);
-                            break;
-                        case NEON_2RM_VRSQRTE:
-                            gen_helper_rsqrte_u32(tcg_ctx, tmp, tmp);
-                            break;
-                        case NEON_2RM_VRECPE_F:
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            gen_helper_recpe_f32(tcg_ctx, tmp, tmp, fpstatus);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VRSQRTE_F:
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            gen_helper_rsqrte_f32(tcg_ctx, tmp, tmp, fpstatus);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VCVT_FS: /* VCVT.F32.S32 */
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            gen_helper_vfp_sitos(tcg_ctx, tmp, tmp, fpstatus);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VCVT_FU: /* VCVT.F32.U32 */
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            gen_helper_vfp_uitos(tcg_ctx, tmp, tmp, fpstatus);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VCVT_SF: /* VCVT.S32.F32 */
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            gen_helper_vfp_tosizs(tcg_ctx, tmp, tmp, fpstatus);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        case NEON_2RM_VCVT_UF: /* VCVT.U32.F32 */
-                        {
-                            TCGv_ptr fpstatus = get_fpstatus_ptr(tcg_ctx, 1);
-                            gen_helper_vfp_touizs(tcg_ctx, tmp, tmp, fpstatus);
-                            tcg_temp_free_ptr(tcg_ctx, fpstatus);
-                            break;
-                        }
-                        default:
-                            /* Reserved op values were caught by the
-                             * neon_2rm_sizes[] check earlier.
-                             */
-                            abort();
-                        }
-                        neon_store_reg(s, rd, pass, tmp);
-                    }
-                    break;
-                }
-            } else {
-                /* VTBL, VTBX, VDUP: handled by decodetree */
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
-
-static int disas_coproc_insn(DisasContext *s, uint32_t insn)
-{
-    int cpnum, is64, crn, crm, opc1, opc2, isread, rt, rt2;
     const ARMCPRegInfo *ri;
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
-
-    cpnum = (insn >> 8) & 0xf;
-
-    /* First check for coprocessor space used for XScale/iwMMXt insns */
-    if (arm_dc_feature(s, ARM_FEATURE_XSCALE) && (cpnum < 2)) {
-        if (extract32(s->c15_cpar, cpnum, 1) == 0) {
-            return 1;
-        }
-        if (arm_dc_feature(s, ARM_FEATURE_IWMMXT)) {
-            return disas_iwmmxt_insn(s, insn);
-        } else if (arm_dc_feature(s, ARM_FEATURE_XSCALE)) {
-            return disas_dsp_insn(s, insn);
-        }
-        return 1;
-    }
-
-    /* Otherwise treat as a generic register access */
-    is64 = (insn & (1 << 25)) == 0;
-    if (!is64 && ((insn & (1 << 4)) == 0)) {
-        /* cdp */
-        return 1;
-    }
-
-    crm = insn & 0xf;
-    if (is64) {
-        crn = 0;
-        opc1 = (insn >> 4) & 0xf;
-        opc2 = 0;
-        rt2 = (insn >> 16) & 0xf;
-    } else {
-        crn = (insn >> 16) & 0xf;
-        opc1 = (insn >> 21) & 7;
-        opc2 = (insn >> 5) & 7;
-        rt2 = 0;
-    }
-    isread = (insn >> 20) & 1;
-    rt = (insn >> 12) & 0xf;
 
     ri = get_arm_cp_reginfo(s->cp_regs,
             ENCODE_CP_REG(cpnum, is64, s->ns, crn, crm, opc1, opc2));
     if (ri) {
         /* Check access permissions */
         if (!cp_access_ok(s->current_el, ri, isread)) {
-            return 1;
+            unallocated_encoding(s);
+            return;
         }
 
         if (s->hstr_active || ri->accessfn ||
@@ -5819,24 +4852,18 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
         /* Handle special cases first */
         switch (ri->type & ~(ARM_CP_FLAG_MASK & ~ARM_CP_SPECIAL)) {
         case ARM_CP_NOP:
-            return 0;
+            return;
         case ARM_CP_WFI:
             if (isread) {
-                return 1;
+                unallocated_encoding(s);
+                return;
             }
             gen_set_pc_im(s, s->base.pc_next);
             s->base.is_jmp = DISAS_WFI;
-            return 0;
+            return;
         default:
             break;
         }
-
-        // Unicorn: if'd out
-#if 0
-        if ((tb_cflags(s->base.tb) & CF_USE_ICOUNT) && (ri->type & ARM_CP_IO)) {
-            gen_io_start();
-        }
-#endif
         gen_set_pc_im(s, s->pc_curr); // SNPS added
 
         if (isread) {
@@ -5890,7 +4917,7 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
             /* Write */
             if (ri->type & ARM_CP_CONST) {
                 /* If not forbidden by access permissions, treat as WI */
-                return 0;
+                return;
             }
 
             if (is64) {
@@ -5938,7 +4965,7 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
             gen_lookup_tb(s);
         }
 
-        return 0;
+        return;
     }
 
     /* Unknown register; this might be a guest error or a QEMU
@@ -5958,9 +4985,27 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
                       s->ns ? "non-secure" : "secure");
     }
 
-    return 1;
+    unallocated_encoding(s);
+    return;
 }
 
+/* Decode XScale DSP or iWMMXt insn (in the copro space, cp=0 or 1) */
+static void disas_xscale_insn(DisasContext *s, uint32_t insn)
+{
+    int cpnum = (insn >> 8) & 0xf;
+
+    if (extract32(s->c15_cpar, cpnum, 1) == 0) {
+        unallocated_encoding(s);
+    } else if (arm_dc_feature(s, ARM_FEATURE_IWMMXT)) {
+        if (disas_iwmmxt_insn(s, insn)) {
+            unallocated_encoding(s);
+        }
+    } else if (arm_dc_feature(s, ARM_FEATURE_XSCALE)) {
+        if (disas_dsp_insn(s, insn)) {
+            unallocated_encoding(s);
+        }
+    }
+}
 
 /* Store a 64-bit value to a register pair.  Clobbers val.  */
 static void gen_storeq_reg(DisasContext *s, int rlow, int rhigh, TCGv_i64 val)
@@ -6259,18 +5304,7 @@ static void gen_srs(DisasContext *s,
         tcg_temp_free_i32(tcg_ctx, tmp);
     }
     tcg_temp_free_i32(tcg_ctx, addr);
-    s->base.is_jmp = DISAS_UPDATE;
-}
-
-/* Generate a label used for skipping this instruction */
-static void arm_gen_condlabel(DisasContext *s)
-{
-    if (!s->condjmp) {
-        TCGContext *tcg_ctx = s->uc->tcg_ctx;
-
-        s->condlabel = gen_new_label(tcg_ctx);
-        s->condjmp = 1;
-    }
+    s->base.is_jmp = DISAS_UPDATE_EXIT;
 }
 
 /* Skip this instruction if the ARM condition is false */
@@ -6281,28 +5315,8 @@ static void arm_skip_unless(DisasContext *s, uint32_t cond)
 }
 
 /*
- * Constant expanders for the decoders.
+ * Constant expanders used by T16/T32 decode
  */
-
-static int negate(DisasContext *s, int x)
-{
-    return -x;
-}
-
-static int plus_2(DisasContext *s, int x)
-{
-    return x + 2;
-}
-
-static int times_2(DisasContext *s, int x)
-{
-    return x * 2;
-}
-
-static int times_4(DisasContext *s, int x)
-{
-    return x * 4;
-}
 
 /* Return only the rotation part of T32ExpandImm.  */
 static int t32_expandimm_rot(DisasContext *s, int x)
@@ -6367,6 +5381,75 @@ static int t16_pop_list(DisasContext *s, int x)
 #include "decode-a32-uncond.inc.c"
 #include "decode-t32.inc.c"
 #include "decode-t16.inc.c"
+
+static bool valid_cp(DisasContext *s, int cp)
+{
+    /*
+     * Return true if this coprocessor field indicates something
+     * that's really a possible coprocessor.
+     * For v7 and earlier, coprocessors 8..15 were reserved for Arm use,
+     * and of those only cp14 and cp15 were used for registers.
+     * cp10 and cp11 were used for VFP and Neon, whose decode is
+     * dealt with elsewhere. With the advent of fp16, cp9 is also
+     * now part of VFP.
+     * For v8A and later, the encoding has been tightened so that
+     * only cp14 and cp15 are valid, and other values aren't considered
+     * to be in the coprocessor-instruction space at all. v8M still
+     * permits coprocessors 0..7.
+     * For XScale, we must not decode the XScale cp0, cp1 space as
+     * a standard coprocessor insn, because we want to fall through to
+     * the legacy disas_xscale_insn() decoder after decodetree is done.
+     */
+    if (arm_dc_feature(s, ARM_FEATURE_XSCALE) && (cp == 0 || cp == 1)) {
+        return false;
+    }
+
+    if (arm_dc_feature(s, ARM_FEATURE_V8) &&
+        !arm_dc_feature(s, ARM_FEATURE_M)) {
+        return cp >= 14;
+    }
+    return cp < 8 || cp >= 14;
+}
+
+static bool trans_MCR(DisasContext *s, arg_MCR *a)
+{
+    if (!valid_cp(s, a->cp)) {
+        return false;
+    }
+    do_coproc_insn(s, a->cp, false, a->opc1, a->crn, a->crm, a->opc2,
+                   false, a->rt, 0);
+    return true;
+}
+
+static bool trans_MRC(DisasContext *s, arg_MRC *a)
+{
+    if (!valid_cp(s, a->cp)) {
+        return false;
+    }
+    do_coproc_insn(s, a->cp, false, a->opc1, a->crn, a->crm, a->opc2,
+                   true, a->rt, 0);
+    return true;
+}
+
+static bool trans_MCRR(DisasContext *s, arg_MCRR *a)
+{
+    if (!valid_cp(s, a->cp)) {
+        return false;
+    }
+    do_coproc_insn(s, a->cp, true, a->opc1, 0, a->crm, 0,
+                   false, a->rt, a->rt2);
+    return true;
+}
+
+static bool trans_MRRC(DisasContext *s, arg_MRRC *a)
+{
+    if (!valid_cp(s, a->cp)) {
+        return false;
+    }
+    do_coproc_insn(s, a->cp, true, a->opc1, 0, a->crm, 0,
+                   true, a->rt, a->rt2);
+    return true;
+}
 
 /* Helpers to swap operands for reverse-subtract.  */
 static void gen_rsb(DisasContext *s, TCGv_i32 dst, TCGv_i32 a, TCGv_i32 b)
@@ -6468,10 +5551,9 @@ static void gen_ext16u_i32(DisasContext *s, TCGv_i32 dest, TCGv_i32 src)
     tcg_gen_ext16u_i32(tcg_ctx, dest, src);
 }
 
-static void gen_bswap32_i32(DisasContext *s, TCGv_i32 dest, TCGv_i32 src)
+static void gen_bswap32_i32(TCGContext *s, TCGv_i32 dest, TCGv_i32 src)
 {
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
-    tcg_gen_bswap32_i32(tcg_ctx, dest, src);
+    tcg_gen_bswap32_i32(s, dest, src);
 }
 
 static void gen_ssat_dectree(DisasContext *s, TCGv_i32 dest, TCGv_env env, TCGv_i32 a, TCGv_i32 b)
@@ -6510,9 +5592,8 @@ static void gen_uxtb16_dectree(DisasContext *s, TCGv_i32 dest, TCGv_i32 src)
     gen_helper_uxtb16(tcg_ctx, dest, src);
 }
 
-static void gen_rbit_dectree(DisasContext* s, TCGv_i32 dest, TCGv_i32 src)
+static void gen_rbit_dectree(TCGContext* tcg_ctx, TCGv_i32 dest, TCGv_i32 src)
 {
-    TCGContext *tcg_ctx = s->uc->tcg_ctx;
     gen_helper_rbit(tcg_ctx, dest, src);
 }
 
@@ -8631,12 +7712,13 @@ static bool trans_SEL(DisasContext *s, arg_rrr *a)
 }
 
 static bool op_rr(DisasContext *s, arg_rr *a,
-                  void (*gen)(DisasContext* s, TCGv_i32, TCGv_i32))
+                  void (*gen)(TCGContext* s, TCGv_i32, TCGv_i32))
 {
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
     TCGv_i32 tmp;
 
     tmp = load_reg(s, a->rm);
-    gen(s, tmp, tmp);
+    gen(tcg_ctx, tmp, tmp);
     store_reg(s, a->rd, tmp);
     return true;
 }
@@ -8689,26 +7771,64 @@ static bool op_smlad(DisasContext *s, arg_rrrr *a, bool m_swap, bool sub)
     t1 = load_reg(s, a->rn);
     t2 = load_reg(s, a->rm);
     if (m_swap) {
-        gen_swap_half(s, t2);
+        gen_swap_half(tcg_ctx, t2, t2);
     }
     gen_smul_dual(s, t1, t2);
 
     if (sub) {
-        /* This subtraction cannot overflow. */
+        /*
+         * This subtraction cannot overflow, so we can do a simple
+         * 32-bit subtraction and then a possible 32-bit saturating
+         * addition of Ra.
+         */
         tcg_gen_sub_i32(tcg_ctx, t1, t1, t2);
+        tcg_temp_free_i32(tcg_ctx, t2);
+
+        if (a->ra != 15) {
+            t2 = load_reg(s, a->ra);
+            gen_helper_add_setq(tcg_ctx, t1, tcg_ctx->cpu_env, t1, t2);
+            tcg_temp_free_i32(tcg_ctx, t2);
+        }
+    } else if (a->ra == 15) {
+        /* Single saturation-checking addition */
+        gen_helper_add_setq(tcg_ctx, t1, tcg_ctx->cpu_env, t1, t2);
+        tcg_temp_free_i32(tcg_ctx, t2);
     } else {
         /*
-         * This addition cannot overflow 32 bits; however it may
-         * overflow considered as a signed operation, in which case
-         * we must set the Q flag.
+         * We need to add the products and Ra together and then
+         * determine whether the final result overflowed. Doing
+         * this as two separate add-and-check-overflow steps incorrectly
+         * sets Q for cases like (-32768 * -32768) + (-32768 * -32768) + -1.
+         * Do all the arithmetic at 64-bits and then check for overflow.
          */
-        gen_helper_add_setq(tcg_ctx, t1, tcg_ctx->cpu_env, t1, t2);
-    }
-    tcg_temp_free_i32(tcg_ctx, t2);
+        TCGv_i64 p64, q64;
+        TCGv_i32 t3, qf, one;
 
-    if (a->ra != 15) {
-        t2 = load_reg(s, a->ra);
-        gen_helper_add_setq(tcg_ctx, t1, tcg_ctx->cpu_env, t1, t2);
+        p64 = tcg_temp_new_i64(tcg_ctx);
+        q64 = tcg_temp_new_i64(tcg_ctx);
+        tcg_gen_ext_i32_i64(tcg_ctx, p64, t1);
+        tcg_gen_ext_i32_i64(tcg_ctx, q64, t2);
+        tcg_gen_add_i64(tcg_ctx, p64, p64, q64);
+        load_reg_var(s, t2, a->ra);
+        tcg_gen_ext_i32_i64(tcg_ctx, q64, t2);
+        tcg_gen_add_i64(tcg_ctx, p64, p64, q64);
+        tcg_temp_free_i64(tcg_ctx, q64);
+
+        tcg_gen_extr_i64_i32(tcg_ctx, t1, t2, p64);
+        tcg_temp_free_i64(tcg_ctx, p64);
+        /*
+         * t1 is the low half of the result which goes into Rd.
+         * We have overflow and must set Q if the high half (t2)
+         * is different from the sign-extension of t1.
+         */
+        t3 = tcg_temp_new_i32(tcg_ctx);
+        tcg_gen_sari_i32(tcg_ctx, t3, t1, 31);
+        qf = load_cpu_field(s, QF);
+        one = tcg_const_i32(tcg_ctx, 1);
+        tcg_gen_movcond_i32(tcg_ctx, TCG_COND_NE, qf, t2, t3, one, qf);
+        store_cpu_field(s, qf, QF);
+        tcg_temp_free_i32(tcg_ctx, one);
+        tcg_temp_free_i32(tcg_ctx, t3);
         tcg_temp_free_i32(tcg_ctx, t2);
     }
     store_reg(s, a->rd, t1);
@@ -8748,7 +7868,7 @@ static bool op_smlald(DisasContext *s, arg_rrrr *a, bool m_swap, bool sub)
     t1 = load_reg(s, a->rn);
     t2 = load_reg(s, a->rm);
     if (m_swap) {
-        gen_swap_half(s, t2);
+        gen_swap_half(tcg_ctx, t2, t2);
     }
     gen_smul_dual(s, t1, t2);
 
@@ -9104,9 +8224,6 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a, int min_n)
             gen_io_start(tcg_ctx);
         }
         gen_helper_cpsr_write_eret(tcg_ctx, tcg_ctx->cpu_env, tmp);
-        if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
-            gen_io_end(tcg_ctx);
-        }
         tcg_temp_free_i32(tcg_ctx, tmp);
         /* Must exit loop to check un-masked IRQs */
         s->base.is_jmp = DISAS_EXIT;
@@ -9148,6 +8265,45 @@ static bool trans_LDM_t16(DisasContext *s, arg_ldst_block *a)
     return do_ldm(s, a, 1);
 }
 
+static bool trans_CLRM(DisasContext *s, arg_CLRM *a)
+{
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+    int i;
+    TCGv_i32 zero;
+
+    if (!dc_isar_feature(aa32_m_sec_state, s)) {
+        return false;
+    }
+
+    if (extract32(a->list, 13, 1)) {
+        return false;
+    }
+
+    if (!a->list) {
+        /* UNPREDICTABLE; we choose to UNDEF */
+        return false;
+    }
+
+    zero = tcg_const_i32(tcg_ctx, 0);
+    for (i = 0; i < 15; i++) {
+        if (extract32(a->list, i, 1)) {
+            /* Clear R[i] */
+            tcg_gen_mov_i32(tcg_ctx, tcg_ctx->cpu_R[i], zero);
+        }
+    }
+    if (extract32(a->list, 15, 1)) {
+        /*
+         * Clear APSR (by calling the MSR helper with the same argument
+         * as for "MSR APSR_nzcvqg, Rn": mask = 0b1100, SYSM=0)
+         */
+        TCGv_i32 maskreg = tcg_const_i32(tcg_ctx, 0xc << 8);
+        gen_helper_v7m_msr(tcg_ctx, tcg_ctx->cpu_env, maskreg, zero);
+        tcg_temp_free_i32(tcg_ctx, maskreg);
+    }
+    tcg_temp_free_i32(tcg_ctx, zero);
+    return true;
+}
+
 /*
  * Branch, branch with link
  */
@@ -9186,7 +8342,15 @@ static bool trans_BLX_i(DisasContext *s, arg_BLX_i *a)
     TCGContext *tcg_ctx = s->uc->tcg_ctx;
     TCGv_i32 tmp;
 
-    /* For A32, ARCH(5) is checked near the start of the uncond block. */
+    /*
+     * BLX <imm> would be useless on M-profile; the encoding space
+     * is used for other insns from v8.1M onward, and UNDEFs before that.
+     */
+    if (arm_dc_feature(s, ARM_FEATURE_M)) {
+        return false;
+    }
+
+    /* For A32, ARM_FEATURE_V5 is checked near the start of the uncond block. */
     if (s->thumb && (a->imm & 2)) {
         return false;
     }
@@ -9231,6 +8395,111 @@ static bool trans_BLX_suffix(DisasContext *s, arg_BLX_suffix *a)
     tcg_gen_andi_i32(tcg_ctx, tmp, tmp, 0xfffffffc);
     tcg_gen_movi_i32(tcg_ctx, tcg_ctx->cpu_R[14], s->base.pc_next | 1);
     gen_bx(s, tmp);
+    return true;
+}
+
+static bool trans_BF(DisasContext *s, arg_BF *a)
+{
+    /*
+     * M-profile branch future insns. The architecture permits an
+     * implementation to implement these as NOPs (equivalent to
+     * discarding the LO_BRANCH_INFO cache immediately), and we
+     * take that IMPDEF option because for QEMU a "real" implementation
+     * would be complicated and wouldn't execute any faster.
+     */
+    if (!dc_isar_feature(aa32_lob, s)) {
+        return false;
+    }
+    if (a->boff == 0) {
+        /* SEE "Related encodings" (loop insns) */
+        return false;
+    }
+    /* Handle as NOP */
+    return true;
+}
+
+static bool trans_DLS(DisasContext *s, arg_DLS *a)
+{
+    /* M-profile low-overhead loop start */
+    TCGv_i32 tmp;
+
+    if (!dc_isar_feature(aa32_lob, s)) {
+        return false;
+    }
+    if (a->rn == 13 || a->rn == 15) {
+        /* CONSTRAINED UNPREDICTABLE: we choose to UNDEF */
+        return false;
+    }
+
+    /* Not a while loop, no tail predication: just set LR to the count */
+    tmp = load_reg(s, a->rn);
+    store_reg(s, 14, tmp);
+    return true;
+}
+
+static bool trans_WLS(DisasContext *s, arg_WLS *a)
+{
+    /* M-profile low-overhead while-loop start */
+    TCGv_i32 tmp;
+    TCGLabel *nextlabel;
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+
+    if (!dc_isar_feature(aa32_lob, s)) {
+        return false;
+    }
+    if (a->rn == 13 || a->rn == 15) {
+        /* CONSTRAINED UNPREDICTABLE: we choose to UNDEF */
+        return false;
+    }
+    if (s->condexec_mask) {
+        /*
+         * WLS in an IT block is CONSTRAINED UNPREDICTABLE;
+         * we choose to UNDEF, because otherwise our use of
+         * gen_goto_tb(1) would clash with the use of TB exit 1
+         * in the dc->condjmp condition-failed codepath in
+         * arm_tr_tb_stop() and we'd get an assertion.
+         */
+        return false;
+    }
+    nextlabel = gen_new_label(tcg_ctx);
+    tcg_gen_brcondi_i32(tcg_ctx, TCG_COND_EQ, tcg_ctx->cpu_R[a->rn], 0, nextlabel);
+    tmp = load_reg(s, a->rn);
+    store_reg(s, 14, tmp);
+    gen_jmp_tb(s, s->base.pc_next, 1);
+
+    gen_set_label(tcg_ctx, nextlabel);
+    gen_jmp(s, read_pc(s) + a->imm);
+    return true;
+}
+
+static bool trans_LE(DisasContext *s, arg_LE *a)
+{
+    /*
+     * M-profile low-overhead loop end. The architecture permits an
+     * implementation to discard the LO_BRANCH_INFO cache at any time,
+     * and we take the IMPDEF option to never set it in the first place
+     * (equivalent to always discarding it immediately), because for QEMU
+     * a "real" implementation would be complicated and wouldn't execute
+     * any faster.
+     */
+    TCGv_i32 tmp;
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+
+    if (!dc_isar_feature(aa32_lob, s)) {
+        return false;
+    }
+
+    if (!a->f) {
+        /* Not loop-forever. If LR <= 1 this is the last loop: do nothing. */
+        arm_gen_condlabel(s);
+        tcg_gen_brcondi_i32(tcg_ctx, TCG_COND_LEU, tcg_ctx->cpu_R[14], 1, s->condlabel);
+        /* Decrement LR */
+        tmp = load_reg(s, 14);
+        tcg_gen_addi_i32(tcg_ctx, tmp, tmp, -1);
+        store_reg(s, 14, tmp);
+    }
+    /* Jump back to the loop start */
+    gen_jmp(s, read_pc(s) - a->imm);
     return true;
 }
 
@@ -9480,7 +8749,7 @@ static bool trans_SETEND(DisasContext *s, arg_SETEND *a)
     }
     if (a->E != (s->be_data == MO_BE)) {
         gen_helper_setend(tcg_ctx, tcg_ctx->cpu_env);
-        s->base.is_jmp = DISAS_UPDATE;
+        s->base.is_jmp = DISAS_UPDATE_EXIT;
     }
     return true;
 }
@@ -9526,6 +8795,67 @@ static bool trans_IT(DisasContext *s, arg_IT *a)
     return true;
 }
 
+/* v8.1M CSEL/CSINC/CSNEG/CSINV */
+static bool trans_CSEL(DisasContext *s, arg_CSEL *a)
+{
+    TCGv_i32 rn, rm, zero;
+    DisasCompare c;
+    TCGContext *tcg_ctx = s->uc->tcg_ctx;
+
+    if (!arm_dc_feature(s, ARM_FEATURE_V8_1M)) {
+        return false;
+    }
+
+    if (a->rm == 13) {
+        /* SEE "Related encodings" (MVE shifts) */
+        return false;
+    }
+
+    if (a->rd == 13 || a->rd == 15 || a->rn == 13 || a->fcond >= 14) {
+        /* CONSTRAINED UNPREDICTABLE: we choose to UNDEF */
+        return false;
+    }
+
+    /* In this insn input reg fields of 0b1111 mean "zero", not "PC" */
+    if (a->rn == 15) {
+        rn = tcg_const_i32(tcg_ctx, 0);
+    } else {
+        rn = load_reg(s, a->rn);
+    }
+    if (a->rm == 15) {
+        rm = tcg_const_i32(tcg_ctx, 0);
+    } else {
+        rm = load_reg(s, a->rm);
+    }
+
+    switch (a->op) {
+    case 0: /* CSEL */
+        break;
+    case 1: /* CSINC */
+        tcg_gen_addi_i32(tcg_ctx, rm, rm, 1);
+        break;
+    case 2: /* CSINV */
+        tcg_gen_not_i32(tcg_ctx, rm, rm);
+        break;
+    case 3: /* CSNEG */
+        tcg_gen_neg_i32(tcg_ctx, rm, rm);
+        break;
+    default:
+        g_assert_not_reached();
+    }
+
+    arm_test_cc(s, &c, a->fcond);
+    zero = tcg_const_i32(tcg_ctx, 0);
+    tcg_gen_movcond_i32(tcg_ctx, c.cond, rn, c.value, zero, rn, rm);
+    arm_free_cc(s, &c);
+    tcg_temp_free_i32(tcg_ctx, zero);
+
+    store_reg(s, a->rd, rn);
+    tcg_temp_free_i32(tcg_ctx, rm);
+
+    return true;
+}
+
 /*
  * Legacy decoder.
  */
@@ -9556,7 +8886,10 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
          * choose to UNDEF. In ARMv5 and above the space is used
          * for miscellaneous unconditional instructions.
          */
-        ARCH(5);
+        if (!arm_dc_feature(s, ARM_FEATURE_V5)) {
+            unallocated_encoding(s);
+            return;
+        }
 
         /* Unconditional instructions.  */
         /* TODO: Perhaps merge these into one decodetree output file.  */
@@ -9569,13 +8902,6 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
         }
         /* fall back to legacy decoder */
 
-        if (((insn >> 25) & 7) == 1) {
-            /* NEON Data processing.  */
-            if (disas_neon_data_insn(s, insn)) {
-                goto illegal_op;
-            }
-            return;
-        }
         if ((insn & 0x0e000f00) == 0x0c000100) {
             if (arm_dc_feature(s, ARM_FEATURE_IWMMXT)) {
                 /* iWMMXt register transfer.  */
@@ -9601,24 +8927,18 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
     }
     /* fall back to legacy decoder */
 
-    switch ((insn >> 24) & 0xf) {
-    case 0xc:
-    case 0xd:
-    case 0xe:
-        if (((insn >> 8) & 0xe) == 10) {
-            /* VFP, but failed disas_vfp.  */
-            goto illegal_op;
+    /* TODO: convert xscale/iwmmxt decoder to decodetree ?? */
+    if (arm_dc_feature(s, ARM_FEATURE_XSCALE)) {
+        if (((insn & 0x0c000e00) == 0x0c000000)
+            && ((insn & 0x03000000) != 0x03000000)) {
+            /* Coprocessor insn, coprocessor 0 or 1 */
+            disas_xscale_insn(s, insn);
+            return;
         }
-        if (disas_coproc_insn(s, insn)) {
-            /* Coprocessor.  */
-            goto illegal_op;
-        }
-        break;
-    default:
-    illegal_op:
-        unallocated_encoding(s);
-        break;
     }
+
+illegal_op:
+    unallocated_encoding(s);
 }
 
 static bool thumb_insn_is_16bit(DisasContext *s, uint32_t pc, uint32_t insn)
@@ -9695,7 +9015,23 @@ static void disas_thumb2_insn(DisasContext *s, uint32_t insn)
             goto illegal_op;
         }
     } else if ((insn & 0xf800e800) != 0xf000e800)  {
-        ARCH(6T2);
+        if (!arm_dc_feature(s, ARM_FEATURE_THUMB2)) {
+            unallocated_encoding(s);
+            return;
+        }
+    }
+
+    if (arm_dc_feature(s, ARM_FEATURE_M)) {
+        /*
+         * NOCP takes precedence over any UNDEF for (almost) the
+         * entire wide range of coprocessor-space encodings, so check
+         * for it first before proceeding to actually decode eg VFP
+         * insns. This decode also handles the few insns which are
+         * in copro space but do not have NOCP checks (eg VLLDM, VLSTM).
+         */
+        if (disas_m_nocp(s, insn)) {
+            return;
+        }
     }
 
     if ((insn & 0xef000000) == 0xef000000) {
@@ -9736,56 +9072,9 @@ static void disas_thumb2_insn(DisasContext *s, uint32_t insn)
         ((insn >> 28) == 0xe && disas_vfp(s, insn))) {
         return;
     }
-    /* fall back to legacy decoder */
 
-    switch ((insn >> 25) & 0xf) {
-    case 0: case 1: case 2: case 3:
-        /* 16-bit instructions.  Should never happen.  */
-        abort();
-    case 6: case 7: case 14: case 15:
-        /* Coprocessor.  */
-        if (arm_dc_feature(s, ARM_FEATURE_M)) {
-            /* 0b111x_11xx_xxxx_xxxx_xxxx_xxxx_xxxx_xxxx */
-            if (extract32(insn, 24, 2) == 3) {
-                goto illegal_op; /* op0 = 0b11 : unallocated */
-            }
-
-            if (((insn >> 8) & 0xe) == 10 &&
-                dc_isar_feature(aa32_fpsp_v2, s)) {
-                /* FP, and the CPU supports it */
-                goto illegal_op;
-            } else {
-                /* All other insns: NOCP */
-                gen_exception_insn(s, s->pc_curr, EXCP_NOCP,
-                                   syn_uncategorized(),
-                                   default_exception_el(s));
-            }
-            break;
-        }
-        if (((insn >> 24) & 3) == 3) {
-            /* Translate into the equivalent ARM encoding.  */
-            insn = (insn & 0xe2ffffff) | ((insn & (1 << 28)) >> 4) | (1 << 28);
-            if (disas_neon_data_insn(s, insn)) {
-                goto illegal_op;
-            }
-        } else if (((insn >> 8) & 0xe) == 10) {
-            /* VFP, but failed disas_vfp.  */
-            goto illegal_op;
-        } else {
-            if (insn & (1 << 28))
-                goto illegal_op;
-            if (disas_coproc_insn(s, insn)) {
-                goto illegal_op;
-            }
-        }
-        break;
-    case 12:
-        goto illegal_op;
-    default:
-        goto illegal_op;
-    illegal_op:
-        unallocated_encoding(s);
-    }
+illegal_op:
+    unallocated_encoding(s);
 }
 
 static void disas_thumb_insn(DisasContext *s, uint32_t insn)
@@ -9908,7 +9197,6 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
 
     dc->V0 = tcg_temp_new_i64(tcg_ctx);
     dc->V1 = tcg_temp_new_i64(tcg_ctx);
-    /* FIXME: dc->M0 can probably be the same as dc->V0.  */
     dc->M0 = tcg_temp_new_i64(tcg_ctx);
 }
 
@@ -10158,9 +9446,11 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     // Unicorn: trace this instruction on request
     const uint32_t insn_size = is_16bit ? 2 : 4;
     if (HOOK_EXISTS_BOUNDED(dc->uc, UC_HOOK_CODE, dc->base.pc_next - insn_size)) {
-        gen_uc_tracecode(tcg_ctx, insn_size, UC_HOOK_CODE_IDX, dc->uc, dc->base.pc_next - insn_size);
-        // the callback might want to stop emulation immediately
-        check_exit_request(tcg_ctx);
+        if (!dc->condexec_mask) {
+            gen_uc_tracecode(tcg_ctx, insn_size, UC_HOOK_CODE_IDX, dc->uc, dc->base.pc_next - insn_size);
+            // the callback might want to stop emulation immediately
+            check_exit_request(tcg_ctx);
+        }
     }
 
     if (is_16bit) {
@@ -10241,7 +9531,8 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             break;
         case DISAS_NEXT:
         case DISAS_TOO_MANY:
-        case DISAS_UPDATE:
+        case DISAS_UPDATE_EXIT:
+        case DISAS_UPDATE_NOCHAIN:
             gen_set_pc_im(dc, dc->base.pc_next);
             /* fall through */
         default:
@@ -10260,15 +9551,18 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             - Hardware watchpoints.
            Hardware breakpoints have already been handled and skip this code.
          */
-        switch(dc->base.is_jmp) {
+        switch (dc->base.is_jmp) {
         case DISAS_NEXT:
         case DISAS_TOO_MANY:
             gen_goto_tb(dc, 1, dc->base.pc_next);
             break;
+        case DISAS_UPDATE_NOCHAIN:
+            gen_set_pc_im(dc, dc->base.pc_next);
+            /* fall through */
         case DISAS_JUMP:
             gen_goto_ptr(dc);
             break;
-        case DISAS_UPDATE:
+        case DISAS_UPDATE_EXIT:
             gen_set_pc_im(dc, dc->base.pc_next);
             /* fall through */
         default:

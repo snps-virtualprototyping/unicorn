@@ -6,7 +6,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -2424,8 +2424,8 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
 
     if (use_goto_tb(s, pc))  {
         /* jump to same page: we can use a direct jump */
-        gen_jmp_im(s, eip); // SNPS moved
         tcg_gen_goto_tb(tcg_ctx, tb_num);
+        gen_jmp_im(s, eip);
         tcg_gen_exit_tb(tcg_ctx, s->base.tb, tb_num);
         s->base.is_jmp = DISAS_NORETURN;
     } else {
@@ -3531,7 +3531,7 @@ static void gen_sse(CPUX86State *env, DisasContext *s, int b,
     }
     if (is_xmm
         && !(s->flags & HF_OSFXSR_MASK)
-        && ((b != 0x38 && b != 0x3a) || (s->prefix & PREFIX_DATA))) {
+        && (b != 0x38 && b != 0x3a)) {
         goto unknown_op;
     }
     if (b == 0x0e) {
@@ -4380,14 +4380,14 @@ static void gen_sse(CPUX86State *env, DisasContext *s, int b,
                 }
                 ot = mo_64_32(s->dflag);
                 gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 0);
-                /* Note that by zero-extending the mask operand, we
+                /* Note that by zero-extending the source operand, we
                    automatically handle zero-extending the result.  */
                 if (ot == MO_64) {
                     tcg_gen_mov_tl(tcg_ctx, s->T1, cpu_regs[s->vex_v]);
                 } else {
                     tcg_gen_ext32u_tl(tcg_ctx, s->T1, cpu_regs[s->vex_v]);
                 }
-                gen_helper_pdep(tcg_ctx, cpu_regs[reg], s->T0, s->T1);
+                gen_helper_pdep(tcg_ctx, cpu_regs[reg], s->T1, s->T0);
                 break;
 
             case 0x2f5: /* pext Gy, By, Ey */
@@ -4398,14 +4398,14 @@ static void gen_sse(CPUX86State *env, DisasContext *s, int b,
                 }
                 ot = mo_64_32(s->dflag);
                 gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 0);
-                /* Note that by zero-extending the mask operand, we
+                /* Note that by zero-extending the source operand, we
                    automatically handle zero-extending the result.  */
                 if (ot == MO_64) {
                     tcg_gen_mov_tl(tcg_ctx, s->T1, cpu_regs[s->vex_v]);
                 } else {
                     tcg_gen_ext32u_tl(tcg_ctx, s->T1, cpu_regs[s->vex_v]);
                 }
-                gen_helper_pext(tcg_ctx, cpu_regs[reg], s->T0, s->T1);
+                gen_helper_pext(tcg_ctx, cpu_regs[reg], s->T1, s->T0);
                 break;
 
             case 0x1f6: /* adcx Gy, Ey */
@@ -5596,6 +5596,9 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             gen_jr(s, s->T0);
             break;
         case 3: /* lcall Ev */
+            if (mod == 3) {
+                goto illegal_op;
+            }
             gen_op_ld_v(s, ot, s->T1, s->A0);
             gen_add_A0_im(s, 1 << ot);
             gen_op_ld_v(s, MO_16, s->T0, s->A0);
@@ -5623,6 +5626,9 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             gen_jr(s, s->T0);
             break;
         case 5: /* ljmp Ev */
+            if (mod == 3) {
+                goto illegal_op;
+            }
             gen_op_ld_v(s, ot, s->T1, s->A0);
             gen_add_A0_im(s, 1 << ot);
             gen_op_ld_v(s, MO_16, s->T0, s->A0);
@@ -7690,6 +7696,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             l1 = gen_new_label(tcg_ctx);
             l2 = gen_new_label(tcg_ctx);
             l3 = gen_new_label(tcg_ctx);
+            gen_update_cc_op(s);
             b &= 3;
             switch(b) {
             case 0: /* loopnz */
@@ -8116,12 +8123,13 @@ case 0x101:
         CASE_MODRM_OP(4): /* smsw */
             gen_svm_check_intercept(s, pc_start, SVM_EXIT_READ_CR0);
             tcg_gen_ld_tl(tcg_ctx, s->T0, cpu_env, offsetof(CPUX86State, cr[0]));
-            if (CODE64(s)) {
-                mod = (modrm >> 6) & 3;
-                ot = (mod != 3 ? MO_16 : s->dflag);
-            } else {
-                ot = MO_16;
-            }
+            /*
+             * In 32-bit mode, the higher 16 bits of the destination
+             * register are undefined.  In practice CR0[31:0] is stored
+             * just like in 64-bit mode.
+             */
+            mod = (modrm >> 6) & 3;
+            ot = (mod != 3 ? MO_16 : s->dflag);
             gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 1);
             break;
         case 0xee: /* rdpkru */
@@ -8708,6 +8716,7 @@ case 0x101:
                 gen_exception(s, EXCP07_PREX, pc_start - s->cs_base);
                 break;
             }
+            gen_helper_update_mxcsr(tcg_ctx, tcg_ctx->cpu_env);
             gen_lea_modrm(env, s, modrm);
             tcg_gen_ld32u_tl(tcg_ctx, s->T0, cpu_env, offsetof(CPUX86State, mxcsr));
             gen_op_st_v(s, MO_32, s->T0, s->A0);
@@ -9178,15 +9187,6 @@ static bool i386_tr_breakpoint_check(DisasContextBase *dcbase, CPUState *cpu,
                                      const CPUBreakpoint *bp)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
-
-    if (bp->flags & BP_CALL) { // SNPS added
-        TCGContext *tcg_ctx = dc->uc->tcg_ctx;
-        gen_jmp_im(dc, dcbase->pc_next);
-        gen_helper_call_breakpoints(tcg_ctx, tcg_ctx->cpu_env);
-        dcbase->is_jmp = DISAS_TOO_MANY;
-        return true;
-    }
-
     /* If RF is set, suppress an internally generated breakpoint.  */
     int flags = dc->base.tb->flags & HF_RF_MASK ? BP_GDB : BP_ANY;
     if (bp->flags & flags) {

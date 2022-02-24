@@ -7,7 +7,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -22,7 +22,7 @@
 
 #if SHIFT == 0
 #define Reg MMXReg
-#define ZMM_ONLY(...)
+#define XMM_ONLY(...)
 #define B(n) MMX_B(n)
 #define W(n) MMX_W(n)
 #define L(n) MMX_L(n)
@@ -30,7 +30,7 @@
 #define SUFFIX _mmx
 #else
 #define Reg ZMMReg
-#define ZMM_ONLY(...) __VA_ARGS__
+#define XMM_ONLY(...) __VA_ARGS__
 #define B(n) ZMM_B(n)
 #define W(n) ZMM_W(n)
 #define L(n) ZMM_L(n)
@@ -245,7 +245,7 @@ void glue(helper_pslldq, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
         d->B(5) = F(d->B(5), s->B(5));                          \
         d->B(6) = F(d->B(6), s->B(6));                          \
         d->B(7) = F(d->B(7), s->B(7));                          \
-        ZMM_ONLY(                                               \
+        XMM_ONLY(                                               \
                  d->B(8) = F(d->B(8), s->B(8));                 \
                  d->B(9) = F(d->B(9), s->B(9));                 \
                  d->B(10) = F(d->B(10), s->B(10));              \
@@ -264,7 +264,7 @@ void glue(helper_pslldq, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
         d->W(1) = F(d->W(1), s->W(1));                          \
         d->W(2) = F(d->W(2), s->W(2));                          \
         d->W(3) = F(d->W(3), s->W(3));                          \
-        ZMM_ONLY(                                               \
+        XMM_ONLY(                                               \
                  d->W(4) = F(d->W(4), s->W(4));                 \
                  d->W(5) = F(d->W(5), s->W(5));                 \
                  d->W(6) = F(d->W(6), s->W(6));                 \
@@ -277,7 +277,7 @@ void glue(helper_pslldq, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
     {                                                           \
         d->L(0) = F(d->L(0), s->L(0));                          \
         d->L(1) = F(d->L(1), s->L(1));                          \
-        ZMM_ONLY(                                               \
+        XMM_ONLY(                                               \
                  d->L(2) = F(d->L(2), s->L(2));                 \
                  d->L(3) = F(d->L(3), s->L(3));                 \
                                                         )       \
@@ -287,7 +287,7 @@ void glue(helper_pslldq, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
     void glue(name, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)   \
     {                                                           \
         d->Q(0) = F(d->Q(0), s->Q(0));                          \
-        ZMM_ONLY(                                               \
+        XMM_ONLY(                                               \
                  d->Q(1) = F(d->Q(1), s->Q(1));                 \
                                                         )       \
             }
@@ -843,6 +843,7 @@ int64_t helper_cvttsd2sq(CPUX86State *env, ZMMReg *s)
 
 void helper_rsqrtps(CPUX86State *env, ZMMReg *d, ZMMReg *s)
 {
+    uint8_t old_flags = get_float_exception_flags(&env->sse_status);
     d->ZMM_S(0) = float32_div(float32_one,
                               float32_sqrt(s->ZMM_S(0), &env->sse_status),
                               &env->sse_status);
@@ -855,26 +856,33 @@ void helper_rsqrtps(CPUX86State *env, ZMMReg *d, ZMMReg *s)
     d->ZMM_S(3) = float32_div(float32_one,
                               float32_sqrt(s->ZMM_S(3), &env->sse_status),
                               &env->sse_status);
+    set_float_exception_flags(old_flags, &env->sse_status);
 }
 
 void helper_rsqrtss(CPUX86State *env, ZMMReg *d, ZMMReg *s)
 {
+    uint8_t old_flags = get_float_exception_flags(&env->sse_status);
     d->ZMM_S(0) = float32_div(float32_one,
                               float32_sqrt(s->ZMM_S(0), &env->sse_status),
                               &env->sse_status);
+    set_float_exception_flags(old_flags, &env->sse_status);
 }
 
 void helper_rcpps(CPUX86State *env, ZMMReg *d, ZMMReg *s)
 {
+    uint8_t old_flags = get_float_exception_flags(&env->sse_status);
     d->ZMM_S(0) = float32_div(float32_one, s->ZMM_S(0), &env->sse_status);
     d->ZMM_S(1) = float32_div(float32_one, s->ZMM_S(1), &env->sse_status);
     d->ZMM_S(2) = float32_div(float32_one, s->ZMM_S(2), &env->sse_status);
     d->ZMM_S(3) = float32_div(float32_one, s->ZMM_S(3), &env->sse_status);
+    set_float_exception_flags(old_flags, &env->sse_status);
 }
 
 void helper_rcpss(CPUX86State *env, ZMMReg *d, ZMMReg *s)
 {
+    uint8_t old_flags = get_float_exception_flags(&env->sse_status);
     d->ZMM_S(0) = float32_div(float32_one, s->ZMM_S(0), &env->sse_status);
+    set_float_exception_flags(old_flags, &env->sse_status);
 }
 
 static inline uint64_t helper_extrq(uint64_t src, int shift, int len)
@@ -1209,7 +1217,7 @@ void glue(helper_packssdw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
         r.B(5) = s->B((base << (SHIFT + 2)) + 2);                       \
         r.B(6) = d->B((base << (SHIFT + 2)) + 3);                       \
         r.B(7) = s->B((base << (SHIFT + 2)) + 3);                       \
-        ZMM_ONLY(                                                       \
+        XMM_ONLY(                                                       \
                  r.B(8) = d->B((base << (SHIFT + 2)) + 4);              \
                  r.B(9) = s->B((base << (SHIFT + 2)) + 4);              \
                  r.B(10) = d->B((base << (SHIFT + 2)) + 5);             \
@@ -1231,7 +1239,7 @@ void glue(helper_packssdw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
         r.W(1) = s->W((base << (SHIFT + 1)) + 0);                       \
         r.W(2) = d->W((base << (SHIFT + 1)) + 1);                       \
         r.W(3) = s->W((base << (SHIFT + 1)) + 1);                       \
-        ZMM_ONLY(                                                       \
+        XMM_ONLY(                                                       \
                  r.W(4) = d->W((base << (SHIFT + 1)) + 2);              \
                  r.W(5) = s->W((base << (SHIFT + 1)) + 2);              \
                  r.W(6) = d->W((base << (SHIFT + 1)) + 3);              \
@@ -1247,14 +1255,14 @@ void glue(helper_packssdw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
                                                                         \
         r.L(0) = d->L((base << SHIFT) + 0);                             \
         r.L(1) = s->L((base << SHIFT) + 0);                             \
-        ZMM_ONLY(                                                       \
+        XMM_ONLY(                                                       \
                  r.L(2) = d->L((base << SHIFT) + 1);                    \
                  r.L(3) = s->L((base << SHIFT) + 1);                    \
                                                                       ) \
             *d = r;                                                     \
     }                                                                   \
                                                                         \
-    ZMM_ONLY(                                                           \
+    XMM_ONLY(                                                           \
              void glue(helper_punpck ## base_name ## qdq, SUFFIX)(CPUX86State \
                                                                   *env, \
                                                                   Reg *d, \
@@ -1439,12 +1447,12 @@ void glue(helper_phaddw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
 
     r.W(0) = (int16_t)d->W(0) + (int16_t)d->W(1);
     r.W(1) = (int16_t)d->W(2) + (int16_t)d->W(3);
-    ZMM_ONLY(r.W(2) = (int16_t)d->W(4) + (int16_t)d->W(5));
-    ZMM_ONLY(r.W(3) = (int16_t)d->W(6) + (int16_t)d->W(7));
+    XMM_ONLY(r.W(2) = (int16_t)d->W(4) + (int16_t)d->W(5));
+    XMM_ONLY(r.W(3) = (int16_t)d->W(6) + (int16_t)d->W(7));
     r.W((2 << SHIFT) + 0) = (int16_t)s->W(0) + (int16_t)s->W(1);
     r.W((2 << SHIFT) + 1) = (int16_t)s->W(2) + (int16_t)s->W(3);
-    ZMM_ONLY(r.W(6) = (int16_t)s->W(4) + (int16_t)s->W(5));
-    ZMM_ONLY(r.W(7) = (int16_t)s->W(6) + (int16_t)s->W(7));
+    XMM_ONLY(r.W(6) = (int16_t)s->W(4) + (int16_t)s->W(5));
+    XMM_ONLY(r.W(7) = (int16_t)s->W(6) + (int16_t)s->W(7));
 
     *d = r;
 }
@@ -1454,9 +1462,9 @@ void glue(helper_phaddd, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
     Reg r;
 
     r.L(0) = (int32_t)d->L(0) + (int32_t)d->L(1);
-    ZMM_ONLY(r.L(1) = (int32_t)d->L(2) + (int32_t)d->L(3));
+    XMM_ONLY(r.L(1) = (int32_t)d->L(2) + (int32_t)d->L(3));
     r.L((1 << SHIFT) + 0) = (int32_t)s->L(0) + (int32_t)s->L(1);
-    ZMM_ONLY(r.L(3) = (int32_t)s->L(2) + (int32_t)s->L(3));
+    XMM_ONLY(r.L(3) = (int32_t)s->L(2) + (int32_t)s->L(3));
 
     *d = r;
 }
@@ -1467,12 +1475,12 @@ void glue(helper_phaddsw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
 
     r.W(0) = satsw((int16_t)d->W(0) + (int16_t)d->W(1));
     r.W(1) = satsw((int16_t)d->W(2) + (int16_t)d->W(3));
-    ZMM_ONLY(r.W(2) = satsw((int16_t)d->W(4) + (int16_t)d->W(5)));
-    ZMM_ONLY(r.W(3) = satsw((int16_t)d->W(6) + (int16_t)d->W(7)));
+    XMM_ONLY(r.W(2) = satsw((int16_t)d->W(4) + (int16_t)d->W(5)));
+    XMM_ONLY(r.W(3) = satsw((int16_t)d->W(6) + (int16_t)d->W(7)));
     r.W((2 << SHIFT) + 0) = satsw((int16_t)s->W(0) + (int16_t)s->W(1));
     r.W((2 << SHIFT) + 1) = satsw((int16_t)s->W(2) + (int16_t)s->W(3));
-    ZMM_ONLY(r.W(6) = satsw((int16_t)s->W(4) + (int16_t)s->W(5)));
-    ZMM_ONLY(r.W(7) = satsw((int16_t)s->W(6) + (int16_t)s->W(7)));
+    XMM_ONLY(r.W(6) = satsw((int16_t)s->W(4) + (int16_t)s->W(5)));
+    XMM_ONLY(r.W(7) = satsw((int16_t)s->W(6) + (int16_t)s->W(7)));
 
     *d = r;
 }
@@ -1503,32 +1511,32 @@ void glue(helper_phsubw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
 {
     d->W(0) = (int16_t)d->W(0) - (int16_t)d->W(1);
     d->W(1) = (int16_t)d->W(2) - (int16_t)d->W(3);
-    ZMM_ONLY(d->W(2) = (int16_t)d->W(4) - (int16_t)d->W(5));
-    ZMM_ONLY(d->W(3) = (int16_t)d->W(6) - (int16_t)d->W(7));
+    XMM_ONLY(d->W(2) = (int16_t)d->W(4) - (int16_t)d->W(5));
+    XMM_ONLY(d->W(3) = (int16_t)d->W(6) - (int16_t)d->W(7));
     d->W((2 << SHIFT) + 0) = (int16_t)s->W(0) - (int16_t)s->W(1);
     d->W((2 << SHIFT) + 1) = (int16_t)s->W(2) - (int16_t)s->W(3);
-    ZMM_ONLY(d->W(6) = (int16_t)s->W(4) - (int16_t)s->W(5));
-    ZMM_ONLY(d->W(7) = (int16_t)s->W(6) - (int16_t)s->W(7));
+    XMM_ONLY(d->W(6) = (int16_t)s->W(4) - (int16_t)s->W(5));
+    XMM_ONLY(d->W(7) = (int16_t)s->W(6) - (int16_t)s->W(7));
 }
 
 void glue(helper_phsubd, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
 {
     d->L(0) = (int32_t)d->L(0) - (int32_t)d->L(1);
-    ZMM_ONLY(d->L(1) = (int32_t)d->L(2) - (int32_t)d->L(3));
+    XMM_ONLY(d->L(1) = (int32_t)d->L(2) - (int32_t)d->L(3));
     d->L((1 << SHIFT) + 0) = (uint32_t)((int32_t)s->L(0) - (int32_t)s->L(1));
-    ZMM_ONLY(d->L(3) = (int32_t)s->L(2) - (int32_t)s->L(3));
+    XMM_ONLY(d->L(3) = (int32_t)s->L(2) - (int32_t)s->L(3));
 }
 
 void glue(helper_phsubsw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
 {
     d->W(0) = satsw((int16_t)d->W(0) - (int16_t)d->W(1));
     d->W(1) = satsw((int16_t)d->W(2) - (int16_t)d->W(3));
-    ZMM_ONLY(d->W(2) = satsw((int16_t)d->W(4) - (int16_t)d->W(5)));
-    ZMM_ONLY(d->W(3) = satsw((int16_t)d->W(6) - (int16_t)d->W(7)));
+    XMM_ONLY(d->W(2) = satsw((int16_t)d->W(4) - (int16_t)d->W(5)));
+    XMM_ONLY(d->W(3) = satsw((int16_t)d->W(6) - (int16_t)d->W(7)));
     d->W((2 << SHIFT) + 0) = satsw((int16_t)s->W(0) - (int16_t)s->W(1));
     d->W((2 << SHIFT) + 1) = satsw((int16_t)s->W(2) - (int16_t)s->W(3));
-    ZMM_ONLY(d->W(6) = satsw((int16_t)s->W(4) - (int16_t)s->W(5)));
-    ZMM_ONLY(d->W(7) = satsw((int16_t)s->W(6) - (int16_t)s->W(7)));
+    XMM_ONLY(d->W(6) = satsw((int16_t)s->W(4) - (int16_t)s->W(5)));
+    XMM_ONLY(d->W(7) = satsw((int16_t)s->W(6) - (int16_t)s->W(7)));
 }
 
 #define FABSB(_, x) (x > INT8_MAX  ? -(int8_t)x : x)
@@ -1556,7 +1564,7 @@ void glue(helper_palignr, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
     /* XXX could be checked during translation */
     if (shift >= (16 << SHIFT)) {
         r.Q(0) = 0;
-        ZMM_ONLY(r.Q(1) = 0);
+        XMM_ONLY(r.Q(1) = 0);
     } else {
         shift <<= 3;
 #define SHR(v, i) (i < 64 && i > -64 ? i > 0 ? v >> (i) : (v << -(i)) : 0)
@@ -1763,6 +1771,7 @@ void glue(helper_phminposuw, SUFFIX)(CPUX86State *env, Reg *d, Reg *s)
 void glue(helper_roundps, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
                                   uint32_t mode)
 {
+    uint8_t old_flags = get_float_exception_flags(&env->sse_status);
     signed char prev_rounding_mode;
 
     prev_rounding_mode = env->sse_status.float_rounding_mode;
@@ -1788,19 +1797,18 @@ void glue(helper_roundps, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
     d->ZMM_S(2) = float32_round_to_int(s->ZMM_S(2), &env->sse_status);
     d->ZMM_S(3) = float32_round_to_int(s->ZMM_S(3), &env->sse_status);
 
-#if 0 /* TODO */
-    if (mode & (1 << 3)) {
+    if (mode & (1 << 3) && !(old_flags & float_flag_inexact)) {
         set_float_exception_flags(get_float_exception_flags(&env->sse_status) &
                                   ~float_flag_inexact,
                                   &env->sse_status);
     }
-#endif
     env->sse_status.float_rounding_mode = prev_rounding_mode;
 }
 
 void glue(helper_roundpd, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
                                   uint32_t mode)
 {
+    uint8_t old_flags = get_float_exception_flags(&env->sse_status);
     signed char prev_rounding_mode;
 
     prev_rounding_mode = env->sse_status.float_rounding_mode;
@@ -1824,19 +1832,18 @@ void glue(helper_roundpd, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
     d->ZMM_D(0) = float64_round_to_int(s->ZMM_D(0), &env->sse_status);
     d->ZMM_D(1) = float64_round_to_int(s->ZMM_D(1), &env->sse_status);
 
-#if 0 /* TODO */
-    if (mode & (1 << 3)) {
+    if (mode & (1 << 3) && !(old_flags & float_flag_inexact)) {
         set_float_exception_flags(get_float_exception_flags(&env->sse_status) &
                                   ~float_flag_inexact,
                                   &env->sse_status);
     }
-#endif
     env->sse_status.float_rounding_mode = prev_rounding_mode;
 }
 
 void glue(helper_roundss, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
                                   uint32_t mode)
 {
+    uint8_t old_flags = get_float_exception_flags(&env->sse_status);
     signed char prev_rounding_mode;
 
     prev_rounding_mode = env->sse_status.float_rounding_mode;
@@ -1859,19 +1866,18 @@ void glue(helper_roundss, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
 
     d->ZMM_S(0) = float32_round_to_int(s->ZMM_S(0), &env->sse_status);
 
-#if 0 /* TODO */
-    if (mode & (1 << 3)) {
+    if (mode & (1 << 3) && !(old_flags & float_flag_inexact)) {
         set_float_exception_flags(get_float_exception_flags(&env->sse_status) &
                                   ~float_flag_inexact,
                                   &env->sse_status);
     }
-#endif
     env->sse_status.float_rounding_mode = prev_rounding_mode;
 }
 
 void glue(helper_roundsd, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
                                   uint32_t mode)
 {
+    uint8_t old_flags = get_float_exception_flags(&env->sse_status);
     signed char prev_rounding_mode;
 
     prev_rounding_mode = env->sse_status.float_rounding_mode;
@@ -1894,13 +1900,11 @@ void glue(helper_roundsd, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
 
     d->ZMM_D(0) = float64_round_to_int(s->ZMM_D(0), &env->sse_status);
 
-#if 0 /* TODO */
-    if (mode & (1 << 3)) {
+    if (mode & (1 << 3) && !(old_flags & float_flag_inexact)) {
         set_float_exception_flags(get_float_exception_flags(&env->sse_status) &
                                   ~float_flag_inexact,
                                   &env->sse_status);
     }
-#endif
     env->sse_status.float_rounding_mode = prev_rounding_mode;
 }
 
@@ -2312,7 +2316,7 @@ void glue(helper_aeskeygenassist, SUFFIX)(CPUX86State *env, Reg *d, Reg *s,
 #endif
 
 #undef SHIFT
-#undef ZMM_ONLY
+#undef XMM_ONLY
 #undef Reg
 #undef B
 #undef W

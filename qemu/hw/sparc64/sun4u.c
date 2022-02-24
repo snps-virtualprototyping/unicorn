@@ -59,20 +59,9 @@ static void sun4u_class_init(struct uc_struct *uc, ObjectClass *oc, void *data)
 }
 
 static const TypeInfo sun4u_type = {
-    MACHINE_TYPE_NAME("sun4u"),
-    TYPE_MACHINE,
-
-    0,
-    0,
-    NULL,
-
-    NULL,
-    NULL,
-    NULL,
-
-    NULL,
-
-    sun4u_class_init,
+    .name = MACHINE_TYPE_NAME("sun4u"),
+    .parent = TYPE_MACHINE,
+    .class_init = sun4u_class_init,
 };
 
 void sun4u_machine_init(struct uc_struct *uc)

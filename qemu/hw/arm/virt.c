@@ -152,20 +152,14 @@ static void virt_class_init(struct uc_struct *uc, ObjectClass *oc, void *data)
 }
 
 static const TypeInfo machvirt_info = {
-    TYPE_VIRT_MACHINE,
-    TYPE_MACHINE,
+    .name = TYPE_VIRT_MACHINE,
+    .parent = TYPE_MACHINE,
 
-    sizeof(VirtMachineClass),
-    sizeof(VirtMachineState),
-    NULL,
+    .class_size = sizeof(VirtMachineClass),
+    .instance_size = sizeof(VirtMachineState),
 
-    virt_instance_init,
-    NULL,
-    NULL,
-
-    NULL,
-
-    virt_class_init,
+    .instance_init = virt_instance_init,
+    .class_init = virt_class_init,
 };
 
 void machvirt_machine_init(struct uc_struct *uc)

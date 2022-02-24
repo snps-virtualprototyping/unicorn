@@ -60,11 +60,11 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
          * or timer mode is in effect, since these already fix the PC.
          */
         //if (!HOOK_EXISTS(env->uc, UC_HOOK_CODE) && !env->uc->timeout) {   // SNPS changed
-            if (cc->synchronize_from_tb) {
+            if (cc->tcg_ops.synchronize_from_tb) {
                 // avoid sync twice when helper_uc_tracecode() already did this.
         //        if (env->uc->emu_counter <= env->uc->emu_count &&         // SNPS changed
         //                !env->uc->stop_request && !env->uc->quit_request) // SNPS changed
-                    cc->synchronize_from_tb(cpu, last_tb);
+                    cc->tcg_ops.synchronize_from_tb(cpu, last_tb);
             } else {
                 assert(cc->set_pc);
                 // avoid sync twice when helper_uc_tracecode() already did this.
@@ -79,7 +79,7 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
         /* We were asked to stop executing TBs (probably a pending
          * interrupt. We've now stopped, so clear the flag.
          */
-        atomic_set(&cpu->tcg_exit_req, 0);
+        qatomic_set(&cpu->tcg_exit_req, 0);
     }
 
     return ret;
@@ -235,7 +235,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
 
         mmap_unlock();
         /* We add the TB in the virtual pc hash table for the fast lookup */
-        atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
+        qatomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
     }
 #ifndef CONFIG_USER_ONLY
     /* We don't take care of direct jumps when address mapping changes in
@@ -291,7 +291,9 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
         }
     }
 
-    cc->debug_excp_handler(cpu);
+    if (cc->tcg_ops.debug_excp_handler) {
+        cc->tcg_ops.debug_excp_handler(cpu);
+    }
 
     // SNPS added
     if (cpu->watchpoint_hit)
@@ -318,7 +320,7 @@ static inline bool cpu_handle_exception(struct uc_struct *uc, CPUState *cpu, int
            loop */
 #if defined(TARGET_I386)
             CPUClass *cc = CPU_GET_CLASS(uc, cpu);
-            cc->do_interrupt(cpu);
+            cc->tcg_ops.do_interrupt(cpu);
 #endif
             *ret = cpu->exception_index;
             cpu->exception_index = -1;
@@ -359,7 +361,7 @@ static inline bool cpu_handle_exception(struct uc_struct *uc, CPUState *cpu, int
 #else 
             CPUClass *cc = CPU_GET_CLASS(uc, cpu);
             *ret = cpu->exception_index;
-            cc->do_interrupt(cpu);
+            cc->tcg_ops.do_interrupt(cpu);
             cpu->exception_index = -1;
 #endif
         }
@@ -373,7 +375,7 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
 {
     CPUClass *cc = CPU_GET_CLASS(cpu->uc, cpu);
 
-    if (unlikely(atomic_read(&cpu->interrupt_request))) {
+    if (unlikely(qatomic_read(&cpu->interrupt_request))) {
         int interrupt_request = cpu->interrupt_request;
         if (unlikely(cpu->singlestep_enabled & SSTEP_NOIRQ)) {
             /* Mask out external interrupts for this step. */
@@ -410,7 +412,8 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
            True when it is, and we should restart on a new TB,
            and via longjmp via cpu_loop_exit.  */
         else {
-            if (cc->cpu_exec_interrupt(cpu, interrupt_request)) {
+            if (cc->tcg_ops.cpu_exec_interrupt &&
+                cc->tcg_ops.cpu_exec_interrupt(cpu, interrupt_request)) {
                 cpu->exception_index = -1;
                 *last_tb = NULL;
             }
@@ -427,8 +430,8 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
     }
 
     /* Finally, check if we need to exit to the main loop.  */
-    if (unlikely(atomic_read(&cpu->exit_request))) {
-        atomic_set(&cpu->exit_request, 0);
+    if (unlikely(qatomic_read(&cpu->exit_request))) {
+        qatomic_set(&cpu->exit_request, 0);
         if (cpu->exception_index == -1) {
             cpu->exception_index = EXCP_INTERRUPT;
         }
@@ -466,7 +469,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
 #ifdef CONFIG_USER_ONLY
         abort();
 #elif 0 // SNPS disabled
-        int insns_left = atomic_read(&cpu_neg(cpu)->icount_decr.u32);
+        int insns_left = qatomic_read(&cpu_neg(cpu)->icount_decr.u32);
         *last_tb = NULL;
         if (cpu->icount_extra && insns_left >= 0) {
             /* Refill decrementer and continue execution.  */
@@ -548,14 +551,16 @@ int cpu_exec(struct uc_struct *uc, CPUState *cpu)
         return EXCP_HALTED;
     }
 
-    atomic_mb_set(&uc->current_cpu, cpu);
-    atomic_mb_set(&uc->tcg_current_rr_cpu, cpu);
+    qatomic_mb_set(&uc->current_cpu, cpu);
+    qatomic_mb_set(&uc->tcg_current_rr_cpu, cpu);
 
-    cc->cpu_exec_enter(cpu);
+    if (cc->tcg_ops.cpu_exec_enter) {
+        cc->tcg_ops.cpu_exec_enter(cpu);
+    }
     cpu->exception_index = -1;
     env->invalid_error = UC_ERR_OK;
 
-    atomic_set(&cpu->tcg_exit_req, 0); // SNPS added
+    qatomic_set(&cpu->tcg_exit_req, 0); // SNPS added
 
     // SNPS added
     if (uc->emu_count == 1)
@@ -563,19 +568,31 @@ int cpu_exec(struct uc_struct *uc, CPUState *cpu)
 
     /* prepare setjmp context for exception handling */
     if (sigsetjmp(cpu->jmp_env, 0) != 0) {
-#if defined(__clang__) || !QEMU_GNUC_PREREQ(4, 6)
-        /* Some compilers wrongly smash all local variables after
-         * siglongjmp. There were bug reports for gcc 4.5.0 and clang.
+#if defined(__clang__)
+        /*
+         * Some compilers wrongly smash all local variables after
+         * siglongjmp (the spec requires that only non-volatile locals
+         * which are changed between the sigsetjmp and siglongjmp are
+         * permitted to be trashed). There were bug reports for gcc
+         * 4.5.0 and clang.  The bug is fixed in all versions of gcc
+         * that we support, but is still unfixed in clang:
+         *   https://bugs.llvm.org/show_bug.cgi?id=21183
+         *
          * Reload essential local variables here for those compilers.
-         * Newer versions of gcc would complain about this code (-Wclobbered). */
+         * Newer versions of gcc would complain about this code (-Wclobbered),
+         * so we only perform the workaround for clang.
+         */
         cpu = uc->current_cpu;
         env = cpu->env_ptr;
         cc = CPU_GET_CLASS(uc, cpu);
-#else /* buggy compiler */
-        /* Assert that the compiler does not smash local variables. */
+#else
+        /*
+         * Non-buggy compilers preserve these locals; assert that
+         * they have the correct value.
+         */
         g_assert(cpu == uc->current_cpu);
         g_assert(cc == CPU_GET_CLASS(uc, cpu));
-#endif /* buggy compiler */
+#endif
         // Unicorn: commented out
         //tb_lock_reset();
     }
@@ -621,7 +638,9 @@ int cpu_exec(struct uc_struct *uc, CPUState *cpu)
         }
     }
 
-    cc->cpu_exec_exit(cpu);
+    if (cc->tcg_ops.cpu_exec_exit) {
+        cc->tcg_ops.cpu_exec_exit(cpu);
+    }
 
     // Unicorn: flush JIT cache to because emulation might stop in
     // the middle of translation, thus generate incomplete code.

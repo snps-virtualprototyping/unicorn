@@ -494,26 +494,26 @@ static PageDesc *page_find_alloc(struct uc_struct *uc, tb_page_addr_t index, int
 
     /* Level 2..N-1.  */
     for (i = uc->v_l2_levels; i > 0; i--) {
-        void **p = atomic_read(lp);
+        void **p = qatomic_read(lp);
 
         if (p == NULL) {
             if (!alloc) {
                 return NULL;
             }
             p = g_new0(void *, V_L2_SIZE);
-            atomic_set(lp, p);
+            qatomic_set(lp, p);
         }
 
         lp = p + ((index >> (i * V_L2_BITS)) & (V_L2_SIZE - 1));
     }
 
-    pd = atomic_read(lp);
+    pd = qatomic_read(lp);
     if (pd == NULL) {
         if (!alloc) {
             return NULL;
         }
         pd = g_new0(PageDesc, V_L2_SIZE);
-        atomic_set(lp, pd);
+        qatomic_set(lp, pd);
     }
 
     return pd + (index & (V_L2_SIZE - 1));
@@ -978,7 +978,7 @@ void tb_flush(CPUState *cpu)
     }
 
     cpu_tb_jmp_cache_clear(cpu);
-    atomic_mb_set(&cpu->tb_flushed, true);
+    qatomic_mb_set(&cpu->tb_flushed, true);
 
     tcg_ctx->tb_ctx.nb_tbs = 0;
     memset(tcg_ctx->tb_ctx.tb_phys_hash, 0, sizeof(tcg_ctx->tb_ctx.tb_phys_hash));
@@ -1146,7 +1146,7 @@ void tb_phys_invalidate(struct uc_struct *uc,
     uint32_t h;
     tb_page_addr_t phys_pc;
 
-    atomic_set(&tb->cflags, tb->cflags | CF_INVALID);
+    qatomic_set(&tb->cflags, tb->cflags | CF_INVALID);
 
     /* remove the TB from the hash list */
     phys_pc = tb->page_addr[0] + (tb->pc & ~TARGET_PAGE_MASK);
@@ -1167,8 +1167,8 @@ void tb_phys_invalidate(struct uc_struct *uc,
 
     /* remove the TB from the hash list */
     h = tb_jmp_cache_hash_func(tb->pc);
-    if (atomic_read(&cpu->tb_jmp_cache[h]) == tb) {
-        atomic_set(&cpu->tb_jmp_cache[h], NULL);
+    if (qatomic_read(&cpu->tb_jmp_cache[h]) == tb) {
+        qatomic_set(&cpu->tb_jmp_cache[h], NULL);
     }
 
     /* suppress this TB from the two jump lists */
@@ -1373,11 +1373,17 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     ti = profile_getclock();
 #endif
 
+    gen_code_size = sigsetjmp(tcg_ctx->jmp_trans, 0);
+    if (unlikely(gen_code_size != 0)) {
+        goto error_return;
+    }
+
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
     gen_intermediate_code(cpu, tb, max_insns);
     tcg_ctx->cpu = NULL;
+    max_insns = tb->icount;
 
     // Unicorn: FIXME: Needs to be amended to work with new TCG
 #if 0
@@ -1414,6 +1420,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 
     gen_code_size = tcg_gen_code(tcg_ctx, tb);
     if (unlikely(gen_code_size < 0)) {
+ error_return:
         switch (gen_code_size) {
         case -1:
             /*
@@ -1425,6 +1432,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
              * flush the TBs, allocate a new TB, re-initialize it per
              * above, and re-do the actual code generation.
              */
+            qemu_log_mask(CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT,
+                          "Restarting code generation for "
+                          "code_gen_buffer overflow\n");
             goto buffer_overflow;
 
         case -2:
@@ -1437,9 +1447,12 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
              * Try again with half as many insns as we attempted this time.
              * If a single insn overflows, there's a bug somewhere...
              */
-            max_insns = tb->icount;
             assert(max_insns > 1);
             max_insns /= 2;
+            qemu_log_mask(CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT,
+                          "Restarting code generation with "
+                          "smaller translation block (max %d insns)\n",
+                          max_insns);
             goto tb_overflow;
 
         default:
@@ -1924,7 +1937,7 @@ static void tb_jmp_cache_clear_page(CPUState *cpu, target_ulong page_addr)
     unsigned int i, i0 = tb_jmp_cache_hash_page(page_addr);
 
     for (i = 0; i < TB_JMP_PAGE_SIZE; i++) {
-        atomic_set(&cpu->tb_jmp_cache[i0 + i], NULL);
+        qatomic_set(&cpu->tb_jmp_cache[i0 + i], NULL);
     }
 }
 
@@ -2007,7 +2020,7 @@ void cpu_interrupt(CPUState *cpu, int mask)
 {
     cpu->interrupt_request |= mask;
     cpu->tcg_exit_req = 1;
-    atomic_set(&cpu_neg(cpu)->icount_decr.u16.high, -1);
+    qatomic_set(&cpu_neg(cpu)->icount_decr.u16.high, -1);
 }
 
 #if 0

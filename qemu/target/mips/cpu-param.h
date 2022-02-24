@@ -26,8 +26,7 @@
 #ifdef CONFIG_USER_ONLY
 #define TARGET_PAGE_BITS 12
 #else
-#define TARGET_PAGE_BITS_VARY
-#define TARGET_PAGE_BITS_MIN 12
+#define TARGET_PAGE_BITS 12
 #endif
 #define NB_MMU_MODES 4
 

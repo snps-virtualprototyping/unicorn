@@ -37,11 +37,21 @@ static const TCGOpcode vecop_list_empty[1] = { 0 };
    of the operand offsets so that we can check them all at once.  */
 static void check_size_align(uint32_t oprsz, uint32_t maxsz, uint32_t ofs)
 {
-    uint32_t opr_align = oprsz >= 16 ? 15 : 7;
-    uint32_t max_align = maxsz >= 16 || oprsz >= 16 ? 15 : 7;
-    tcg_debug_assert(oprsz > 0);
-    tcg_debug_assert(oprsz <= maxsz);
-    tcg_debug_assert((oprsz & opr_align) == 0);
+    uint32_t max_align;
+
+    switch (oprsz) {
+    case 8:
+    case 16:
+    case 32:
+        tcg_debug_assert(oprsz <= maxsz);
+        break;
+    default:
+        tcg_debug_assert(oprsz == maxsz);
+        break;
+    }
+    tcg_debug_assert(maxsz <= (8 << SIMD_MAXSZ_BITS));
+
+    max_align = maxsz >= 16 ? 15 : 7;
     tcg_debug_assert((maxsz & max_align) == 0);
     tcg_debug_assert((ofs & max_align) == 0);
 }
@@ -96,7 +106,7 @@ void tcg_gen_gvec_2_ool(TCGContext *s, uint32_t dofs, uint32_t aofs,
                         gen_helper_gvec_2 *fn)
 {
     TCGv_ptr a0, a1;
-    TCGv_i32 desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, data));
+    TCGv_i32 desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, data));
 
     a0 = tcg_temp_new_ptr(s);
     a1 = tcg_temp_new_ptr(s);
@@ -108,7 +118,6 @@ void tcg_gen_gvec_2_ool(TCGContext *s, uint32_t dofs, uint32_t aofs,
 
     tcg_temp_free_ptr(s, a0);
     tcg_temp_free_ptr(s, a1);
-    tcg_temp_free_i32(s, desc);
 }
 
 /* Generate a call to a gvec-style helper with two vector operands
@@ -118,7 +127,7 @@ void tcg_gen_gvec_2i_ool(TCGContext *s, uint32_t dofs, uint32_t aofs, TCGv_i64 c
                          gen_helper_gvec_2i *fn)
 {
     TCGv_ptr a0, a1;
-    TCGv_i32 desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, data));
+    TCGv_i32 desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, data));
 
     a0 = tcg_temp_new_ptr(s);
     a1 = tcg_temp_new_ptr(s);
@@ -130,7 +139,6 @@ void tcg_gen_gvec_2i_ool(TCGContext *s, uint32_t dofs, uint32_t aofs, TCGv_i64 c
 
     tcg_temp_free_ptr(s, a0);
     tcg_temp_free_ptr(s, a1);
-    tcg_temp_free_i32(s, desc);
 }
 
 /* Generate a call to a gvec-style helper with three vector operands.  */
@@ -139,7 +147,7 @@ void tcg_gen_gvec_3_ool(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
                         gen_helper_gvec_3 *fn)
 {
     TCGv_ptr a0, a1, a2;
-    TCGv_i32 desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, data));
+    TCGv_i32 desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, data));
 
     a0 = tcg_temp_new_ptr(s);
     a1 = tcg_temp_new_ptr(s);
@@ -154,7 +162,6 @@ void tcg_gen_gvec_3_ool(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
     tcg_temp_free_ptr(s, a0);
     tcg_temp_free_ptr(s, a1);
     tcg_temp_free_ptr(s, a2);
-    tcg_temp_free_i32(s, desc);
 }
 
 /* Generate a call to a gvec-style helper with four vector operands.  */
@@ -163,7 +170,7 @@ void tcg_gen_gvec_4_ool(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
                         int32_t data, gen_helper_gvec_4 *fn)
 {
     TCGv_ptr a0, a1, a2, a3;
-    TCGv_i32 desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, data));
+    TCGv_i32 desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, data));
 
     a0 = tcg_temp_new_ptr(s);
     a1 = tcg_temp_new_ptr(s);
@@ -181,7 +188,6 @@ void tcg_gen_gvec_4_ool(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
     tcg_temp_free_ptr(s, a1);
     tcg_temp_free_ptr(s, a2);
     tcg_temp_free_ptr(s, a3);
-    tcg_temp_free_i32(s, desc);
 }
 
 /* Generate a call to a gvec-style helper with five vector operands.  */
@@ -190,7 +196,7 @@ void tcg_gen_gvec_5_ool(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
                         uint32_t maxsz, int32_t data, gen_helper_gvec_5 *fn)
 {
     TCGv_ptr a0, a1, a2, a3, a4;
-    TCGv_i32 desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, data));
+    TCGv_i32 desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, data));
 
     a0 = tcg_temp_new_ptr(s);
     a1 = tcg_temp_new_ptr(s);
@@ -211,7 +217,6 @@ void tcg_gen_gvec_5_ool(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
     tcg_temp_free_ptr(s, a2);
     tcg_temp_free_ptr(s, a3);
     tcg_temp_free_ptr(s, a4);
-    tcg_temp_free_i32(s, desc);
 }
 
 /* Generate a call to a gvec-style helper with three vector operands
@@ -221,7 +226,7 @@ void tcg_gen_gvec_2_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs,
                         int32_t data, gen_helper_gvec_2_ptr *fn)
 {
     TCGv_ptr a0, a1;
-    TCGv_i32 desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, data));
+    TCGv_i32 desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, data));
 
     a0 = tcg_temp_new_ptr(s);
     a1 = tcg_temp_new_ptr(s);
@@ -233,7 +238,6 @@ void tcg_gen_gvec_2_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs,
 
     tcg_temp_free_ptr(s, a0);
     tcg_temp_free_ptr(s, a1);
-    tcg_temp_free_i32(s, desc);
 }
 
 /* Generate a call to a gvec-style helper with three vector operands
@@ -243,7 +247,7 @@ void tcg_gen_gvec_3_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
                         int32_t data, gen_helper_gvec_3_ptr *fn)
 {
     TCGv_ptr a0, a1, a2;
-    TCGv_i32 desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, data));
+    TCGv_i32 desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, data));
 
     a0 = tcg_temp_new_ptr(s);
     a1 = tcg_temp_new_ptr(s);
@@ -258,7 +262,6 @@ void tcg_gen_gvec_3_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
     tcg_temp_free_ptr(s, a0);
     tcg_temp_free_ptr(s, a1);
     tcg_temp_free_ptr(s, a2);
-    tcg_temp_free_i32(s, desc);
 }
 
 /* Generate a call to a gvec-style helper with four vector operands
@@ -269,7 +272,7 @@ void tcg_gen_gvec_4_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
                         gen_helper_gvec_4_ptr *fn)
 {
     TCGv_ptr a0, a1, a2, a3;
-    TCGv_i32 desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, data));
+    TCGv_i32 desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, data));
 
     a0 = tcg_temp_new_ptr(s);
     a1 = tcg_temp_new_ptr(s);
@@ -287,7 +290,6 @@ void tcg_gen_gvec_4_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
     tcg_temp_free_ptr(s, a1);
     tcg_temp_free_ptr(s, a2);
     tcg_temp_free_ptr(s, a3);
-    tcg_temp_free_i32(s, desc);
 }
 
 /* Generate a call to a gvec-style helper with five vector operands
@@ -298,7 +300,7 @@ void tcg_gen_gvec_5_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
                         gen_helper_gvec_5_ptr *fn)
 {
     TCGv_ptr a0, a1, a2, a3, a4;
-    TCGv_i32 desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, data));
+    TCGv_i32 desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, data));
 
     a0 = tcg_temp_new_ptr(s);
     a1 = tcg_temp_new_ptr(s);
@@ -319,7 +321,6 @@ void tcg_gen_gvec_5_ptr(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t bo
     tcg_temp_free_ptr(s, a2);
     tcg_temp_free_ptr(s, a3);
     tcg_temp_free_ptr(s, a4);
-    tcg_temp_free_i32(s, desc);
 }
 
 
@@ -529,6 +530,9 @@ static void do_dup(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t oprsz,
         in_c = dup_const(vece, in_c);
         if (in_c == 0) {
             oprsz = maxsz;
+            vece = MO_8;
+        } else if (in_c == dup_const(MO_8, in_c)) {
+            vece = MO_8;
         }
     }
 
@@ -584,9 +588,9 @@ static void do_dup(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t oprsz,
                 || (TCG_TARGET_REG_BITS == 64
                     && (in_c == 0 || in_c == -1
                         || !check_size_impl(oprsz, 4)))) {
-                t_64 = tcg_const_i64(s, in_c);
+                t_64 = tcg_constant_i64(s, in_c);
             } else {
-                t_32 = tcg_const_i32(s, in_c);
+                t_32 = tcg_constant_i32(s, in_c);
             }
         }
 
@@ -610,15 +614,43 @@ static void do_dup(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t oprsz,
     /* Otherwise implement out of line.  */
     t_ptr = tcg_temp_new_ptr(s);
     tcg_gen_addi_ptr(s, t_ptr, s->cpu_env, dofs);
-    t_desc = tcg_const_i32(s, simd_desc(oprsz, maxsz, 0));
+
+    /*
+     * This may be expand_clr for the tail of an operation, e.g.
+     * oprsz == 8 && maxsz == 64.  The size of the clear is misaligned
+     * wrt simd_desc and will assert.  Simply pass all replicated byte
+     * stores through to memset.
+     */
+    if (oprsz == maxsz && vece == MO_8) {
+        TCGv_ptr t_size = tcg_const_ptr(s, oprsz);
+        TCGv_i32 t_val;
+
+        if (in_32) {
+            t_val = in_32;
+        } else if (in_64) {
+            t_val = tcg_temp_new_i32(s);
+            tcg_gen_extrl_i64_i32(s, t_val, in_64);
+        } else {
+            t_val = tcg_constant_i32(s, in_c);
+        }
+        gen_helper_memset(s, t_ptr, t_ptr, t_val, t_size);
+
+        if (in_64) {
+            tcg_temp_free_i32(s, t_val);
+        }
+        tcg_temp_free_ptr(s, t_size);
+        tcg_temp_free_ptr(s, t_ptr);
+        return;
+    }
+
+    t_desc = tcg_constant_i32(s, simd_desc(oprsz, maxsz, 0));
 
     if (vece == MO_64) {
         if (in_64) {
             gen_helper_gvec_dup64(s, t_ptr, t_desc, in_64);
         } else {
-            t_64 = tcg_const_i64(s, in_c);
+            t_64 = tcg_constant_i64(s, in_c);
             gen_helper_gvec_dup64(s, t_ptr, t_desc, t_64);
-            tcg_temp_free_i64(s, t_64);
         }
     } else {
         typedef void dup_fn(TCGContext *, TCGv_ptr, TCGv_i32, TCGv_i32);
@@ -630,24 +662,23 @@ static void do_dup(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t oprsz,
 
         if (in_32) {
             fns[vece](s, t_ptr, t_desc, in_32);
-        } else {
+        } else if (in_64) {
             t_32 = tcg_temp_new_i32(s);
-            if (in_64) {
-                tcg_gen_extrl_i64_i32(s, t_32, in_64);
-            } else if (vece == MO_8) {
-                tcg_gen_movi_i32(s, t_32, in_c & 0xff);
-            } else if (vece == MO_16) {
-                tcg_gen_movi_i32(s, t_32, in_c & 0xffff);
-            } else {
-                tcg_gen_movi_i32(s, t_32, in_c);
-            }
+            tcg_gen_extrl_i64_i32(s, t_32, in_64);
             fns[vece](s, t_ptr, t_desc, t_32);
             tcg_temp_free_i32(s, t_32);
+        } else {
+            if (vece == MO_8) {
+                in_c &= 0xff;
+            } else if (vece == MO_16) {
+                in_c &= 0xffff;
+            }
+            t_32 = tcg_constant_i32(s, in_c);
+            fns[vece](s, t_ptr, t_desc, t_32);
         }
     }
 
     tcg_temp_free_ptr(s, t_ptr);
-    tcg_temp_free_i32(s, t_desc);
     return;
 
  done:
@@ -1197,10 +1228,9 @@ void tcg_gen_gvec_2i(TCGContext *s, uint32_t dofs, uint32_t aofs, uint32_t oprsz
             if (g->fno) {
                 tcg_gen_gvec_2_ool(s, dofs, aofs, oprsz, maxsz, c, g->fno);
             } else {
-                TCGv_i64 tcg_c = tcg_const_i64(s, c);
+                TCGv_i64 tcg_c = tcg_constant_i64(s, c);
                 tcg_gen_gvec_2i_ool(s, dofs, aofs, tcg_c, oprsz,
                                     maxsz, c, g->fnoi);
-                tcg_temp_free_i64(s, tcg_c);
             }
             oprsz = maxsz;
         }
@@ -1571,18 +1601,16 @@ void tcg_gen_gvec_dup_mem(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t 
             do_dup(s, vece, dofs, oprsz, maxsz, NULL, in, 0);
             tcg_temp_free_i64(s, in);
         }
-    } else {
+    } else if (vece == 4) {
         /* 128-bit duplicate.  */
-        /* ??? Dup to 256-bit vector.  */
         int i;
 
-        tcg_debug_assert(vece == 4);
         tcg_debug_assert(oprsz >= 16);
         if (TCG_TARGET_HAS_v128) {
             TCGv_vec in = tcg_temp_new_vec(s, TCG_TYPE_V128);
 
             tcg_gen_ld_vec(s, in, s->cpu_env, aofs);
-            for (i = 0; i < oprsz; i += 16) {
+            for (i = (aofs == dofs) * 16; i < oprsz; i += 16) {
                 tcg_gen_st_vec(s, in, s->cpu_env, dofs + i);
             }
             tcg_temp_free_vec(s, in);
@@ -1592,7 +1620,7 @@ void tcg_gen_gvec_dup_mem(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t 
 
             tcg_gen_ld_i64(s, in0, s->cpu_env, aofs);
             tcg_gen_ld_i64(s, in1, s->cpu_env, aofs + 8);
-            for (i = 0; i < oprsz; i += 16) {
+            for (i = (aofs == dofs) * 16; i < oprsz; i += 16) {
                 tcg_gen_st_i64(s, in0, s->cpu_env, dofs + i);
                 tcg_gen_st_i64(s, in1, s->cpu_env, dofs + i + 8);
             }
@@ -1602,6 +1630,54 @@ void tcg_gen_gvec_dup_mem(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t 
         if (oprsz < maxsz) {
             expand_clr(s, dofs + oprsz, maxsz - oprsz);
         }
+    } else if (vece == 5) {
+        /* 256-bit duplicate.  */
+        int i;
+
+        tcg_debug_assert(oprsz >= 32);
+        tcg_debug_assert(oprsz % 32 == 0);
+        if (TCG_TARGET_HAS_v256) {
+            TCGv_vec in = tcg_temp_new_vec(s, TCG_TYPE_V256);
+
+            tcg_gen_ld_vec(s, in, s->cpu_env, aofs);
+            for (i = (aofs == dofs) * 32; i < oprsz; i += 32) {
+                tcg_gen_st_vec(s, in, s->cpu_env, dofs + i);
+            }
+            tcg_temp_free_vec(s, in);
+        } else if (TCG_TARGET_HAS_v128) {
+            TCGv_vec in0 = tcg_temp_new_vec(s, TCG_TYPE_V128);
+            TCGv_vec in1 = tcg_temp_new_vec(s, TCG_TYPE_V128);
+
+            tcg_gen_ld_vec(s, in0, s->cpu_env, aofs);
+            tcg_gen_ld_vec(s, in1, s->cpu_env, aofs + 16);
+            for (i = (aofs == dofs) * 32; i < oprsz; i += 32) {
+                tcg_gen_st_vec(s, in0, s->cpu_env, dofs + i);
+                tcg_gen_st_vec(s, in1, s->cpu_env, dofs + i + 16);
+            }
+            tcg_temp_free_vec(s, in0);
+            tcg_temp_free_vec(s, in1);
+        } else {
+            TCGv_i64 in[4];
+            int j;
+
+            for (j = 0; j < 4; ++j) {
+                in[j] = tcg_temp_new_i64(s);
+                tcg_gen_ld_i64(s, in[j], s->cpu_env, aofs + j * 8);
+            }
+            for (i = (aofs == dofs) * 32; i < oprsz; i += 32) {
+                for (j = 0; j < 4; ++j) {
+                    tcg_gen_st_i64(s, in[j], s->cpu_env, dofs + i + j * 8);
+                }
+            }
+            for (j = 0; j < 4; ++j) {
+                tcg_temp_free_i64(s, in[j]);
+            }
+        }
+        if (oprsz < maxsz) {
+            expand_clr(s, dofs + oprsz, maxsz - oprsz);
+        }
+    } else {
+        g_assert_not_reached();
     }
 }
 
@@ -1648,16 +1724,14 @@ static void gen_addv_mask(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b, TCG
 
 void tcg_gen_vec_add8_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b)
 {
-    TCGv_i64 m = tcg_const_i64(s, dup_const(MO_8, 0x80));
+    TCGv_i64 m = tcg_constant_i64(s, dup_const(MO_8, 0x80));
     gen_addv_mask(s, d, a, b, m);
-    tcg_temp_free_i64(s, m);
 }
 
 void tcg_gen_vec_add16_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b)
 {
-    TCGv_i64 m = tcg_const_i64(s, dup_const(MO_16, 0x8000));
+    TCGv_i64 m = tcg_constant_i64(s, dup_const(MO_16, 0x8000));
     gen_addv_mask(s, d, a, b, m);
-    tcg_temp_free_i64(s, m);
 }
 
 void tcg_gen_vec_add32_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b)
@@ -1741,9 +1815,8 @@ void tcg_gen_gvec_adds(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aof
 void tcg_gen_gvec_addi(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
                        int64_t c, uint32_t oprsz, uint32_t maxsz)
 {
-    TCGv_i64 tmp = tcg_const_i64(s, c);
+    TCGv_i64 tmp = tcg_constant_i64(s, c);
     tcg_gen_gvec_adds(s, vece, dofs, aofs, tmp, oprsz, maxsz);
-    tcg_temp_free_i64(s, tmp);
 }
 
 static const TCGOpcode vecop_list_sub[] = { INDEX_op_sub_vec, 0 };
@@ -1801,16 +1874,14 @@ static void gen_subv_mask(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b, TCG
 
 void tcg_gen_vec_sub8_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b)
 {
-    TCGv_i64 m = tcg_const_i64(s, dup_const(MO_8, 0x80));
+    TCGv_i64 m = tcg_constant_i64(s, dup_const(MO_8, 0x80));
     gen_subv_mask(s, d, a, b, m);
-    tcg_temp_free_i64(s, m);
 }
 
 void tcg_gen_vec_sub16_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b)
 {
-    TCGv_i64 m = tcg_const_i64(s, dup_const(MO_16, 0x8000));
+    TCGv_i64 m = tcg_constant_i64(s, dup_const(MO_16, 0x8000));
     gen_subv_mask(s, d, a, b, m);
-    tcg_temp_free_i64(s, m);
 }
 
 void tcg_gen_vec_sub32_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b)
@@ -1921,9 +1992,8 @@ void tcg_gen_gvec_muls(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aof
 void tcg_gen_gvec_muli(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
                        int64_t c, uint32_t oprsz, uint32_t maxsz)
 {
-    TCGv_i64 tmp = tcg_const_i64(s, c);
+    TCGv_i64 tmp = tcg_constant_i64(s, c);
     tcg_gen_gvec_muls(s, vece, dofs, aofs, tmp, oprsz, maxsz);
-    tcg_temp_free_i64(s, tmp);
 }
 
 void tcg_gen_gvec_ssadd(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
@@ -1980,18 +2050,16 @@ void tcg_gen_gvec_sssub(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t ao
 
 static void tcg_gen_usadd_i32(TCGContext *s, TCGv_i32 d, TCGv_i32 a, TCGv_i32 b)
 {
-    TCGv_i32 max = tcg_const_i32(s, -1);
+    TCGv_i32 max = tcg_constant_i32(s, -1);
     tcg_gen_add_i32(s, d, a, b);
     tcg_gen_movcond_i32(s, TCG_COND_LTU, d, d, a, max, d);
-    tcg_temp_free_i32(s, max);
 }
 
 static void tcg_gen_usadd_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b)
 {
-    TCGv_i64 max = tcg_const_i64(s, -1);
+    TCGv_i64 max = tcg_constant_i64(s, -1);
     tcg_gen_add_i64(s, d, a, b);
     tcg_gen_movcond_i64(s, TCG_COND_LTU, d, d, a, max, d);
-    tcg_temp_free_i64(s, max);
 }
 
 void tcg_gen_gvec_usadd(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
@@ -2024,18 +2092,16 @@ void tcg_gen_gvec_usadd(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t ao
 
 static void tcg_gen_ussub_i32(TCGContext *s, TCGv_i32 d, TCGv_i32 a, TCGv_i32 b)
 {
-    TCGv_i32 min = tcg_const_i32(s, 0);
+    TCGv_i32 min = tcg_constant_i32(s, 0);
     tcg_gen_sub_i32(s, d, a, b);
     tcg_gen_movcond_i32(s, TCG_COND_LTU, d, a, b, min, d);
-    tcg_temp_free_i32(s, min);
 }
 
 static void tcg_gen_ussub_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 a, TCGv_i64 b)
 {
-    TCGv_i64 min = tcg_const_i64(s, 0);
+    TCGv_i64 min = tcg_constant_i64(s, 0);
     tcg_gen_sub_i64(s, d, a, b);
     tcg_gen_movcond_i64(s, TCG_COND_LTU, d, a, b, min, d);
-    tcg_temp_free_i64(s, min);
 }
 
 void tcg_gen_gvec_ussub(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
@@ -2196,16 +2262,14 @@ static void gen_negv_mask(TCGContext *s, TCGv_i64 d, TCGv_i64 b, TCGv_i64 m)
 
 void tcg_gen_vec_neg8_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 b)
 {
-    TCGv_i64 m = tcg_const_i64(s, dup_const(MO_8, 0x80));
+    TCGv_i64 m = tcg_constant_i64(s, dup_const(MO_8, 0x80));
     gen_negv_mask(s, d, b, m);
-    tcg_temp_free_i64(s, m);
 }
 
 void tcg_gen_vec_neg16_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 b)
 {
-    TCGv_i64 m = tcg_const_i64(s, dup_const(MO_16, 0x8000));
+    TCGv_i64 m = tcg_constant_i64(s, dup_const(MO_16, 0x8000));
     gen_negv_mask(s, d, b, m);
-    tcg_temp_free_i64(s, m);
 }
 
 void tcg_gen_vec_neg32_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 b)
@@ -2270,7 +2334,8 @@ static void gen_absv_mask(TCGContext *s, TCGv_i64 d, TCGv_i64 b, unsigned vece)
      * so we never have carry into the next element.
      */
     tcg_gen_xor_i64(s, d, b, t);
-    tcg_gen_sub_i64(s, d, d, t);
+    tcg_gen_andi_i64(s, t, t, dup_const(vece, 1));
+    tcg_gen_add_i64(s, d, d, t);
 
     tcg_temp_free_i64(s, t);
 }
@@ -2473,9 +2538,8 @@ void tcg_gen_gvec_ands(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aof
 void tcg_gen_gvec_andi(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
                        int64_t c, uint32_t oprsz, uint32_t maxsz)
 {
-    TCGv_i64 tmp = tcg_const_i64(s, dup_const(vece, c));
+    TCGv_i64 tmp = tcg_constant_i64(s, dup_const(vece, c));
     tcg_gen_gvec_2s(s, dofs, aofs, oprsz, maxsz, tmp, &gop_ands);
-    tcg_temp_free_i64(s, tmp);
 }
 
 static const GVecGen2s gop_xors = {
@@ -2498,9 +2562,8 @@ void tcg_gen_gvec_xors(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aof
 void tcg_gen_gvec_xori(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
                        int64_t c, uint32_t oprsz, uint32_t maxsz)
 {
-    TCGv_i64 tmp = tcg_const_i64(s, dup_const(vece, c));
+    TCGv_i64 tmp = tcg_constant_i64(s, dup_const(vece, c));
     tcg_gen_gvec_2s(s, dofs, aofs, oprsz, maxsz, tmp, &gop_xors);
-    tcg_temp_free_i64(s, tmp);
 }
 
 static const GVecGen2s gop_ors = {
@@ -2523,9 +2586,8 @@ void tcg_gen_gvec_ors(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs
 void tcg_gen_gvec_ori(TCGContext *s, unsigned vece, uint32_t dofs, uint32_t aofs,
                       int64_t c, uint32_t oprsz, uint32_t maxsz)
 {
-    TCGv_i64 tmp = tcg_const_i64(s, dup_const(vece, c));
+    TCGv_i64 tmp = tcg_constant_i64(s, dup_const(vece, c));
     tcg_gen_gvec_2s(s, dofs, aofs, oprsz, maxsz, tmp, &gop_ors);
-    tcg_temp_free_i64(s, tmp);
 }
 
 void tcg_gen_vec_shl8i_i64(TCGContext *s, TCGv_i64 d, TCGv_i64 a, int64_t c)
@@ -3013,9 +3075,9 @@ static void tcg_gen_shlv_mod_vec(TCGContext *s, unsigned vece, TCGv_vec d,
                                  TCGv_vec a, TCGv_vec b)
 {
     TCGv_vec t = tcg_temp_new_vec_matching(s, d);
+    TCGv_vec m = tcg_constant_vec_matching(s, d, vece, (8 << vece) - 1);
 
-    tcg_gen_dupi_vec(s, vece, t, (8 << vece) - 1);
-    tcg_gen_and_vec(s, vece, t, t, b);
+    tcg_gen_and_vec(s, vece, t, b, m);
     tcg_gen_shlv_vec(s, vece, d, a, t);
     tcg_temp_free_vec(s, t);
 }
@@ -3076,9 +3138,9 @@ static void tcg_gen_shrv_mod_vec(TCGContext *s, unsigned vece, TCGv_vec d,
                                  TCGv_vec a, TCGv_vec b)
 {
     TCGv_vec t = tcg_temp_new_vec_matching(s, d);
+    TCGv_vec m = tcg_constant_vec_matching(s, d, vece, (8 << vece) - 1);
 
-    tcg_gen_dupi_vec(s, vece, t, (8 << vece) - 1);
-    tcg_gen_and_vec(s, vece, t, t, b);
+    tcg_gen_and_vec(s, vece, t, b, m);
     tcg_gen_shrv_vec(s, vece, d, a, t);
     tcg_temp_free_vec(s, t);
 }
@@ -3139,9 +3201,9 @@ static void tcg_gen_sarv_mod_vec(TCGContext *s, unsigned vece, TCGv_vec d,
                                  TCGv_vec a, TCGv_vec b)
 {
     TCGv_vec t = tcg_temp_new_vec_matching(s, d);
+    TCGv_vec m = tcg_constant_vec_matching(s, d, vece, (8 << vece) - 1);
 
-    tcg_gen_dupi_vec(s, vece, t, (8 << vece) - 1);
-    tcg_gen_and_vec(s, vece, t, t, b);
+    tcg_gen_and_vec(s, vece, t, b, m);
     tcg_gen_sarv_vec(s, vece, d, a, t);
     tcg_temp_free_vec(s, t);
 }
@@ -3202,9 +3264,9 @@ static void tcg_gen_rotlv_mod_vec(TCGContext *s, unsigned vece, TCGv_vec d,
                                   TCGv_vec a, TCGv_vec b)
 {
     TCGv_vec t = tcg_temp_new_vec_matching(s, d);
+    TCGv_vec m = tcg_constant_vec_matching(s, d, vece, (8 << vece) - 1);
 
-    tcg_gen_dupi_vec(s, vece, t, (8 << vece) - 1);
-    tcg_gen_and_vec(s, vece, t, t, b);
+    tcg_gen_and_vec(s, vece, t, b, m);
     tcg_gen_rotlv_vec(s, vece, d, a, t);
     tcg_temp_free_vec(s, t);
 }
@@ -3261,9 +3323,9 @@ static void tcg_gen_rotrv_mod_vec(TCGContext *s, unsigned vece, TCGv_vec d,
                                   TCGv_vec a, TCGv_vec b)
 {
     TCGv_vec t = tcg_temp_new_vec_matching(s, d);
+    TCGv_vec m = tcg_constant_vec_matching(s, d, vece, (8 << vece) - 1);
 
-    tcg_gen_dupi_vec(s, vece, t, (8 << vece) - 1);
-    tcg_gen_and_vec(s, vece, t, t, b);
+    tcg_gen_and_vec(s, vece, t, b, m);
     tcg_gen_rotrv_vec(s, vece, d, a, t);
     tcg_temp_free_vec(s, t);
 }

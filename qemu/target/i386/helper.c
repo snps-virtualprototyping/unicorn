@@ -6,7 +6,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -350,6 +350,7 @@ void x86_cpu_dump_state(CPUState *cs, FILE *f, fprintf_function cpu_fprintf,
         for(i = 0; i < 8; i++) {
             fptag |= ((!env->fptags[i]) << i);
         }
+        update_mxcsr_from_sse_status(env);
         cpu_fprintf(f, "FCW=%04x FSW=%04x [ST=%d] FTW=%02x MXCSR=%08x\n",
                     env->fpuc,
                     (env->fpus & ~0x3800) | (env->fpstt & 0x7) << 11,
@@ -517,6 +518,9 @@ void cpu_x86_update_cr4(CPUX86State *env, uint32_t new_cr4)
 
     if (!(env->features[FEAT_7_0_ECX] & CPUID_7_0_ECX_PKU)) {
         new_cr4 &= ~CR4_PKE_MASK;
+    }
+    if (!(env->features[FEAT_7_0_ECX] & CPUID_7_0_ECX_PKS)) {
+        new_cr4 &= ~CR4_PKS_MASK;
     }
 
     env->cr[4] = new_cr4;

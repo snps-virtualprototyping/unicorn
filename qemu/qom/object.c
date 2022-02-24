@@ -45,6 +45,7 @@ struct TypeImpl
 
     size_t class_size;
     size_t instance_size;
+    size_t instance_align;
     void *instance_userdata;
 
     void (*class_init)(struct uc_struct *uc, ObjectClass *klass, void *data);
@@ -103,6 +104,7 @@ static TypeImpl *type_new(struct uc_struct *uc, const TypeInfo *info)
 
     ti->class_size = info->class_size;
     ti->instance_size = info->instance_size;
+    ti->instance_align = info->instance_align;
 
     ti->class_init = info->class_init;
     ti->class_base_init = info->class_base_init;
@@ -479,16 +481,44 @@ static void object_finalize(struct uc_struct *uc, void *data)
     }
 }
 
+/* Find the minimum alignment guaranteed by the system malloc. */
+#if __STDC_VERSION__ >= 201112L
+typddef max_align_t qemu_max_align_t;
+#else
+typedef union {
+    long l;
+    void *p;
+    double d;
+    long double ld;
+} qemu_max_align_t;
+#endif
+
 static Object *object_new_with_type(struct uc_struct *uc, Type type)
 {
     Object *obj;
+    size_t size, align;
+    void (*obj_free)(void *);
 
     g_assert(type != NULL);
     type_initialize(uc, type);
 
-    obj = g_malloc(type->instance_size);
-    object_initialize_with_type(uc, obj, type->instance_size, type);
-    obj->free = g_free;
+    size = type->instance_size;
+    align = type->instance_align;
+
+    /*
+     * Do not use qemu_memalign unless required.  Depending on the
+     * implementation, extra alignment implies extra overhead.
+     */
+    if (likely(align <= __alignof__(qemu_max_align_t))) {
+        obj = g_malloc(size);
+        obj_free = g_free;
+    } else {
+        obj = qemu_memalign(align, size);
+        obj_free = qemu_vfree;
+    }
+
+    object_initialize_with_type(uc, obj, size, type);
+    obj->free = obj_free;
 
     return obj;
 }
@@ -517,7 +547,7 @@ Object *object_dynamic_cast_assert(struct uc_struct *uc, Object *obj, const char
     Object *inst;
 
     for (i = 0; obj && i < OBJECT_CLASS_CAST_CACHE; i++) {
-        if (atomic_read(&obj->class->object_cast_cache[i]) == typename) {
+        if (qatomic_read(&obj->class->object_cast_cache[i]) == typename) {
             goto out;
         }
     }
@@ -534,10 +564,10 @@ Object *object_dynamic_cast_assert(struct uc_struct *uc, Object *obj, const char
 
     if (obj && obj == inst) {
         for (i = 1; i < OBJECT_CLASS_CAST_CACHE; i++) {
-            atomic_set(&obj->class->object_cast_cache[i - 1],
-                       atomic_read(&obj->class->object_cast_cache[i]));
+            qatomic_set(&obj->class->object_cast_cache[i - 1],
+                        qatomic_read(&obj->class->object_cast_cache[i]));
         }
-        atomic_set(&obj->class->object_cast_cache[i - 1], typename);
+        qatomic_set(&obj->class->object_cast_cache[i - 1], typename);
     }
 
 out:
@@ -604,7 +634,7 @@ ObjectClass *object_class_dynamic_cast_assert(struct uc_struct *uc, ObjectClass 
     int i;
 
     for (i = 0; class && i < OBJECT_CLASS_CAST_CACHE; i++) {
-        if (atomic_read(&class->class_cast_cache[i]) == typename) {
+        if (qatomic_read(&class->class_cast_cache[i]) == typename) {
             ret = class;
             goto out;
         }
@@ -625,10 +655,10 @@ ObjectClass *object_class_dynamic_cast_assert(struct uc_struct *uc, ObjectClass 
 #ifdef CONFIG_QOM_CAST_DEBUG
     if (class && ret == class) {
         for (i = 1; i < OBJECT_CLASS_CAST_CACHE; i++) {
-            atomic_set(&class->class_cast_cache[i - 1],
-                       atomic_read(&class->class_cast_cache[i]));
+            qatomic_set(&class->class_cast_cache[i - 1],
+                        qatomic_read(&class->class_cast_cache[i]));
         }
-        atomic_set(&class->class_cast_cache[i - 1], typename);
+        qatomic_set(&class->class_cast_cache[i - 1], typename);
     }
 out:
 #endif
@@ -796,7 +826,7 @@ void object_ref(Object *obj)
     if (!obj) {
         return;
     }
-    atomic_inc(&obj->ref);
+    qatomic_inc(&obj->ref);
 }
 
 void object_unref(struct uc_struct *uc, Object *obj)
@@ -807,7 +837,7 @@ void object_unref(struct uc_struct *uc, Object *obj)
     g_assert(obj->ref > 0);
 
     /* parent always holds a reference to its children */
-    if (atomic_fetch_dec(&obj->ref) == 1) {
+    if (qatomic_fetch_dec(&obj->ref) == 1) {
         object_finalize(uc, obj);
     }
 }
@@ -1982,45 +2012,18 @@ static void object_class_init(struct uc_struct *uc, ObjectClass *klass, void *op
 void register_types_object(struct uc_struct *uc)
 {
     static TypeInfo interface_info = {
-        TYPE_INTERFACE,	// name
-        NULL,
-
-        sizeof(InterfaceClass),	// class_size
-        0,
-        NULL,
-
-        NULL,
-        NULL,
-        NULL,
-
-        NULL,
-
-        NULL,
-        NULL,
-        NULL,
-
-        true,	// abstract
+        .name = TYPE_INTERFACE,
+        .class_size = sizeof(InterfaceClass),
+        .instance_size = 0,
+        .abstract = true,
     };
 
     static TypeInfo object_info = {
-        TYPE_OBJECT,
-        NULL,
-
-        0,
-        sizeof(Object),
-        NULL,
-
-        NULL,
-        NULL,
-        NULL,
-
-        NULL,
-
-        object_class_init,
-        NULL,
-        NULL,
-
-        true,
+        .name = TYPE_OBJECT,
+        .class_size = 0,
+        .instance_size = sizeof(Object),
+        .class_init = object_class_init,
+        .abstract = true,
     };
 
     uc->type_interface = type_register_internal(uc, &interface_info);

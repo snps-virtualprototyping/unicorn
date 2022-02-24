@@ -42,24 +42,19 @@ static void machine_finalize(struct uc_struct *uc, Object *obj, void *opaque)
 }
 
 static const TypeInfo machine_info = {
-    TYPE_MACHINE,
-    TYPE_OBJECT,
+    .name = TYPE_MACHINE,
+    .parent = TYPE_OBJECT,
 
-    sizeof(MachineClass),
-    sizeof(MachineState),
-    NULL,
+    .class_size = sizeof(MachineClass),
+    .instance_size = sizeof(MachineState),
 
-    machine_initfn,
-    NULL,
-    machine_finalize,
+    .instance_init = machine_initfn,
+    .instance_finalize = machine_finalize,
 
-    NULL,
+    .class_base_init = machine_class_base_init,
+    .class_finalize = machine_class_finalize,
 
-    NULL,
-    machine_class_base_init,
-    machine_class_finalize,
-
-    true,
+    .abstract = true,
 };
 
 void machine_register_types(struct uc_struct *uc)

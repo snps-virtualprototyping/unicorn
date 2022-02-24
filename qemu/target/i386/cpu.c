@@ -6,7 +6,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -755,7 +755,7 @@ static void x86_cpu_vendor_words2str(char *dst, uint32_t vendor1,
           CPUID_7_0_EBX_RDSEED */
 #define TCG_7_0_ECX_FEATURES (CPUID_7_0_ECX_PKU | \
           /* CPUID_7_0_ECX_OSPKE is dynamic */ \
-          CPUID_7_0_ECX_LA57)
+          CPUID_7_0_ECX_LA57 | CPUID_7_0_ECX_PKS)
 #define TCG_7_0_EDX_FEATURES 0
 #define TCG_7_1_EAX_FEATURES 0
 #define TCG_APM_FEATURES 0
@@ -861,8 +861,8 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
             "avx512bitalg", NULL, "avx512-vpopcntdq", NULL,
             "la57", NULL, NULL, NULL,
             NULL, NULL, "rdpid", NULL,
-            NULL, "cldemote", NULL, "movdiri",
-            "movdir64b", NULL, NULL, NULL,
+            "bus-lock-detect", "cldemote", NULL, "movdiri",
+            "movdir64b", NULL, NULL, "pks",
         },
         .cpuid = {
             .eax = 7,
@@ -875,7 +875,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
         .type = CPUID_FEATURE_WORD,
         .feat_names = {
             NULL, NULL, "avx512-4vnniw", "avx512-4fmaps",
-            NULL, NULL, NULL, NULL,
+            "fsrm", NULL, NULL, NULL,
             NULL, NULL, "md-clear", NULL,
             NULL, NULL, NULL, NULL,
             NULL, NULL, NULL /* pconfig */, NULL,
@@ -4429,6 +4429,11 @@ static uint32_t x86_cpu_get_supported_feature_word(struct uc_struct *uc,
     } else {
         return ~0;
     }
+  #ifndef TARGET_X86_64
+    if (w == FEAT_8000_0001_EDX) {
+        r &= ~CPUID_EXT2_LM;
+    }
+#endif
     if (migratable_only) {
         r &= x86_cpu_get_migratable_flags(w);
     }
@@ -5363,6 +5368,8 @@ static void x86_cpu_enable_xsave_components(X86CPU *cpu)
     uint64_t mask;
 
     if (!(env->features[FEAT_1_ECX] & CPUID_EXT_XSAVE)) {
+        env->features[FEAT_XSAVE_COMP_LO] = 0;
+        env->features[FEAT_XSAVE_COMP_HI] = 0;
         return;
     }
 
@@ -5798,7 +5805,7 @@ static void x86_cpu_set_pc(CPUState *cs, vaddr value)
     cpu->env.eip = value;
 }
 
-static void x86_cpu_synchronize_from_tb(CPUState *cs, TranslationBlock *tb)
+static void x86_cpu_synchronize_from_tb(CPUState *cs, const TranslationBlock *tb)
 {
     X86CPU *cpu = X86_CPU(cs->uc, cs);
 
@@ -5871,13 +5878,8 @@ static void x86_cpu_common_class_init(struct uc_struct *uc, ObjectClass *oc, voi
     cc->class_by_name = x86_cpu_class_by_name;
     cc->parse_features = x86_cpu_parse_featurestr;
     cc->has_work = x86_cpu_has_work;
-#ifdef CONFIG_TCG
-    cc->do_interrupt = x86_cpu_do_interrupt;
-    cc->cpu_exec_interrupt = x86_cpu_exec_interrupt;
-#endif
     cc->dump_state = x86_cpu_dump_state;
     cc->set_pc = x86_cpu_set_pc;
-    cc->synchronize_from_tb = x86_cpu_synchronize_from_tb;
     cc->get_arch_id = x86_cpu_get_arch_id;
     cc->get_paging_enabled = x86_cpu_get_paging_enabled;
 #ifndef CONFIG_USER_ONLY
@@ -5885,38 +5887,35 @@ static void x86_cpu_common_class_init(struct uc_struct *uc, ObjectClass *oc, voi
     cc->get_memory_mapping = x86_cpu_get_memory_mapping;
     cc->get_phys_page_debug = x86_cpu_get_phys_page_debug;
 #endif
-#if defined(CONFIG_TCG) && !defined(CONFIG_USER_ONLY)
-    cc->debug_excp_handler = breakpoint_handler;
-#endif
-    cc->cpu_exec_enter = x86_cpu_exec_enter;
-    cc->cpu_exec_exit = x86_cpu_exec_exit;
 #ifdef CONFIG_TCG
-    cc->tcg_initialize = tcg_x86_init;
-    cc->tlb_fill = x86_cpu_tlb_fill;
+    cc->tcg_ops.initialize = tcg_x86_init;
+    cc->tcg_ops.tlb_fill = x86_cpu_tlb_fill;
+    cc->tcg_ops.synchronize_from_tb = x86_cpu_synchronize_from_tb;
+    cc->tcg_ops.cpu_exec_enter = x86_cpu_exec_enter;
+    cc->tcg_ops.cpu_exec_exit = x86_cpu_exec_exit;
+    cc->tcg_ops.cpu_exec_interrupt = x86_cpu_exec_interrupt;
+    cc->tcg_ops.do_interrupt = x86_cpu_do_interrupt;
+#endif
+#if defined(CONFIG_TCG) && !defined(CONFIG_USER_ONLY)
+    cc->tcg_ops.debug_excp_handler = breakpoint_handler;
 #endif
 }
 
 void x86_cpu_register_types(void *opaque)
 {
     const TypeInfo x86_cpu_type_info = {
-        TYPE_X86_CPU,
-        TYPE_CPU,
+        .name = TYPE_X86_CPU,
+        .parent = TYPE_CPU,
 
-        sizeof(X86CPUClass),
-        sizeof(X86CPU),
-        opaque,
+        .class_size = sizeof(X86CPUClass),
+        .instance_size = sizeof(X86CPU),
+        .instance_userdata = opaque,
 
-        x86_cpu_initfn,
-        NULL,
-        NULL,
+        .instance_init = x86_cpu_initfn,
 
-        NULL,
+        .class_init = x86_cpu_common_class_init,
 
-        x86_cpu_common_class_init,
-        NULL,
-        NULL,
-
-        true,
+        .abstract = true,
     };
 
     int i;
