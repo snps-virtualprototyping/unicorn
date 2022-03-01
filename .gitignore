@@ -114,5 +114,6 @@ cmocka/
 /.cproject
 /.pydevproject
 /.vscode
+/.ccls-cache
 
 !/prebuilt/*
