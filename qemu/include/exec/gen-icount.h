@@ -96,7 +96,8 @@ static inline void gen_tb_end(TCGContext *tcg_ctx, TranslationBlock *tb, int num
     }
 #endif
     // SNPS added
-    tcg_set_insn_param(tcg_ctx->icount_op, 1, num_insns);
+    tcg_set_insn_param(tcg_ctx->icount_op, 1, 
+        tcgv_i64_arg(tcg_ctx, tcg_constant_i64(tcg_ctx, num_insns)));
     gen_set_label(tcg_ctx, tcg_ctx->icount_label);
     tcg_gen_exit_tb(tcg_ctx, tb, TB_EXIT_ICOUNT_EXPIRED);
 
