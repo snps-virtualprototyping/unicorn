@@ -289,6 +289,17 @@ int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals,
     for (i = 0; i < count; i++) {
         unsigned int regid = regs[i];
         const void *value = vals[i];
+
+#ifdef UNICORN_HAS_ARM
+        // SNPS changed
+        if (regid < UC_ARM64_REG_INVALID) {
+            int res = arm_reg_write_arm(uc, &regid, (void* const*)&value, 1);
+            if (res != 0)
+                return res;
+            continue;
+        }
+#endif
+
         if (regid >= UC_ARM64_REG_V0 && regid <= UC_ARM64_REG_V31) {
             regid += UC_ARM64_REG_Q0 - UC_ARM64_REG_V0;
         }
