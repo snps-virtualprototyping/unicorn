@@ -75,6 +75,16 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
     for (i = 0; i < count; i++) {
         unsigned int regid = regs[i];
         void *value = vals[i];
+
+#ifdef UNICORN_HAS_ARM
+        // SNPS changed
+        if (regid < UC_ARM64_REG_INVALID) {
+            int res = arm_reg_read_arm(uc, &regid, &value, 1);
+            if (res != 0)
+                return res;
+            continue;
+        }
+#endif
         // V & Q registers are the same
         if (regid >= UC_ARM64_REG_V0 && regid <= UC_ARM64_REG_V31) {
             regid += UC_ARM64_REG_Q0 - UC_ARM64_REG_V0;
