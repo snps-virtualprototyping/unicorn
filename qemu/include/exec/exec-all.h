@@ -164,7 +164,13 @@ void tlb_flush_page_by_mmuidx(CPUState *cpu, uint64_t addr, // SNPS changed
  * MMU indexes.
  */
 void tlb_flush_by_mmuidx(CPUState *cpu, uint16_t idxmap);
+
+// SNPS added
+void tlb_flush_page_bits_by_mmuidx(CPUState *cpu, target_ulong addr,
+                                   uint16_t idxmap, unsigned bits);
+
 /**
+
  * tlb_set_page_with_attrs:
  * @cpu: CPU to add this TLB entry for
  * @vaddr: virtual address of page to add entry for

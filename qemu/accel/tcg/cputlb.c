@@ -251,6 +251,27 @@ void tlb_flush_page_by_mmuidx_all_cpus_synced(CPUState *cpu, target_ulong addr, 
 }
 
 // SNPS added
+void tlb_flush_page_bits_by_mmuidx(CPUState *cpu, target_ulong addr,
+                                   uint16_t idxmap, unsigned bits)
+{
+    //TLBFlushPageBitsByMMUIdxData d;
+    //run_on_cpu_data runon;
+
+    /* If all bits are significant, this devolves to tlb_flush_page. */
+    if (bits >= TARGET_LONG_BITS) {
+        tlb_flush_page_by_mmuidx(cpu, addr, idxmap);
+        return;
+    }
+    /* If no page bits are significant, this devolves to tlb_flush. */
+    if (bits < TARGET_PAGE_BITS) {
+        tlb_flush_by_mmuidx(cpu, idxmap);
+        return;
+    }
+
+    tlb_flush_by_mmuidx(cpu, idxmap);
+}
+
+// SNPS added
 void tlb_flush_page_bits_by_mmuidx_all_cpus_synced(CPUState *src_cpu,
                                                    target_ulong addr,
                                                    uint16_t idxmap,

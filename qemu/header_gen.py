@@ -3653,6 +3653,7 @@ symbols = (
     'tlb_flush_by_mmuidx_all_cpus_synced',
     'tlb_flush_page_by_mmuidx_all_cpus_synced',
     'tlb_flush_page_bits_by_mmuidx_all_cpus_synced',
+    'tlb_flush_page_bits_by_mmuidx',
     'dmi_invalidate',
     'helper_trace_tb_entry'
 )
