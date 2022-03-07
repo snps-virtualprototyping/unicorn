@@ -178,7 +178,7 @@ static void tlb_flush_page_async_work(CPUState *cpu, run_on_cpu_data data)
 /* As we are going to hijack the bottom bits of the page address for a
  * mmuidx bit mask we need to fail to build if we can't do that
  */
-QEMU_BUILD_BUG_ON(NB_MMU_MODES > TARGET_PAGE_BITS_MIN);
+QEMU_BUILD_BUG_ON(NB_MMU_MODES > 16); // SNSP changed
 
 static void tlb_flush_page_by_mmuidx_async_work(CPUState *cpu,
                                                 run_on_cpu_data data)

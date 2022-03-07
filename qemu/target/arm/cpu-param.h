@@ -31,6 +31,6 @@
 # define TARGET_PAGE_BITS 12
 #endif
 
-#define NB_MMU_MODES 11
+#define NB_MMU_MODES 16 // SNPS changed
 
 #endif
