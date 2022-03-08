@@ -287,10 +287,13 @@ static void aarch64_max_initfn(struct uc_struct *uc, Object *obj, void *opaque)
     t = FIELD_DP64(t, ID_AA64ISAR1, DPB, 2);
     t = FIELD_DP64(t, ID_AA64ISAR1, JSCVT, 1);
     t = FIELD_DP64(t, ID_AA64ISAR1, FCMA, 1);
-    t = FIELD_DP64(t, ID_AA64ISAR1, APA, 1); /* PAuth, architected only */
-    t = FIELD_DP64(t, ID_AA64ISAR1, API, 0);
-    t = FIELD_DP64(t, ID_AA64ISAR1, GPA, 1);
-    t = FIELD_DP64(t, ID_AA64ISAR1, GPI, 0);
+
+    // SNSP changed
+    t = FIELD_DP64(t, ID_AA64ISAR1, APA, 0); /* PAuth, architected only */
+    t = FIELD_DP64(t, ID_AA64ISAR1, API, 1);
+    t = FIELD_DP64(t, ID_AA64ISAR1, GPA, 0);
+    t = FIELD_DP64(t, ID_AA64ISAR1, GPI, 1);
+
     t = FIELD_DP64(t, ID_AA64ISAR1, SB, 1);
     t = FIELD_DP64(t, ID_AA64ISAR1, SPECRES, 1);
     t = FIELD_DP64(t, ID_AA64ISAR1, FRINTTS, 1);
