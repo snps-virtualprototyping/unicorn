@@ -277,12 +277,13 @@ void tlb_flush_page_bits_by_mmuidx_all_cpus_synced(CPUState *src_cpu,
                                                    uint16_t idxmap,
                                                    unsigned bits)
 {
-    static int once = 1;
-    if (once) {
-        fprintf(stderr, "TODO: implement %s\n", __func__);
-        once = 0;
-    }
-
+    // "bits" denotes the number of bits from "addr", that should be used
+    // to detect a tlb hit. For example, if bits is 54, then any tlb entry
+    // matching the bottom 54 bits should be flushed, regardless of what
+    // is stored in addr[54:63].
+    // Currently, we always ignore the top address byte in
+    // tlb_hit_page_anyprot for aarch64 builds, but this also means we
+    // overflush...
     tlb_flush_by_mmuidx_all_cpus_synced(src_cpu, idxmap);
 }
 
