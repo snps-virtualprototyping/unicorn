@@ -2941,6 +2941,7 @@
 #define tb_phys_invalidate tb_phys_invalidate_powerpc
 #define tb_reset_jump tb_reset_jump_powerpc
 #define tb_set_jmp_target tb_set_jmp_target_powerpc
+#define tb_target_set_jmp_target tb_target_set_jmp_target_powerpc
 #define tcg_accel_class_init tcg_accel_class_init_powerpc
 #define tcg_accel_type tcg_accel_type_powerpc
 #define tcg_add_param_i32 tcg_add_param_i32_powerpc

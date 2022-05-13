@@ -2941,6 +2941,7 @@
 #define tb_phys_invalidate tb_phys_invalidate_x86_64
 #define tb_reset_jump tb_reset_jump_x86_64
 #define tb_set_jmp_target tb_set_jmp_target_x86_64
+#define tb_target_set_jmp_target tb_target_set_jmp_target_x86_64
 #define tcg_accel_class_init tcg_accel_class_init_x86_64
 #define tcg_accel_type tcg_accel_type_x86_64
 #define tcg_add_param_i32 tcg_add_param_i32_x86_64

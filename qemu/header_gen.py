@@ -2947,6 +2947,7 @@ symbols = (
     'tb_phys_invalidate',
     'tb_reset_jump',
     'tb_set_jmp_target',
+    'tb_target_set_jmp_target',
     'tcg_accel_class_init',
     'tcg_accel_type',
     'tcg_add_param_i32',
