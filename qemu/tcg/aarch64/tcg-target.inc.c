@@ -1871,7 +1871,7 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc,
 {
     /* 99% of the time, we can signal the use of extension registers
        by looking to see if the opcode handles 64-bit data.  */
-    TCGType ext = (tcg_op_defs[opc].flags & TCG_OPF_64BIT) != 0;
+    TCGType ext = (s->tcg_op_defs[opc].flags & TCG_OPF_64BIT) != 0;
 
     /* Hoist the loads of the most common arguments.  */
     TCGArg a0 = args[0];
@@ -1922,7 +1922,7 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc,
         break;
 
     case INDEX_op_br:
-        tcg_out_goto_label(s, arg_label(a0));
+        tcg_out_goto_label(s, arg_label(s, a0));
         break;
 
     case INDEX_op_ld8u_i32:
@@ -2154,7 +2154,7 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc,
         a1 = (int32_t)a1;
         /* FALLTHRU */
     case INDEX_op_brcond_i64:
-        tcg_out_brcond(s, ext, a2, a0, a1, const_args[1], arg_label(args[3]));
+    tcg_out_brcond(s, ext, a2, a0, a1, const_args[1], arg_label(s, args[3]));
         break;
 
     case INDEX_op_setcond_i32:
@@ -2835,31 +2835,31 @@ static TCGConstraintSetIndex tcg_target_op_def(TCGOpcode op)
 
 static void tcg_target_init(TCGContext *s)
 {
-    tcg_target_available_regs[TCG_TYPE_I32] = 0xffffffffu;
-    tcg_target_available_regs[TCG_TYPE_I64] = 0xffffffffu;
-    tcg_target_available_regs[TCG_TYPE_V64] = 0xffffffff00000000ull;
-    tcg_target_available_regs[TCG_TYPE_V128] = 0xffffffff00000000ull;
+    s->tcg_target_available_regs[TCG_TYPE_I32] = 0xffffffffu;
+    s->tcg_target_available_regs[TCG_TYPE_I64] = 0xffffffffu;
+    s->tcg_target_available_regs[TCG_TYPE_V64] = 0xffffffff00000000ull;
+    s->tcg_target_available_regs[TCG_TYPE_V128] = 0xffffffff00000000ull;
 
-    tcg_target_call_clobber_regs = -1ull;
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X19);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X20);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X21);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X22);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X23);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X24);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X25);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X26);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X27);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X28);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_X29);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_V8);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_V9);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_V10);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_V11);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_V12);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_V13);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_V14);
-    tcg_regset_reset_reg(tcg_target_call_clobber_regs, TCG_REG_V15);
+    s->tcg_target_call_clobber_regs = -1ull;
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X19);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X20);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X21);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X22);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X23);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X24);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X25);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X26);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X27);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X28);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_X29);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_V8);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_V9);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_V10);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_V11);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_V12);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_V13);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_V14);
+    tcg_regset_reset_reg(s->tcg_target_call_clobber_regs, TCG_REG_V15);
 
     s->reserved_regs = 0;
     tcg_regset_set_reg(s->reserved_regs, TCG_REG_SP);
