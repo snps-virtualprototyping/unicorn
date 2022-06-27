@@ -1216,7 +1216,8 @@ load_helper(CPUArchState *env, target_ulong addr, TCGMemOpIdx oi,
     }
 
     // SNPS added
-    if (code_read && (entry->addr_code & TLB_NOTPROTECTED)) {
+    if (code_read && !(entry->addr_code & TLB_MMIO)
+                  &&  (entry->addr_code & TLB_NOTPROTECTED)) {
         entry->addr_code &= ~TLB_NOTPROTECTED;
         tlb_addr = entry->addr_code;
 
