@@ -390,6 +390,14 @@ static const ARMCPRegInfo gicv3_cpuif_hcr_reginfo[] = {
         .readfn = gicv3reg_read,
         .writefn = gicv3reg_write,
     },
+    {
+        .name = "ICH_VTR_EL2", .state = ARM_CP_STATE_BOTH,
+        .opc0 = 3, .opc1 = 4, .crn = 12, .crm = 11, .opc2 = 1,
+        .type = ARM_CP_IO | ARM_CP_NO_RAW,
+        .access = PL2_R,
+        .readfn = gicv3reg_read,
+        .writefn = gicv3reg_write,
+    },
 
     REGINFO_SENTINEL
 };
