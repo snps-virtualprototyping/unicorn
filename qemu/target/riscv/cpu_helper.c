@@ -1047,3 +1047,9 @@ void riscv_cpu_do_interrupt(CPUState *cs)
 #endif
     cs->exception_index = EXCP_NONE; /* mark handled to qemu */
 }
+
+// SNPS added
+void HELPER(call_breakpoints)(CPURISCVState *env) {
+    if (env->uc->uc_breakpoint_func)
+        (env->uc->uc_breakpoint_func)(env->uc->uc_breakpoint_opaque, env->pc);
+}
