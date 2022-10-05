@@ -1816,13 +1816,16 @@ uc_err uc_interrupt(uc_engine *uc, int irqid, int set) {
 
 UNICORN_EXPORT
 uc_err uc_va2pa(uc_engine *uc, uint64_t va, uint64_t *pa) {
-    uint64_t addr = cpu_get_phys_page_debug(uc->cpu, va);
+    // SNPS changed to work with non-aligned va
+    uint64_t va_offset = va & uc->target_page_align;
+    uint64_t va_pg = va ^ va_offset;
+    uint64_t addr = cpu_get_phys_page_debug(uc->cpu, va_pg);
 
     if (addr == ~0)
         return UC_ERR_NOMEM;
 
     if (pa != NULL)
-        *pa = addr;
+        *pa = (addr | va_offset);
 
     return UC_ERR_OK;
 }
