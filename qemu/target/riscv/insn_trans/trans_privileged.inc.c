@@ -20,6 +20,15 @@
 
 static bool trans_ecall(DisasContext *ctx, arg_ecall *a)
 {
+    /* always generates U-level ECALL, fixed in do_interrupt handler */
+    generate_exception(ctx, RISCV_EXCP_U_ECALL);
+    exit_tb(ctx); /* no chaining */
+    ctx->base.is_jmp = DISAS_NORETURN;
+    return true;
+}
+
+static bool trans_ebreak(DisasContext *ctx, arg_ebreak *a)
+{
     // SNPS pulled in semihosting support
     target_ulong    ebreak_addr = ctx->base.pc_next;
     target_ulong    pre_addr = ebreak_addr - 4;
@@ -58,14 +67,6 @@ static bool trans_ecall(DisasContext *ctx, arg_ecall *a)
         generate_exception(ctx, RISCV_EXCP_BREAKPOINT);
     }
 
-    return true;
-}
-
-static bool trans_ebreak(DisasContext *ctx, arg_ebreak *a)
-{
-    generate_exception(ctx, RISCV_EXCP_BREAKPOINT);
-    exit_tb(ctx); /* no chaining */
-    ctx->base.is_jmp = DISAS_NORETURN;
     return true;
 }
 

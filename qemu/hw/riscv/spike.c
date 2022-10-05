@@ -53,9 +53,9 @@ static void spike_v1_10_0_machine_init(struct uc_struct *uc, MachineClass *mc)
     //          we use specific values to allow selection of the
     //          preferred bitness of the architecture.
     if (uc->mode == UC_MODE_RISCV32) {
-        mc->default_cpu_type = TYPE_RISCV_CPU_RV32GCSU_V1_10_0;
+        mc->default_cpu_type = TYPE_RISCV_CPU_BASE32; // SNPS changed
     } else {
-        mc->default_cpu_type = TYPE_RISCV_CPU_RV64GCSU_V1_10_0;
+        mc->default_cpu_type = TYPE_RISCV_CPU_BASE64; // SNPS changed
     }
 
     mc->arch = UC_ARCH_RISCV;
