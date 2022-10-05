@@ -142,6 +142,7 @@ static bool trans_bgeu(DisasContext *ctx, arg_bgeu *a)
 
 static bool gen_load(DisasContext *ctx, arg_lb *a, MemOp memop)
 {
+    gen_sync_pc(ctx); // SNPS added
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
 
     TCGv t0 = tcg_temp_new(tcg_ctx);
@@ -183,6 +184,7 @@ static bool trans_lhu(DisasContext *ctx, arg_lhu *a)
 
 static bool gen_store(DisasContext *ctx, arg_sb *a, MemOp memop)
 {
+    gen_sync_pc(ctx); // SNPS added
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
 
     TCGv t0 = tcg_temp_new(tcg_ctx);

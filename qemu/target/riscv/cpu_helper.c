@@ -869,6 +869,23 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
 #endif
 }
 
+// SNPS added
+static target_ulong riscv_cpu_do_semihosting(CPURISCVState *env)
+{
+    void* opaque = env->uc->uc_semihost_opaque;
+    uc_shfunc_t fn = env->uc->uc_semihost_func;
+
+    uint32_t call = (uint32_t)env->gpr[xA0];
+
+    if (fn != NULL)
+        return fn(opaque, call);
+
+    return -1;
+
+    /* Unicorn: We don't handle semihosting */
+    g_assert_not_reached();
+}
+
 /*
  * Handle Traps
  *
@@ -894,6 +911,16 @@ void riscv_cpu_do_interrupt(CPUState *cs)
     target_ulong tval = 0;
     target_ulong htval = 0;
     target_ulong mtval2 = 0;
+
+    // SNPS integrated semihosting support
+    if  (cause == RISCV_EXCP_SEMIHOST) {
+        if (env->priv >= PRV_S) {
+            env->gpr[xA0] = riscv_cpu_do_semihosting(env);
+        env->pc += 4;
+            return;
+        }
+        cause = RISCV_EXCP_BREAKPOINT;
+    }
 
     if (!async) {
         /* set tval to badaddr for traps with address information */
@@ -1046,10 +1073,4 @@ void riscv_cpu_do_interrupt(CPUState *cs)
     env->two_stage_lookup = false;
 #endif
     cs->exception_index = EXCP_NONE; /* mark handled to qemu */
-}
-
-// SNPS added
-void HELPER(call_breakpoints)(CPURISCVState *env) {
-    if (env->uc->uc_breakpoint_func)
-        (env->uc->uc_breakpoint_func)(env->uc->uc_breakpoint_opaque, env->pc);
 }

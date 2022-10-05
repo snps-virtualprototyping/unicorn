@@ -184,10 +184,27 @@ void helper_wfi(CPURISCVState *env)
         riscv_cpu_virt_enabled(env)) {
         riscv_raise_exception(env, RISCV_EXCP_VIRT_INSTRUCTION_FAULT, GETPC());
     } else {
-        cs->halted = 1;
-        cs->exception_index = EXCP_HLT;
+        // SNPS added
+        uc_hintfunc_t fn = env->uc->uc_hint_func;
+        void* opaque = env->uc->uc_hint_opaque;
+
+        if (fn != NULL) {
+            env->uc->is_memcb = true; // force adjustment during PC register read
+            fn(opaque, UC_HINT_WFI);
+            env->uc->is_memcb = false;
+        } else {
+            cs->halted = 1;
+            cs->exception_index = EXCP_HLT;
+        }
+
         cpu_loop_exit(cs);
     }
+}
+
+// SNPS added
+void HELPER(call_breakpoints)(CPURISCVState *env) {
+    if (env->uc->uc_breakpoint_func)
+        (env->uc->uc_breakpoint_func)(env->uc->uc_breakpoint_opaque, env->pc);
 }
 
 void helper_tlb_flush(CPURISCVState *env)

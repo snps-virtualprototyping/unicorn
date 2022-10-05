@@ -73,6 +73,12 @@ typedef struct DisasContext {
 #define CASE_OP_32_64(X) case X
 #endif
 
+// SNPS added
+static inline void gen_sync_pc(const DisasContext *ctx) {
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+    tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, ctx->base.pc_next);
+}
+
 static inline bool has_ext(DisasContext *ctx, uint32_t ext)
 {
     return ctx->misa & ext;
@@ -596,6 +602,15 @@ static bool gen_shift(DisasContext *ctx, arg_r *a,
     tcg_temp_free(tcg_ctx, source1);
     tcg_temp_free(tcg_ctx, source2);
     return true;
+}
+
+// SNPS integrated semihosting support
+static uint32_t opcode_at(DisasContextBase *dcbase, target_ulong addr)
+{
+    DisasContext *ctx = container_of(dcbase, DisasContext, base);
+    CPURISCVState *env = ctx->uc->cpu->env_ptr;
+
+    return cpu_ldl_code(env, addr);
 }
 
 /* Include insn module translation function */
