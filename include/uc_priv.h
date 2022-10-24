@@ -159,8 +159,8 @@ enum uc_hook_idx {
     ((((addr) >= (hh)->begin && (addr) <= (hh)->end) \
          || (hh)->begin > (hh)->end))
 
-#define HOOK_EXISTS(uc, idx) (0) // SNPS changed
-#define HOOK_EXISTS_BOUNDED(uc, idx, addr) (0) // SNPS changed
+#define HOOK_EXISTS(uc, idx) ((uc)->hook[idx##_IDX].head != NULL)
+#define HOOK_EXISTS_BOUNDED(uc, idx, addr) _hook_exists_bounded((uc)->hook[idx##_IDX].head, addr)
 
 static inline bool _hook_exists_bounded(struct list_item *cur, uint64_t addr)
 {

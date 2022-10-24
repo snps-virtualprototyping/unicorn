@@ -4318,7 +4318,7 @@ static void disas_ldst_tag(DisasContext *s, uint32_t insn)
 /* Loads and stores */
 static void disas_ldst(DisasContext *s, uint32_t insn)
 {
-    /* 
+    /*
      * SNPS added: loads and stores might trigger watchpoints in QEMU or in
      * SystemC, so we need to sync our pc here to provide a consistent model
      * state to the debugger
@@ -14917,12 +14917,11 @@ static void disas_a64_insn(CPUARMState *env, DisasContext *s)
     s->insn = insn;
     s->base.pc_next += 4;
 
-    // SNPS removed
-    //if (HOOK_EXISTS_BOUNDED(env->uc, UC_HOOK_CODE, s->pc_curr)) {
-    //    gen_uc_tracecode(tcg_ctx, 4, UC_HOOK_CODE_IDX, env->uc, s->pc_curr);
-    //    // the callback might want to stop emulation immediately
-    //    check_exit_request(tcg_ctx);
-    //}
+    if (HOOK_EXISTS_BOUNDED(env->uc, UC_HOOK_CODE, s->pc_curr)) {
+        gen_uc_tracecode(tcg_ctx, 4, UC_HOOK_CODE_IDX, env->uc, s->pc_curr);
+    // the callback might want to stop emulation immediately
+    // SNPS removed:  check_exit_request(tcg_ctx);
+    }
 
     s->fp_access_checked = false;
     s->sve_access_checked = false;

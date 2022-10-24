@@ -771,14 +771,16 @@ static void enable_emu_timer(uc_engine *uc, uint64_t timeout)
             uc, QEMU_THREAD_JOINABLE);
 }
 
-static void hook_count_cb(struct uc_struct *uc, uint64_t address, uint32_t size, void *user_data)
-{
-    // count this instruction. ah ah ah.
-    uc->emu_counter++;
 
-    if (uc->emu_counter > uc->emu_count)
-        uc_emu_stop(uc);
-}
+// SNPS removed
+// static void hook_count_cb(struct uc_struct *uc, uint64_t address, uint32_t size, void *user_data)
+// {
+//     // count this instruction. ah ah ah.
+//     uc->emu_counter++;
+
+//     if (uc->emu_counter > uc->emu_count)
+//         uc_emu_stop(uc);
+// }
 
 UNICORN_EXPORT
 uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t timeout, size_t count)
@@ -854,6 +856,8 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
     uc->stop_request = false;
 
     uc->emu_count = count;
+
+#if 0 // SNPS removed
     // remove count hook if counting isn't necessary
     if (count <= 0 && uc->count_hook != 0) {
         uc_hook_del(uc, uc->count_hook);
@@ -873,6 +877,7 @@ uc_err uc_emu_start(uc_engine* uc, uint64_t begin, uint64_t until, uint64_t time
             return err;
         }
     }
+#endif
 
     uc->addr_end = until;
 
