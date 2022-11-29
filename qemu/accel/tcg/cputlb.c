@@ -101,9 +101,19 @@ void tlb_flush_by_mmuidx(CPUState *cpu, uint16_t idxmap)
 
 void tlb_flush(CPUState *cpu)
 {
-    tlb_flush_by_mmuidx(cpu, ALL_MMUIDX_BITS);
-}
+    // SNPS changed - gcc (9.x) seems to have a hard time inlining this
+    // so we inline this manually - it used heavily in the Android boot
 
+    tlb_debug("mmu_idx: 0x%" PRIx16 "\n", ALL_MMUIDX_BITS);
+
+    CPUArchState *env = cpu->env_ptr;
+    int mmu_idx;
+
+    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++)
+        tlb_flush_one_mmuidx_locked(env, mmu_idx);
+
+    cpu_tb_jmp_cache_clear(cpu);
+}
 static inline bool tlb_hit_page_anyprot(CPUTLBEntry *tlb_entry,
                                         target_ulong page)
 {
