@@ -100,7 +100,7 @@ bool set_preferred_target_page_bits(struct uc_struct *uc, int bits);
     // see also https://stackoverflow.com/questions/74642321/
     #define INITIALIZER(f) \
         void __explicit_ctor_##f(void); \
-        __explicit_ctor_##f(void)
+        void __explicit_ctor_##f(void)
 #else
     #define INITIALIZER(f) \
         static void f(void) __attribute__((constructor)); \
