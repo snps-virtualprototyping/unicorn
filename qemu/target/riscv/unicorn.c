@@ -40,6 +40,8 @@ static void riscv_reg_reset(struct uc_struct *uc) {
     set_default_nan_mode(1, &env->fp_status);
 }
 
+static_assert(UC_RISCV_VLEN_MAX == RV_VLEN_MAX, "vector register size mismatch");
+
 static int riscv_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int count) {
     CPUState *const cs = uc->cpu;
     CPURISCVState *const state = &RISCV_CPU(uc, cs)->env;
@@ -54,7 +56,9 @@ static int riscv_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals,
         } else if (reg_id >= UC_RISCV_REG_F0 && reg_id <= UC_RISCV_REG_F31) {
             memcpy(value, &state->fpr[reg_id - UC_RISCV_REG_F0], sizeof(state->fpr[0]));
         } else if (reg_id >= UC_RISCV_REG_V0 &&  reg_id <= UC_RISCV_REG_V31) { // SNPS added
-            memcpy(value, &state->vreg[reg_id - UC_RISCV_REG_V0], sizeof(state->vreg[0]));
+            const size_t VREG_BYTES = RV_VLEN_MAX / 8;
+            const size_t VREG_OFFSET = VREG_BYTES / sizeof(state->vreg[0]);
+            memcpy(value, &state->vreg[(reg_id - UC_RISCV_REG_V0) * VREG_OFFSET], VREG_BYTES);
         } else {
             // SNPS changed
             switch (reg_id) {
@@ -108,7 +112,9 @@ static int riscv_reg_write(struct uc_struct *uc, unsigned int *regs, void *const
         } else if (reg_id >= UC_RISCV_REG_F0 && reg_id <= UC_RISCV_REG_F31) {
             memcpy(&state->fpr[reg_id - UC_RISCV_REG_F0], value, sizeof(state->fpr[0]));
         } else if (reg_id >= UC_RISCV_REG_V0 && reg_id <= UC_RISCV_REG_V31) {
-            memcpy(&state->vreg[reg_id - UC_RISCV_REG_V0], value, sizeof(state->vreg[0]));
+            const size_t VREG_BYTES = RV_VLEN_MAX / 8;
+            const size_t VREG_OFFSET = VREG_BYTES / sizeof(state->vreg[0]);
+            memcpy(&state->vreg[(reg_id - UC_RISCV_REG_V0) * VREG_OFFSET], value, VREG_BYTES);
         } else if (reg_id == UC_RISCV_REG_PC) {
             memcpy(&state->pc, value, sizeof(state->pc));
             // force to quit execution and flush TB

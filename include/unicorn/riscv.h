@@ -181,9 +181,9 @@ typedef enum uc_riscv_reg {
     UC_RISCV_REG_A6 = UC_RISCV_REG_X16,
     UC_RISCV_REG_A7 = UC_RISCV_REG_X17,
 
-
 } uc_riscv_reg;
 
+#define UC_RISCV_VLEN_MAX 256
 
 #ifdef __cplusplus
 }
