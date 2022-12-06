@@ -43,6 +43,7 @@ static void riscv_reg_reset(struct uc_struct *uc) {
 static int riscv_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int count) {
     CPUState *const cs = uc->cpu;
     CPURISCVState *const state = &RISCV_CPU(uc, cs)->env;
+    int status  = 0;
 
     for (int i = 0; i < count; i++) {
         const unsigned int reg_id = regs[i];
@@ -52,21 +53,50 @@ static int riscv_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals,
             memcpy(value, &state->gpr[reg_id - UC_RISCV_REG_X0], sizeof(state->gpr[0]));
         } else if (reg_id >= UC_RISCV_REG_F0 && reg_id <= UC_RISCV_REG_F31) {
             memcpy(value, &state->fpr[reg_id - UC_RISCV_REG_F0], sizeof(state->fpr[0]));
-        } else if (reg_id == UC_RISCV_REG_PC) {
-            memcpy(value, &state->pc, sizeof(state->pc));
-        } else if (reg_id == UC_RISCV_REG_MHARTID) { // SNPS added
-            memcpy(value, &state->mhartid, sizeof(state->mhartid));
-        } else if (reg_id == UC_RISCV_REG_MSTATUS) { // SNPS added
-            memcpy(value, &state->mstatus, sizeof(state->mstatus));
-         }
+        } else if (reg_id >= UC_RISCV_REG_V0 &&  reg_id <= UC_RISCV_REG_V31) { // SNPS added
+            memcpy(value, &state->vreg[reg_id - UC_RISCV_REG_V0], sizeof(state->vreg[0]));
+        } else {
+            // SNPS changed
+            switch (reg_id) {
+            case UC_RISCV_REG_PC:
+                memcpy(value, &state->pc, sizeof(state->pc));
+                break;
+            case UC_RISCV_REG_MHARTID:
+                memcpy(value, &state->mhartid, sizeof(state->mhartid));
+                break;
+            case UC_RISCV_REG_MSTATUS:
+                memcpy(value, &state->mstatus, sizeof(state->mstatus));
+                break;
+            case UC_RISCV_REG_VSTART:
+                memcpy(value, &state->vstart, sizeof(state->vstart));
+                break;
+            case UC_RISCV_REG_VXSAT:
+                memcpy(value, &state->vxsat, sizeof(state->vxsat));
+                break;
+            case UC_RISCV_REG_VXRM:
+                memcpy(value, &state->vxrm, sizeof(state->vxrm));
+                break;
+            case UC_RISCV_REG_VTYPE:
+                memcpy(value, &state->vtype, sizeof(state->vtype));
+                break;
+            case UC_RISCV_REG_VL:
+                memcpy(value, &state->vl, sizeof(state->vl));
+                break;
+            default:
+                fprintf(stderr, "trying to read unknown RISCV register id 0x%x\n", reg_id);
+                status = 1;
+                break;
+            }
+        }
     }
 
-    return 0;
+    return status;
 }
 
 static int riscv_reg_write(struct uc_struct *uc, unsigned int *regs, void *const *vals, int count) {
     CPUState *const cs = uc->cpu;
     CPURISCVState *const state = &RISCV_CPU(uc, cs)->env;
+    int status = 0;
 
     for (int i = 0; i < count; i++) {
         const unsigned int reg_id = regs[i];
@@ -77,15 +107,20 @@ static int riscv_reg_write(struct uc_struct *uc, unsigned int *regs, void *const
             memcpy(&state->gpr[reg_id - UC_RISCV_REG_X0], value, sizeof(state->gpr[0]));
         } else if (reg_id >= UC_RISCV_REG_F0 && reg_id <= UC_RISCV_REG_F31) {
             memcpy(&state->fpr[reg_id - UC_RISCV_REG_F0], value, sizeof(state->fpr[0]));
+        } else if (reg_id >= UC_RISCV_REG_V0 && reg_id <= UC_RISCV_REG_V31) {
+            memcpy(&state->vreg[reg_id - UC_RISCV_REG_V0], value, sizeof(state->vreg[0]));
         } else if (reg_id == UC_RISCV_REG_PC) {
             memcpy(&state->pc, value, sizeof(state->pc));
             // force to quit execution and flush TB
             uc->quit_request = true;
             uc_emu_stop(uc);
+        } else {
+            fprintf(stderr, "trying to write read-only or unknown RISCV register id 0x%x\n", reg_id);
+            status = 1;
         }
     }
 
-    return 0;
+    return status;
 }
 
 static void riscv_set_pc(struct uc_struct *uc, uint64_t address) {
