@@ -115,14 +115,23 @@ static int riscv_reg_write(struct uc_struct *uc, unsigned int *regs, void *const
             const size_t VREG_BYTES = RV_VLEN_MAX / 8;
             const size_t VREG_OFFSET = VREG_BYTES / sizeof(state->vreg[0]);
             memcpy(&state->vreg[(reg_id - UC_RISCV_REG_V0) * VREG_OFFSET], value, VREG_BYTES);
-        } else if (reg_id == UC_RISCV_REG_PC) {
-            memcpy(&state->pc, value, sizeof(state->pc));
-            // force to quit execution and flush TB
-            uc->quit_request = true;
-            uc_emu_stop(uc);
         } else {
-            fprintf(stderr, "trying to write read-only or unknown RISCV register id 0x%x\n", reg_id);
-            status = 1;
+            // SNPS changed
+            switch (reg_id) {
+            case UC_RISCV_REG_PC:
+                memcpy(&state->pc, value, sizeof(state->pc));
+                // force to quit execution and flush TB
+                uc->quit_request = true;
+                uc_emu_stop(uc);
+                break;
+            case UC_RISCV_REG_MHARTID:
+                memcpy(&state->mhartid, value, sizeof(state->mhartid));
+                break;
+            default:
+                fprintf(stderr, "trying to write read-only or unknown RISCV register id 0x%x\n", reg_id);
+                status = 1;
+                break;
+            }
         }
     }
 
