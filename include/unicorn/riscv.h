@@ -90,6 +90,49 @@ typedef enum uc_riscv_reg {
     UC_RISCV_REG_MHARTID,
     UC_RISCV_REG_MSTATUS,
 
+    /* SNPS added vector registers */
+
+    UC_RISCV_REG_V0,
+    UC_RISCV_REG_V1,
+    UC_RISCV_REG_V2,
+    UC_RISCV_REG_V3,
+    UC_RISCV_REG_V4,
+    UC_RISCV_REG_V5,
+    UC_RISCV_REG_V6,
+    UC_RISCV_REG_V7,
+    UC_RISCV_REG_V8,
+    UC_RISCV_REG_V9,
+    UC_RISCV_REG_V10,
+    UC_RISCV_REG_V11,
+    UC_RISCV_REG_V12,
+    UC_RISCV_REG_V13,
+    UC_RISCV_REG_V14,
+    UC_RISCV_REG_V15,
+    UC_RISCV_REG_V16,
+    UC_RISCV_REG_V17,
+    UC_RISCV_REG_V18,
+    UC_RISCV_REG_V19,
+    UC_RISCV_REG_V20,
+    UC_RISCV_REG_V21,
+    UC_RISCV_REG_V22,
+    UC_RISCV_REG_V23,
+    UC_RISCV_REG_V24,
+    UC_RISCV_REG_V25,
+    UC_RISCV_REG_V26,
+    UC_RISCV_REG_V27,
+    UC_RISCV_REG_V28,
+    UC_RISCV_REG_V29,
+    UC_RISCV_REG_V30,
+    UC_RISCV_REG_V31,
+
+    /* SNPS added vector CSRs */
+
+    UC_RISCV_REG_VSTART,
+    UC_RISCV_REG_VXSAT,
+    UC_RISCV_REG_VXRM,
+    UC_RISCV_REG_VTYPE,
+    UC_RISCV_REG_VL,
+
     /* General-purpose register aliases */
 
     /* Zero register */
@@ -137,8 +180,10 @@ typedef enum uc_riscv_reg {
     UC_RISCV_REG_A5 = UC_RISCV_REG_X15,
     UC_RISCV_REG_A6 = UC_RISCV_REG_X16,
     UC_RISCV_REG_A7 = UC_RISCV_REG_X17,
+
 } uc_riscv_reg;
 
+#define UC_RISCV_VLEN_MAX 256
 
 #ifdef __cplusplus
 }
