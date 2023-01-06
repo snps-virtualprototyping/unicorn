@@ -2,6 +2,7 @@
 /* By Nguyen Anh Quynh <aquynh@gmail.com>, 2015 */
 
 #include <string.h>
+#include <assert.h>
 
 #include "qemu/osdep.h"
 #include "cpu.h"
@@ -40,7 +41,7 @@ static void riscv_reg_reset(struct uc_struct *uc) {
     set_default_nan_mode(1, &env->fp_status);
 }
 
-static_assert(UC_RISCV_VLEN_MAX == RV_VLEN_MAX, "vector register size mismatch");
+_Static_assert(UC_RISCV_VLEN_MAX == RV_VLEN_MAX, "vector register size mismatch");
 
 static int riscv_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int count) {
     CPUState *const cs = uc->cpu;
