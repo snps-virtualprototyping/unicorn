@@ -310,6 +310,15 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
 
         raise_exception(env, EXCP_UDEF, syn_wfx(1, 0xe, 0, insn_len == 2),
                         target_el);
+    } else {
+        // SNPS added
+        uc_hintfunc_t fn = env->uc->uc_hint_func;
+        void* opaque = env->uc->uc_hint_opaque;
+
+        if (fn != NULL) {
+            fn(opaque, UC_HINT_WFI);
+            return;
+        }
     }
 
     cs->exception_index = EXCP_HLT;
