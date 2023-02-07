@@ -38,9 +38,7 @@
 
 #define TYPE_RISCV_CPU_ANY              RISCV_CPU_TYPE_NAME("any")
 #define TYPE_RISCV_CPU_BASE32           RISCV_CPU_TYPE_NAME("rv32")
-#define TYPE_RISCV_CPU_RV32GCSU_V1_10_0 RISCV_CPU_TYPE_NAME("rv32gcsu-v1.10.0")
 #define TYPE_RISCV_CPU_BASE64           RISCV_CPU_TYPE_NAME("rv64")
-#define TYPE_RISCV_CPU_RV64GCSU_V1_10_0 RISCV_CPU_TYPE_NAME("rv64gcsu-v1.10.0")
 #define TYPE_RISCV_CPU_IBEX             RISCV_CPU_TYPE_NAME("lowrisc-ibex")
 #define TYPE_RISCV_CPU_SIFIVE_E31       RISCV_CPU_TYPE_NAME("sifive-e31")
 #define TYPE_RISCV_CPU_SIFIVE_E34       RISCV_CPU_TYPE_NAME("sifive-e34")
@@ -160,15 +158,6 @@ struct CPURISCVState {
      */
     uint64_t mstatus;
 
-    /*
-     * CAUTION! Unlike the rest of this struct, mip is accessed asynchonously
-     * by I/O threads. It should be read with qatomic_read. It should be updated
-     * using riscv_cpu_update_mip with the iothread mutex held. The iothread
-     * mutex must be held because mip must be consistent with the CPU inturrept
-     * state. riscv_cpu_update_mip calls cpu_interrupt or cpu_reset_interrupt
-     * wuth the invariant that CPU_INTERRUPT_HARD is set iff mip is non-zero.
-     * mip is 32-bits to allow qatomic_read on 32-bit hosts.
-     */
     target_ulong mip;
 
     uint32_t miclaim;
@@ -300,13 +289,29 @@ typedef struct RISCVCPU {
     CPURISCVState env;
 
     struct {
+        bool ext_i;
+        bool ext_e;
+        bool ext_g;
+        bool ext_m;
+        bool ext_a;
+        bool ext_f;
+        bool ext_d;
+        bool ext_c;
+        bool ext_s;
+        bool ext_u;
+        bool ext_h;
         bool ext_v;
-
+        bool ext_counters;
         bool ext_ifencei;
         bool ext_icsr;
+
+        char *priv_spec;
+        char *user_spec;
         char *vext_spec;
         uint16_t vlen;
         uint16_t elen;
+        bool     mmu;
+        bool     pmp;
         uint64_t resetvec;
     } cfg;
 } RISCVCPU;
@@ -329,6 +334,7 @@ extern const char * const riscv_fpr_regnames[];
 extern const char * const riscv_excp_names[];
 extern const char * const riscv_intr_names[];
 
+const char *riscv_cpu_get_trap_name(target_ulong cause, bool async);
 void riscv_cpu_do_interrupt(CPUState *cpu);
 int riscv_cpu_gdb_read_register(CPUState *cpu, uint8_t *buf, int reg);
 int riscv_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
@@ -350,7 +356,7 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
 void riscv_cpu_unassigned_access(CPUState *cpu, hwaddr addr, bool is_write,
                                  bool is_exec, int unused, unsigned size);
 char *riscv_isa_string(RISCVCPU *cpu);
-void riscv_cpu_list(FILE *f, fprintf_function cpu_fprintf);
+void riscv_cpu_list(void);
 
 #define cpu_signal_handler riscv_cpu_signal_handler
 #define cpu_list riscv_cpu_list
@@ -478,6 +484,7 @@ typedef int (*riscv_csr_op_fn)(CPURISCVState *env, int csrno,
     target_ulong *ret_value, target_ulong new_value, target_ulong write_mask);
 
 typedef struct {
+    const char *name;
     riscv_csr_predicate_fn predicate;
     riscv_csr_read_fn read;
     riscv_csr_write_fn write;

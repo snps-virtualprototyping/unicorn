@@ -50,6 +50,7 @@
 &u         imm rd       !extern
 &shift     shamt rs1 rd !extern
 
+
 # Formats 16:
 @cr        ....  ..... .....  .. &r      rs2=%rs2_5       rs1=%rd     %rd
 @ci        ... . ..... .....  .. &i      imm=%imm_ci      rs1=%rd     %rd
@@ -79,7 +80,6 @@
                 &shift rd=%rd rs1=%rd shamt=%shimm_6bit
 
 @c_andi         ... . .. ... ..... .. &i imm=%imm_ci rs1=%rs1_3 rd=%rs1_3
-
 
 # *** RV32/64C Standard Extension (Quadrant 0) ***
 {

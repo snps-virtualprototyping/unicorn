@@ -15,7 +15,7 @@ UNICORN_DEBUG ?= no
 # Specify which archs you want to compile in. By default, we build all archs.
 
 #UNICORN_ARCHS ?= x86 m68k arm aarch64 mips sparc
-UNICORN_ARCHS ?= arm aarch64 riscv
+UNICORN_ARCHS ?= riscv
 
 
 ################################################################################

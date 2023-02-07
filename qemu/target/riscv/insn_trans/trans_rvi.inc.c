@@ -199,6 +199,7 @@ static bool gen_store(DisasContext *ctx, arg_sb *a, MemOp memop)
     return true;
 }
 
+
 static bool trans_sb(DisasContext *ctx, arg_sb *a)
 {
     return gen_store(ctx, a, MO_SB);
@@ -245,6 +246,7 @@ static void gen_sltu(TCGContext *tcg_ctx, TCGv ret, TCGv s1, TCGv s2)
 {
     tcg_gen_setcond_tl(tcg_ctx, TCG_COND_LTU, ret, s1, s2);
 }
+
 
 static bool trans_slti(DisasContext *ctx, arg_slti *a)
 {

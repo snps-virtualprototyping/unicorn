@@ -1,5 +1,6 @@
 // Unicorn
 DEF_HELPER_4(uc_tracecode, void, i32, i32, ptr, i64)
+DEF_HELPER_1(call_breakpoints, void, env) // SNPS added
 
 /* Exceptions */
 DEF_HELPER_2(raise_exception, noreturn, env, i32)
@@ -1148,5 +1149,3 @@ DEF_HELPER_6(vcompress_vm_b, void, ptr, ptr, ptr, ptr, env, i32)
 DEF_HELPER_6(vcompress_vm_h, void, ptr, ptr, ptr, ptr, env, i32)
 DEF_HELPER_6(vcompress_vm_w, void, ptr, ptr, ptr, ptr, env, i32)
 DEF_HELPER_6(vcompress_vm_d, void, ptr, ptr, ptr, ptr, env, i32)
-
-DEF_HELPER_1(call_breakpoints, void, env) // SNPS added

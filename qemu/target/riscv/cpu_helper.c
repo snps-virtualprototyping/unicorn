@@ -223,10 +223,10 @@ int riscv_cpu_claim_interrupts(RISCVCPU *cpu, uint32_t interrupts)
     }
 }
 
-/* iothread_mutex must be held */
 uint32_t riscv_cpu_update_mip(RISCVCPU *cpu, uint32_t mask, uint32_t value)
 {
     CPURISCVState *env = &cpu->env;
+    CPUState *cs = CPU(cpu);
     uint32_t old, new, cmp = qatomic_read(&env->mip);
 
     do {
@@ -236,9 +236,9 @@ uint32_t riscv_cpu_update_mip(RISCVCPU *cpu, uint32_t mask, uint32_t value)
     } while (old != cmp);
 
     if (new) {
-        cpu_interrupt(CPU(cpu), CPU_INTERRUPT_HARD);
+        cpu_interrupt(cs, CPU_INTERRUPT_HARD);
     } else {
-        cpu_reset_interrupt(CPU(cpu), CPU_INTERRUPT_HARD);
+        cpu_reset_interrupt(cs, CPU_INTERRUPT_HARD);
     }
 
     return old;
@@ -713,16 +713,16 @@ void riscv_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
                             riscv_cpu_two_stage_lookup(mmu_idx);
     riscv_raise_exception(env, cs->exception_index, retaddr);
 }
-#endif
+#endif /* !CONFIG_USER_ONLY */
 
 bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                         MMUAccessType access_type, int mmu_idx,
                         bool probe, uintptr_t retaddr)
 {
-#ifndef CONFIG_USER_ONLY
-    vaddr im_address;
     RISCVCPU *cpu = RISCV_CPU(cs->uc, cs);
     CPURISCVState *env = &cpu->env;
+#ifndef CONFIG_USER_ONLY
+    vaddr im_address;
     hwaddr pa = 0;
     int prot, prot2, prot_pmp;
     bool pmp_violation = false;
@@ -864,7 +864,10 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
     case MMU_DATA_STORE:
         cs->exception_index = RISCV_EXCP_STORE_PAGE_FAULT;
         break;
+    default:
+        g_assert_not_reached();
     }
+    env->badaddr = address;
     cpu_loop_exit_restore(cs, retaddr);
 #endif
 }
@@ -961,13 +964,11 @@ void riscv_cpu_do_interrupt(CPUState *cs)
         }
     }
 
-    if (RISCV_DEBUG_INTERRUPT) {
-        qemu_log_mask(LOG_TRACE, "core " TARGET_FMT_ld ": %s %s, "
-            "epc 0x" TARGET_FMT_lx ": tval 0x" TARGET_FMT_lx "\n",
-            env->mhartid, async ? "intr" : "trap",
-            (async ? riscv_intr_names : riscv_excp_names)[cause],
-            env->pc, tval);
-    }
+    qemu_log_mask(CPU_LOG_INT,
+                  "%s: hart:"TARGET_FMT_ld", async:%d, cause:"TARGET_FMT_lx", "
+                  "epc:0x"TARGET_FMT_lx", tval:0x"TARGET_FMT_lx", desc=%s\n",
+                  __func__, env->mhartid, async, cause, env->pc, tval,
+                  riscv_cpu_get_trap_name(cause, async));
 
     if (env->priv <= PRV_S &&
             cause < TARGET_LONG_BITS && ((deleg >> cause) & 1)) {
@@ -1036,7 +1037,6 @@ void riscv_cpu_do_interrupt(CPUState *cs)
             if (riscv_cpu_virt_enabled(env)) {
                 riscv_cpu_swap_hypervisor_regs(env);
             }
-
             env->mstatus = set_field(env->mstatus, MSTATUS_MPV,
                                      riscv_cpu_virt_enabled(env));
             if (riscv_cpu_virt_enabled(env) && tval) {

@@ -4760,6 +4760,7 @@
 #define pmp_get_num_rules pmp_get_num_rules_riscv32
 #define pmp_is_range_in_tlb pmp_is_range_in_tlb_riscv32
 #define pmp_priv_to_page_prot pmp_priv_to_page_prot_riscv32
+#define pmp_update_rule_addr pmp_update_rule_addr_riscv32
 #define pmp_update_rule_nums pmp_update_rule_nums_riscv32
 #define pmpaddr_csr_read pmpaddr_csr_read_riscv32
 #define pmpaddr_csr_write pmpaddr_csr_write_riscv32
@@ -4773,6 +4774,7 @@
 #define riscv_cpu_fp_enabled riscv_cpu_fp_enabled_riscv32
 #define riscv_cpu_get_fflags riscv_cpu_get_fflags_riscv32
 #define riscv_cpu_get_phys_page_debug riscv_cpu_get_phys_page_debug_riscv32
+#define riscv_cpu_get_trap_name riscv_cpu_get_trap_name_riscv32
 #define riscv_cpu_is_32bit riscv_cpu_is_32bit_riscv32
 #define riscv_cpu_list riscv_cpu_list_riscv32
 #define riscv_cpu_mmu_index riscv_cpu_mmu_index_riscv32

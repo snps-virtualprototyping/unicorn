@@ -147,32 +147,8 @@ static void pmp_decode_napot(target_ulong a, target_ulong *sa, target_ulong *ea)
     }
 }
 
-
-void pmp_update_rule_nums(CPURISCVState *env)
+void pmp_update_rule_addr(CPURISCVState *env, uint32_t pmp_index)
 {
-    int i;
-
-    env->pmp_state.num_rules = 0;
-    for (i = 0; i < MAX_RISCV_PMPS; i++) {
-        const uint8_t a_field =
-            pmp_get_a_field(env->pmp_state.pmp[i].cfg_reg);
-        if (PMP_AMATCH_OFF != a_field) {
-            env->pmp_state.num_rules++;
-        }
-    }
-}
-
-/* Convert cfg/addr reg values here into simple 'sa' --> start address and 'ea'
- *   end address values.
- *   This function is called relatively infrequently whereas the check that
- *   an address is within a pmp rule is called often, so optimise that one
- */
-static void pmp_update_rule(CPURISCVState *env, uint32_t pmp_index)
-{
-    int i;
-
-    env->pmp_state.num_rules = 0;
-
     uint8_t this_cfg = env->pmp_state.pmp[pmp_index].cfg_reg;
     target_ulong this_addr = env->pmp_state.pmp[pmp_index].addr_reg;
     target_ulong prev_addr = 0u;
@@ -211,7 +187,13 @@ static void pmp_update_rule(CPURISCVState *env, uint32_t pmp_index)
 
     env->pmp_state.addr[pmp_index].sa = sa;
     env->pmp_state.addr[pmp_index].ea = ea;
+}
 
+void pmp_update_rule_nums(CPURISCVState *env)
+{
+    int i;
+
+    env->pmp_state.num_rules = 0;
     for (i = 0; i < MAX_RISCV_PMPS; i++) {
         const uint8_t a_field =
             pmp_get_a_field(env->pmp_state.pmp[i].cfg_reg);
@@ -219,6 +201,17 @@ static void pmp_update_rule(CPURISCVState *env, uint32_t pmp_index)
             env->pmp_state.num_rules++;
         }
     }
+}
+
+/* Convert cfg/addr reg values here into simple 'sa' --> start address and 'ea'
+ *   end address values.
+ *   This function is called relatively infrequently whereas the check that
+ *   an address is within a pmp rule is called often, so optimise that one
+ */
+static void pmp_update_rule(CPURISCVState *env, uint32_t pmp_index)
+{
+    pmp_update_rule_addr(env, pmp_index);
+    pmp_update_rule_nums(env);
 }
 
 static int pmp_is_in_range(CPURISCVState *env, int pmp_index, target_ulong addr)
@@ -278,6 +271,7 @@ bool pmp_hart_has_privs(CPURISCVState *env, target_ulong addr,
 {
     int i = 0;
     int ret = -1;
+    int pmp_size = 0;
     target_ulong s = 0;
     target_ulong e = 0;
 
@@ -287,11 +281,25 @@ bool pmp_hart_has_privs(CPURISCVState *env, target_ulong addr,
                                           allowed_privs, mode);
     }
 
+    if (size == 0) {
+        if (riscv_feature(env, RISCV_FEATURE_MMU)) {
+            /*
+             * If size is unknown (0), assume that all bytes
+             * from addr to the end of the page will be accessed.
+             */
+            pmp_size = -(addr | TARGET_PAGE_MASK);
+        } else {
+            pmp_size = sizeof(target_ulong);
+        }
+    } else {
+        pmp_size = size;
+    }
+
     /* 1.10 draft priv spec states there is an implicit order
          from low to high */
     for (i = 0; i < MAX_RISCV_PMPS; i++) {
         s = pmp_is_in_range(env, i, addr);
-        e = pmp_is_in_range(env, i, addr + size - 1);
+        e = pmp_is_in_range(env, i, addr + pmp_size - 1);
 
         /* partially inside */
         if ((s + e) == 1) {
@@ -386,7 +394,6 @@ void pmpaddr_csr_write(CPURISCVState *env, uint32_t addr_index,
 {
     PMP_DEBUG("hart " TARGET_FMT_ld ": addr%d, val: 0x" TARGET_FMT_lx,
         env->mhartid, addr_index, val);
-
     if (addr_index < MAX_RISCV_PMPS) {
         if (!pmp_is_locked(env, addr_index)) {
             env->pmp_state.pmp[addr_index].addr_reg = val;
@@ -407,16 +414,18 @@ void pmpaddr_csr_write(CPURISCVState *env, uint32_t addr_index,
  */
 target_ulong pmpaddr_csr_read(CPURISCVState *env, uint32_t addr_index)
 {
-    PMP_DEBUG("hart " TARGET_FMT_ld ": addr%d, val: 0x" TARGET_FMT_lx,
-        env->mhartid, addr_index,
-        env->pmp_state.pmp[addr_index].addr_reg);
+	target_ulong val = 0;
     if (addr_index < MAX_RISCV_PMPS) {
-        return env->pmp_state.pmp[addr_index].addr_reg;
+        val = env->pmp_state.pmp[addr_index].addr_reg;
+	    PMP_DEBUG("hart " TARGET_FMT_ld ": addr%d, val: 0x" TARGET_FMT_lx,
+    	    env->mhartid, addr_index,
+        	env->pmp_state.pmp[addr_index].addr_reg);
     } else {
         qemu_log_mask(LOG_GUEST_ERROR,
                       "ignoring pmpaddr read - out of bounds\n");
-        return 0;
     }
+
+    return val;
 }
 
 /*
