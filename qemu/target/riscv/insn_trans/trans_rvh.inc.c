@@ -39,6 +39,7 @@ static bool trans_hlv_b(DisasContext *ctx, arg_hlv_b *a)
     check_access(ctx);
 
     gen_get_gpr(ctx, t0, a->rs1);
+
     tcg_gen_qemu_ld_tl(ctx->uc, t1, t0, ctx->mem_idx | TB_FLAGS_PRIV_HYP_ACCESS_MASK, MO_SB);
     gen_set_gpr(ctx, a->rd, t1);
 
@@ -210,10 +211,11 @@ static bool trans_hsv_w(DisasContext *ctx, arg_hsv_w *a)
 #endif
 }
 
-#ifdef TARGET_RISCV64
 static bool trans_hlv_wu(DisasContext *ctx, arg_hlv_wu *a)
 {
+    REQUIRE_64BIT(ctx);
     REQUIRE_EXT(ctx, RVH);
+
 #ifndef CONFIG_USER_ONLY
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv t0 = tcg_temp_new(tcg_ctx);
@@ -236,7 +238,9 @@ static bool trans_hlv_wu(DisasContext *ctx, arg_hlv_wu *a)
 
 static bool trans_hlv_d(DisasContext *ctx, arg_hlv_d *a)
 {
+    REQUIRE_64BIT(ctx);
     REQUIRE_EXT(ctx, RVH);
+
 #ifndef CONFIG_USER_ONLY
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv t0 = tcg_temp_new(tcg_ctx);
@@ -259,7 +263,9 @@ static bool trans_hlv_d(DisasContext *ctx, arg_hlv_d *a)
 
 static bool trans_hsv_d(DisasContext *ctx, arg_hsv_d *a)
 {
+    REQUIRE_64BIT(ctx);
     REQUIRE_EXT(ctx, RVH);
+
 #ifndef CONFIG_USER_ONLY
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv t0 = tcg_temp_new(tcg_ctx);
@@ -279,7 +285,6 @@ static bool trans_hsv_d(DisasContext *ctx, arg_hsv_d *a)
     return false;
 #endif
 }
-#endif
 
 static bool trans_hlvx_hu(DisasContext *ctx, arg_hlvx_hu *a)
 {

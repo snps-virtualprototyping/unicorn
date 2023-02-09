@@ -45,7 +45,7 @@ typedef struct DisasContext {
     bool virt_enabled;
     uint32_t opcode;
     uint32_t mstatus_fs;
-    uint32_t misa;
+    target_ulong misa;
     uint32_t mem_idx;
     /* Remember the rounding mode encoded in the previous fp instruction,
        which we have already installed into env->fp_status.  Or -1 for
@@ -67,12 +67,6 @@ typedef struct DisasContext {
     struct uc_struct *uc;
 } DisasContext;
 
-#ifdef TARGET_RISCV64
-#define CASE_OP_32_64(X) case X: case glue(X, W)
-#else
-#define CASE_OP_32_64(X) case X
-#endif
-
 // SNPS added
 static inline void gen_sync_pc(const DisasContext *ctx) {
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
@@ -83,6 +77,17 @@ static inline bool has_ext(DisasContext *ctx, uint32_t ext)
 {
     return ctx->misa & ext;
 }
+
+#ifdef TARGET_RISCV32
+# define is_32bit(ctx)  true
+#elif defined(CONFIG_USER_ONLY)
+# define is_32bit(ctx)  false
+#else
+static inline bool is_32bit(DisasContext *ctx)
+{
+    return (ctx->misa & RV32) == RV32;
+}
+#endif
 
 /*
  * RISC-V requires NaN-boxing of narrower width floating point values.
@@ -126,7 +131,7 @@ static void generate_exception(DisasContext *ctx, int excp)
     ctx->base.is_jmp = DISAS_NORETURN;
 }
 
-static void generate_exception_mbadaddr(DisasContext *ctx, int excp)
+static void generate_exception_mtval(DisasContext *ctx, int excp)
 {
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
 
@@ -178,7 +183,7 @@ static void gen_exception_illegal(DisasContext *ctx)
 
 static void gen_exception_inst_addr_mis(DisasContext *ctx)
 {
-    generate_exception_mbadaddr(ctx, RISCV_EXCP_INST_ADDR_MIS);
+    generate_exception_mtval(ctx, RISCV_EXCP_INST_ADDR_MIS);
 }
 
 static inline bool use_goto_tb(DisasContext *ctx, target_ulong dest)
@@ -394,6 +399,8 @@ static void mark_fs_dirty(DisasContext *ctx)
 {
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv tmp;
+    target_ulong sd;
+
     if (ctx->mstatus_fs == MSTATUS_FS) {
         return;
     }
@@ -401,13 +408,15 @@ static void mark_fs_dirty(DisasContext *ctx)
     ctx->mstatus_fs = MSTATUS_FS;
 
     tmp = tcg_temp_new(tcg_ctx);
+    sd = is_32bit(ctx) ? MSTATUS32_SD : MSTATUS64_SD;
+
     tcg_gen_ld_tl(tcg_ctx, tmp, tcg_ctx->cpu_env, offsetof(CPURISCVState, mstatus));
-    tcg_gen_ori_tl(tcg_ctx, tmp, tmp, MSTATUS_FS | MSTATUS_SD);
+    tcg_gen_ori_tl(tcg_ctx, tmp, tmp, MSTATUS_FS | sd);
     tcg_gen_st_tl(tcg_ctx, tmp, tcg_ctx->cpu_env, offsetof(CPURISCVState, mstatus));
 
     if (ctx->virt_enabled) {
         tcg_gen_ld_tl(tcg_ctx, tmp, tcg_ctx->cpu_env, offsetof(CPURISCVState, mstatus_hs));
-        tcg_gen_ori_tl(tcg_ctx, tmp, tmp, MSTATUS_FS | MSTATUS_SD);
+        tcg_gen_ori_tl(tcg_ctx, tmp, tmp, MSTATUS_FS | sd);
         tcg_gen_st_tl(tcg_ctx, tmp, tcg_ctx->cpu_env, offsetof(CPURISCVState, mstatus_hs));
     }
     tcg_temp_free(tcg_ctx, tmp);
@@ -450,6 +459,12 @@ EX_SH(12)
     if (!has_ext(ctx, ext)) {      \
         return false;              \
     }                              \
+} while (0)
+
+#define REQUIRE_64BIT(ctx) do { \
+    if (is_32bit(ctx)) {        \
+        return false;           \
+    }                           \
 } while (0)
 
 static int ex_rvc_register(DisasContext *ctx, int reg)
@@ -501,7 +516,6 @@ static bool gen_arith_imm_tl(DisasContext *ctx, arg_i *a,
     return true;
 }
 
-#ifdef TARGET_RISCV64
 static void gen_addw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
 {
     tcg_gen_add_tl(tcg_ctx, ret, arg1, arg2);
@@ -564,7 +578,229 @@ static bool gen_arith_div_uw(DisasContext *ctx, arg_r *a,
     return true;
 }
 
-#endif
+static void gen_pack(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    tcg_gen_deposit_tl(tcg_ctx, ret, arg1, arg2,
+                       TARGET_LONG_BITS / 2,
+                       TARGET_LONG_BITS / 2);
+}
+
+static void gen_packu(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    TCGv t = tcg_temp_new(tcg_ctx);
+    tcg_gen_shri_tl(tcg_ctx, t, arg1, TARGET_LONG_BITS / 2);
+    tcg_gen_deposit_tl(tcg_ctx, ret, arg2, t, 0, TARGET_LONG_BITS / 2);
+    tcg_temp_free(tcg_ctx, t);
+}
+
+static void gen_packh(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    TCGv t = tcg_temp_new(tcg_ctx);
+    tcg_gen_ext8u_tl(tcg_ctx, t, arg2);
+    tcg_gen_deposit_tl(tcg_ctx, ret, arg1, t, 8, TARGET_LONG_BITS - 8);
+    tcg_temp_free(tcg_ctx, t);
+}
+
+static void gen_sbop_mask(TCGContext *tcg_ctx, TCGv ret, TCGv shamt)
+{
+    tcg_gen_movi_tl(tcg_ctx, ret, 1);
+    tcg_gen_shl_tl(tcg_ctx, ret, ret, shamt);
+}
+
+static void gen_bset(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv shamt)
+{
+    TCGv t = tcg_temp_new(tcg_ctx);
+
+    gen_sbop_mask(tcg_ctx, t, shamt);
+    tcg_gen_or_tl(tcg_ctx, ret, arg1, t);
+
+    tcg_temp_free(tcg_ctx, t);
+}
+
+static void gen_bclr(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv shamt)
+{
+    TCGv t = tcg_temp_new(tcg_ctx);
+
+    gen_sbop_mask(tcg_ctx, t, shamt);
+    tcg_gen_andc_tl(tcg_ctx, ret, arg1, t);
+
+    tcg_temp_free(tcg_ctx, t);
+}
+
+static void gen_binv(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv shamt)
+{
+    TCGv t = tcg_temp_new(tcg_ctx);
+
+    gen_sbop_mask(tcg_ctx, t, shamt);
+    tcg_gen_xor_tl(tcg_ctx, ret, arg1, t);
+
+    tcg_temp_free(tcg_ctx, t);
+}
+
+static void gen_bext(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv shamt)
+{
+    tcg_gen_shr_tl(tcg_ctx, ret, arg1, shamt);
+    tcg_gen_andi_tl(tcg_ctx, ret, ret, 1);
+}
+
+static void gen_slo(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    tcg_gen_not_tl(tcg_ctx, ret, arg1);
+    tcg_gen_shl_tl(tcg_ctx, ret, ret, arg2);
+    tcg_gen_not_tl(tcg_ctx, ret, ret);
+}
+
+static void gen_sro(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    tcg_gen_not_tl(tcg_ctx, ret, arg1);
+    tcg_gen_shr_tl(tcg_ctx, ret, ret, arg2);
+    tcg_gen_not_tl(tcg_ctx, ret, ret);
+}
+
+static bool gen_grevi(DisasContext *ctx, arg_grevi *a)
+{
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+    TCGv source1 = tcg_temp_new(tcg_ctx);
+    TCGv source2;
+
+    gen_get_gpr(ctx, source1, a->rs1);
+
+    if (a->shamt == (TARGET_LONG_BITS - 8)) {
+        /* rev8, byte swaps */
+        tcg_gen_bswap_tl(tcg_ctx, source1, source1);
+    } else {
+        source2 = tcg_temp_new(tcg_ctx);
+        tcg_gen_movi_tl(tcg_ctx, source2, a->shamt);
+        gen_helper_grev(tcg_ctx, source1, source1, source2);
+        tcg_temp_free(tcg_ctx, source2);
+    }
+
+    gen_set_gpr(ctx, a->rd, source1);
+    tcg_temp_free(tcg_ctx, source1);
+    return true;
+}
+
+#define GEN_SHADD(SHAMT)                                       \
+static void gen_sh##SHAMT##add(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2) \
+{                                                              \
+    TCGv t = tcg_temp_new(tcg_ctx);                            \
+                                                               \
+    tcg_gen_shli_tl(tcg_ctx, t, arg1, SHAMT);                  \
+    tcg_gen_add_tl(tcg_ctx, ret, t, arg2);                     \
+                                                               \
+    tcg_temp_free(tcg_ctx, t);                                 \
+}
+
+GEN_SHADD(1)
+GEN_SHADD(2)
+GEN_SHADD(3)
+
+static void gen_ctzw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1)
+{
+    tcg_gen_ori_tl(tcg_ctx, ret, arg1, (target_ulong)MAKE_64BIT_MASK(32, 32));
+    tcg_gen_ctzi_tl(tcg_ctx, ret, ret, 64);
+}
+
+static void gen_clzw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1)
+{
+    tcg_gen_ext32u_tl(tcg_ctx, ret, arg1);
+    tcg_gen_clzi_tl(tcg_ctx, ret, ret, 64);
+    tcg_gen_subi_tl(tcg_ctx, ret, ret, 32);
+}
+
+static void gen_cpopw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1)
+{
+    tcg_gen_ext32u_tl(tcg_ctx, arg1, arg1);
+    tcg_gen_ctpop_tl(tcg_ctx, ret, arg1);
+}
+
+static void gen_packw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    TCGv t = tcg_temp_new(tcg_ctx);
+    tcg_gen_ext16s_tl(tcg_ctx, t, arg2);
+    tcg_gen_deposit_tl(tcg_ctx, ret, arg1, t, 16, 48);
+    tcg_temp_free(tcg_ctx, t);
+}
+
+static void gen_packuw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    TCGv t = tcg_temp_new(tcg_ctx);
+    tcg_gen_shri_tl(tcg_ctx, t, arg1, 16);
+    tcg_gen_deposit_tl(tcg_ctx, ret, arg2, t, 0, 16);
+    tcg_gen_ext32s_tl(tcg_ctx, ret, ret);
+    tcg_temp_free(tcg_ctx, t);
+}
+
+static void gen_rorw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    TCGv_i32 t1 = tcg_temp_new_i32(tcg_ctx);
+    TCGv_i32 t2 = tcg_temp_new_i32(tcg_ctx);
+
+    /* truncate to 32-bits */
+    tcg_gen_trunc_tl_i32(tcg_ctx, t1, arg1);
+    tcg_gen_trunc_tl_i32(tcg_ctx, t2, arg2);
+
+    tcg_gen_rotr_i32(tcg_ctx, t1, t1, t2);
+
+    /* sign-extend 64-bits */
+    tcg_gen_ext_i32_tl(tcg_ctx, ret, t1);
+
+    tcg_temp_free_i32(tcg_ctx, t1);
+    tcg_temp_free_i32(tcg_ctx, t2);
+}
+
+static void gen_rolw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    TCGv_i32 t1 = tcg_temp_new_i32(tcg_ctx);
+    TCGv_i32 t2 = tcg_temp_new_i32(tcg_ctx);
+
+    /* truncate to 32-bits */
+    tcg_gen_trunc_tl_i32(tcg_ctx, t1, arg1);
+    tcg_gen_trunc_tl_i32(tcg_ctx, t2, arg2);
+
+    tcg_gen_rotl_i32(tcg_ctx, t1, t1, t2);
+
+    /* sign-extend 64-bits */
+    tcg_gen_ext_i32_tl(tcg_ctx, ret, t1);
+
+    tcg_temp_free_i32(tcg_ctx, t1);
+    tcg_temp_free_i32(tcg_ctx, t2);
+}
+
+static void gen_grevw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    tcg_gen_ext32u_tl(tcg_ctx, arg1, arg1);
+    gen_helper_grev(tcg_ctx, ret, arg1, arg2);
+}
+
+static void gen_gorcw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    tcg_gen_ext32u_tl(tcg_ctx, arg1, arg1);
+    gen_helper_gorcw(tcg_ctx, ret, arg1, arg2);
+}
+
+#define GEN_SHADD_UW(SHAMT)                                       \
+static void gen_sh##SHAMT##add_uw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2) \
+{                                                                 \
+    TCGv t = tcg_temp_new(tcg_ctx);                               \
+                                                                  \
+    tcg_gen_ext32u_tl(tcg_ctx, t, arg1);                          \
+                                                                  \
+    tcg_gen_shli_tl(tcg_ctx, t, t, SHAMT);                        \
+    tcg_gen_add_tl(tcg_ctx, ret, t, arg2);                        \
+                                                                  \
+    tcg_temp_free(tcg_ctx, t);                                    \
+}
+
+GEN_SHADD_UW(1)
+GEN_SHADD_UW(2)
+GEN_SHADD_UW(3)
+
+static void gen_add_uw(TCGContext *tcg_ctx, TCGv ret, TCGv arg1, TCGv arg2)
+{
+    tcg_gen_ext32u_tl(tcg_ctx, arg1, arg1);
+    tcg_gen_add_tl(tcg_ctx, ret, arg1, arg2);
+}
 
 static bool gen_arith(DisasContext *ctx, arg_r *a,
                       void(*func)(TCGContext *, TCGv, TCGv, TCGv))
@@ -604,13 +840,98 @@ static bool gen_shift(DisasContext *ctx, arg_r *a,
     return true;
 }
 
-// SNPS integrated semihosting support
-static uint32_t opcode_at(DisasContextBase *dcbase, target_ulong addr)
+static uint32_t opcode_at(DisasContextBase *dcbase, target_ulong pc)
 {
     DisasContext *ctx = container_of(dcbase, DisasContext, base);
     CPURISCVState *env = ctx->uc->cpu->env_ptr;
 
-    return cpu_ldl_code(env, addr);
+    return cpu_ldl_code(env, pc);
+}
+
+static bool gen_shifti(DisasContext *ctx, arg_shift *a,
+                       void(*func)(TCGContext*, TCGv, TCGv, TCGv))
+{
+    if (a->shamt >= TARGET_LONG_BITS) {
+        return false;
+    }
+
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+    TCGv source1 = tcg_temp_new(tcg_ctx);
+    TCGv source2 = tcg_temp_new(tcg_ctx);
+
+    gen_get_gpr(ctx, source1, a->rs1);
+
+    tcg_gen_movi_tl(tcg_ctx, source2, a->shamt);
+    (*func)(tcg_ctx, source1, source1, source2);
+
+    gen_set_gpr(ctx, a->rd, source1);
+    tcg_temp_free(tcg_ctx, source1);
+    tcg_temp_free(tcg_ctx, source2);
+    return true;
+}
+
+static bool gen_shiftw(DisasContext *ctx, arg_r *a,
+                       void(*func)(TCGContext*, TCGv, TCGv, TCGv))
+{
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+    TCGv source1 = tcg_temp_new(tcg_ctx);
+    TCGv source2 = tcg_temp_new(tcg_ctx);
+
+    gen_get_gpr(ctx, source1, a->rs1);
+    gen_get_gpr(ctx, source2, a->rs2);
+
+    tcg_gen_andi_tl(tcg_ctx, source2, source2, 31);
+    (*func)(tcg_ctx, source1, source1, source2);
+    tcg_gen_ext32s_tl(tcg_ctx, source1, source1);
+
+    gen_set_gpr(ctx, a->rd, source1);
+    tcg_temp_free(tcg_ctx, source1);
+    tcg_temp_free(tcg_ctx, source2);
+    return true;
+}
+
+static bool gen_shiftiw(DisasContext *ctx, arg_shift *a,
+                        void(*func)(TCGContext*, TCGv, TCGv, TCGv))
+{
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+    TCGv source1 = tcg_temp_new(tcg_ctx);
+    TCGv source2 = tcg_temp_new(tcg_ctx);
+
+    gen_get_gpr(ctx, source1, a->rs1);
+    tcg_gen_movi_tl(tcg_ctx, source2, a->shamt);
+
+    (*func)(tcg_ctx, source1, source1, source2);
+    tcg_gen_ext32s_tl(tcg_ctx, source1, source1);
+
+    gen_set_gpr(ctx, a->rd, source1);
+    tcg_temp_free(tcg_ctx, source1);
+    tcg_temp_free(tcg_ctx, source2);
+    return true;
+}
+
+static void gen_ctz(TCGContext *tcg_ctx, TCGv ret, TCGv arg1)
+{
+    tcg_gen_ctzi_tl(tcg_ctx, ret, arg1, TARGET_LONG_BITS);
+}
+
+static void gen_clz(TCGContext *tcg_ctx, TCGv ret, TCGv arg1)
+{
+    tcg_gen_clzi_tl(tcg_ctx, ret, arg1, TARGET_LONG_BITS);
+}
+
+static bool gen_unary(DisasContext *ctx, arg_r2 *a,
+                      void(*func)(TCGContext*, TCGv, TCGv))
+{
+    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
+    TCGv source = tcg_temp_new(tcg_ctx);
+
+    gen_get_gpr(ctx, source, a->rs1);
+
+    (*func)(tcg_ctx, source, source);
+
+    gen_set_gpr(ctx, a->rd, source);
+    tcg_temp_free(tcg_ctx, source);
+    return true;
 }
 
 /* Include insn module translation function */
@@ -621,24 +942,28 @@ static uint32_t opcode_at(DisasContextBase *dcbase, target_ulong addr)
 #include "insn_trans/trans_rvd.inc.c"
 #include "insn_trans/trans_rvh.inc.c"
 #include "insn_trans/trans_rvv.inc.c"
+#include "insn_trans/trans_rvb.inc.c"
 #include "insn_trans/trans_privileged.inc.c"
 
 /* Include the auto-generated decoder for 16 bit insn */
 #include "decode_insn16.inc.c"
 
-static void decode_opc(DisasContext *ctx)
+static void decode_opc(CPURISCVState *env, DisasContext *ctx, uint16_t opcode)
 {
     /* check for compressed insn */
-    if (extract32(ctx->opcode, 0, 2) != 3) {
+    if (extract16(opcode, 0, 2) != 3) {
         if (!has_ext(ctx, RVC)) {
             gen_exception_illegal(ctx);
         } else {
             ctx->pc_succ_insn = ctx->base.pc_next + 2;
-            if (!decode_insn16(ctx, ctx->opcode)) {
+            if (!decode_insn16(ctx, opcode)) {
                 gen_exception_illegal(ctx);
             }
         }
     } else {
+        uint32_t opcode32 = opcode;
+        opcode32 = deposit32(opcode32, 16, 16,
+                             cpu_lduw_code(env, ctx->base.pc_next + 2));
         ctx->pc_succ_insn = ctx->base.pc_next + 4;
         if (!decode_insn32(ctx, ctx->opcode)) {
             gen_exception_illegal(ctx);
@@ -719,10 +1044,9 @@ static void riscv_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *ctx = container_of(dcbase, DisasContext, base);
     CPURISCVState *env = cpu->env_ptr;
+    uint16_t opcode16 = cpu_lduw_code(env, ctx->base.pc_next);
 
-    //unicorn changed - read all 32bit of the opcode at once
-    ctx->opcode = cpu_ldl_code(env, ctx->base.pc_next);
-    decode_opc(ctx);
+    decode_opc(env, ctx, opcode16);
     ctx->base.pc_next = ctx->pc_succ_insn;
 
         // Unicorn: end address tells us to stop emulation
