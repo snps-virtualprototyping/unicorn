@@ -7332,6 +7332,8 @@ riscv_symbols = (
     'helper_vcompress_vm_h',
     'helper_vcompress_vm_w',
     'helper_vcompress_vm_d',
+    'mseccfg_csr_read',
+    'mseccfg_csr_write',
     'pmp_hart_has_privs',
     'pmp_get_num_rules',
     'pmp_is_range_in_tlb',

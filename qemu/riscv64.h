@@ -4756,6 +4756,8 @@
 #define helper_vcompress_vm_h helper_vcompress_vm_h_riscv64
 #define helper_vcompress_vm_w helper_vcompress_vm_w_riscv64
 #define helper_vcompress_vm_d helper_vcompress_vm_d_riscv64
+#define mseccfg_csr_read mseccfg_csr_read_riscv64
+#define mseccfg_csr_write mseccfg_csr_write_riscv64
 #define pmp_hart_has_privs pmp_hart_has_privs_riscv64
 #define pmp_get_num_rules pmp_get_num_rules_riscv64
 #define pmp_is_range_in_tlb pmp_is_range_in_tlb_riscv64
