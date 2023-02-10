@@ -3713,6 +3713,10 @@
 #define helper_fsqrt_s helper_fsqrt_s_riscv64
 #define helper_fsub_d helper_fsub_d_riscv64
 #define helper_fsub_s helper_fsub_s_riscv64
+#define helper_gorc helper_gorc_riscv64
+#define helper_gorcw helper_gorcw_riscv64
+#define helper_grev helper_grev_riscv64
+#define helper_grevw helper_grevw_riscv64
 #define helper_hyp_gvma_tlb_flush helper_hyp_gvma_tlb_flush_riscv64
 #define helper_hyp_tlb_flush helper_hyp_tlb_flush_riscv64
 #define helper_hyp_hlvx_hu helper_hyp_hlvx_hu_riscv64
