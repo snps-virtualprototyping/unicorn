@@ -29,7 +29,6 @@ static bool trans_ecall(DisasContext *ctx, arg_ecall *a)
 
 static bool trans_ebreak(DisasContext *ctx, arg_ebreak *a)
 {
-    // SNPS pulled in semihosting support
     target_ulong    ebreak_addr = ctx->base.pc_next;
     target_ulong    pre_addr = ebreak_addr - 4;
     target_ulong    post_addr = ebreak_addr + 4;
@@ -48,7 +47,7 @@ static bool trans_ebreak(DisasContext *ctx, arg_ebreak *a)
      * The two shift operations on the zero register are no-ops, used
      * here to signify a semihosting exception, rather than a breakpoint.
      *
-     * Uncompressed instructions are used so that the sequence is easy
+     * Uncompressed instructions are required so that the sequence is easy
      * to validate.
      *
      * The three instructions are required to lie in the same page so
@@ -66,7 +65,8 @@ static bool trans_ebreak(DisasContext *ctx, arg_ebreak *a)
     } else {
         generate_exception(ctx, RISCV_EXCP_BREAKPOINT);
     }
-
+    exit_tb(ctx); /* no chaining */
+    ctx->base.is_jmp = DISAS_NORETURN;
     return true;
 }
 

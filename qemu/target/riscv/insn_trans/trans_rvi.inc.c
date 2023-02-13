@@ -24,6 +24,12 @@ static bool trans_illegal(DisasContext *ctx, arg_empty *a)
     return true;
 }
 
+static bool trans_c64_illegal(DisasContext *ctx, arg_empty *a)
+{
+     REQUIRE_64BIT(ctx);
+     return trans_illegal(ctx, a);
+}
+
 static bool trans_lui(DisasContext *ctx, arg_lui *a)
 {
     if (a->rd != 0) {
@@ -55,6 +61,7 @@ static bool trans_jalr(DisasContext *ctx, arg_jalr *a)
     /* no chaining with JALR */
     TCGLabel *misaligned = NULL;
     TCGv t0 = tcg_temp_new(tcg_ctx);
+
 
     gen_get_gpr(ctx, tcg_ctx->cpu_pc_risc, a->rs1);
     tcg_gen_addi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, tcg_ctx->cpu_pc_risc, a->imm);
@@ -199,6 +206,7 @@ static bool gen_store(DisasContext *ctx, arg_sb *a, MemOp memop)
     return true;
 }
 
+
 static bool trans_sb(DisasContext *ctx, arg_sb *a)
 {
     return gen_store(ctx, a, MO_SB);
@@ -214,22 +222,23 @@ static bool trans_sw(DisasContext *ctx, arg_sw *a)
     return gen_store(ctx, a, MO_TESL);
 }
 
-#ifdef TARGET_RISCV64
 static bool trans_lwu(DisasContext *ctx, arg_lwu *a)
 {
+    REQUIRE_64BIT(ctx);
     return gen_load(ctx, a, MO_TEUL);
 }
 
 static bool trans_ld(DisasContext *ctx, arg_ld *a)
 {
+    REQUIRE_64BIT(ctx);
     return gen_load(ctx, a, MO_TEQ);
 }
 
 static bool trans_sd(DisasContext *ctx, arg_sd *a)
 {
+    REQUIRE_64BIT(ctx);
     return gen_store(ctx, a, MO_TEQ);
 }
-#endif
 
 static bool trans_addi(DisasContext *ctx, arg_addi *a)
 {
@@ -245,6 +254,7 @@ static void gen_sltu(TCGContext *tcg_ctx, TCGv ret, TCGv s1, TCGv s2)
 {
     tcg_gen_setcond_tl(tcg_ctx, TCG_COND_LTU, ret, s1, s2);
 }
+
 
 static bool trans_slti(DisasContext *ctx, arg_slti *a)
 {
@@ -270,57 +280,17 @@ static bool trans_andi(DisasContext *ctx, arg_andi *a)
 }
 static bool trans_slli(DisasContext *ctx, arg_slli *a)
 {
-    if (a->shamt >= TARGET_LONG_BITS) {
-        return false;
-    }
-
-    if (a->rd != 0) {
-        TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-        TCGv t = tcg_temp_new(tcg_ctx);
-        gen_get_gpr(ctx, t, a->rs1);
-
-        tcg_gen_shli_tl(tcg_ctx, t, t, a->shamt);
-
-        gen_set_gpr(ctx, a->rd, t);
-        tcg_temp_free(tcg_ctx, t);
-    } /* NOP otherwise */
-    return true;
+    return gen_shifti(ctx, a, tcg_gen_shl_tl);
 }
 
 static bool trans_srli(DisasContext *ctx, arg_srli *a)
 {
-    if (a->shamt >= TARGET_LONG_BITS) {
-        return false;
-    }
-
-    if (a->rd != 0) {
-        TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-        TCGv t = tcg_temp_new(tcg_ctx);
-        gen_get_gpr(ctx, t, a->rs1);
-
-        tcg_gen_shri_tl(tcg_ctx, t, t, a->shamt);
-        gen_set_gpr(ctx, a->rd, t);
-        tcg_temp_free(tcg_ctx, t);
-    } /* NOP otherwise */
-    return true;
+    return gen_shifti(ctx, a, tcg_gen_shr_tl);
 }
 
 static bool trans_srai(DisasContext *ctx, arg_srai *a)
 {
-    if (a->shamt >= TARGET_LONG_BITS) {
-        return false;
-    }
-
-    if (a->rd != 0) {
-        TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-        TCGv t = tcg_temp_new(tcg_ctx);
-        gen_get_gpr(ctx, t, a->rs1);
-
-        tcg_gen_sari_tl(tcg_ctx, t, t, a->shamt);
-        gen_set_gpr(ctx, a->rd, t);
-        tcg_temp_free(tcg_ctx, t);
-    } /* NOP otherwise */
-    return true;
+    return gen_shifti(ctx, a, tcg_gen_sar_tl);
 }
 
 static bool trans_add(DisasContext *ctx, arg_add *a)
@@ -373,29 +343,21 @@ static bool trans_and(DisasContext *ctx, arg_and *a)
     return gen_arith(ctx, a, &tcg_gen_and_tl);
 }
 
-#ifdef TARGET_RISCV64
 static bool trans_addiw(DisasContext *ctx, arg_addiw *a)
 {
+    REQUIRE_64BIT(ctx);
     return gen_arith_imm_tl(ctx, a, &gen_addw);
 }
 
 static bool trans_slliw(DisasContext *ctx, arg_slliw *a)
 {
-    TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
-    TCGv source1;
-    source1 = tcg_temp_new(tcg_ctx);
-    gen_get_gpr(ctx, source1, a->rs1);
-
-    tcg_gen_shli_tl(tcg_ctx, source1, source1, a->shamt);
-    tcg_gen_ext32s_tl(tcg_ctx, source1, source1);
-    gen_set_gpr(ctx, a->rd, source1);
-
-    tcg_temp_free(tcg_ctx, source1);
-    return true;
+    REQUIRE_64BIT(ctx);
+    return gen_shiftiw(ctx, a, tcg_gen_shl_tl);
 }
 
 static bool trans_srliw(DisasContext *ctx, arg_srliw *a)
 {
+    REQUIRE_64BIT(ctx);
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv t = tcg_temp_new(tcg_ctx);
     gen_get_gpr(ctx, t, a->rs1);
@@ -409,6 +371,7 @@ static bool trans_srliw(DisasContext *ctx, arg_srliw *a)
 
 static bool trans_sraiw(DisasContext *ctx, arg_sraiw *a)
 {
+    REQUIRE_64BIT(ctx);
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv t = tcg_temp_new(tcg_ctx);
     gen_get_gpr(ctx, t, a->rs1);
@@ -420,16 +383,19 @@ static bool trans_sraiw(DisasContext *ctx, arg_sraiw *a)
 
 static bool trans_addw(DisasContext *ctx, arg_addw *a)
 {
+    REQUIRE_64BIT(ctx);
     return gen_arith(ctx, a, &gen_addw);
 }
 
 static bool trans_subw(DisasContext *ctx, arg_subw *a)
 {
+    REQUIRE_64BIT(ctx);
     return gen_arith(ctx, a, &gen_subw);
 }
 
 static bool trans_sllw(DisasContext *ctx, arg_sllw *a)
 {
+    REQUIRE_64BIT(ctx);
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv source1 = tcg_temp_new(tcg_ctx);
     TCGv source2 = tcg_temp_new(tcg_ctx);
@@ -449,6 +415,7 @@ static bool trans_sllw(DisasContext *ctx, arg_sllw *a)
 
 static bool trans_srlw(DisasContext *ctx, arg_srlw *a)
 {
+    REQUIRE_64BIT(ctx);
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv source1 = tcg_temp_new(tcg_ctx);
     TCGv source2 = tcg_temp_new(tcg_ctx);
@@ -470,6 +437,7 @@ static bool trans_srlw(DisasContext *ctx, arg_srlw *a)
 
 static bool trans_sraw(DisasContext *ctx, arg_sraw *a)
 {
+    REQUIRE_64BIT(ctx);
     TCGContext *tcg_ctx = ctx->uc->tcg_ctx;
     TCGv source1 = tcg_temp_new(tcg_ctx);
     TCGv source2 = tcg_temp_new(tcg_ctx);
@@ -491,7 +459,6 @@ static bool trans_sraw(DisasContext *ctx, arg_sraw *a)
 
     return true;
 }
-#endif
 
 static bool trans_fence(DisasContext *ctx, arg_fence *a)
 {
@@ -529,6 +496,7 @@ static bool trans_fence_i(DisasContext *ctx, arg_fence_i *a)
     tcg_gen_movi_tl(tcg_ctx, tcg_ctx->cpu_pc_risc, ctx->base.pc_next); \
     tcg_gen_movi_tl(tcg_ctx, rs1_pass, a->rs1); \
     tcg_gen_movi_tl(tcg_ctx, csr_store, a->csr); \
+    gen_io_start(tcg_ctx);\
 } while (0)
 
 #define RISCV_OP_CSR_POST do {\

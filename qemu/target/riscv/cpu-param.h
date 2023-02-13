@@ -18,7 +18,6 @@
 # define TARGET_VIRT_ADDR_SPACE_BITS 32 /* sv32 */
 #endif
 #define TARGET_PAGE_BITS 12 /* 4 KiB Pages */
-
 /*
  * The current MMU Modes are:
  *  - U mode 0b000

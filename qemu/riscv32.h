@@ -3713,6 +3713,10 @@
 #define helper_fsqrt_s helper_fsqrt_s_riscv32
 #define helper_fsub_d helper_fsub_d_riscv32
 #define helper_fsub_s helper_fsub_s_riscv32
+#define helper_gorc helper_gorc_riscv32
+#define helper_gorcw helper_gorcw_riscv32
+#define helper_grev helper_grev_riscv32
+#define helper_grevw helper_grevw_riscv32
 #define helper_hyp_gvma_tlb_flush helper_hyp_gvma_tlb_flush_riscv32
 #define helper_hyp_tlb_flush helper_hyp_tlb_flush_riscv32
 #define helper_hyp_hlvx_hu helper_hyp_hlvx_hu_riscv32
@@ -4756,10 +4760,13 @@
 #define helper_vcompress_vm_h helper_vcompress_vm_h_riscv32
 #define helper_vcompress_vm_w helper_vcompress_vm_w_riscv32
 #define helper_vcompress_vm_d helper_vcompress_vm_d_riscv32
+#define mseccfg_csr_read mseccfg_csr_read_riscv32
+#define mseccfg_csr_write mseccfg_csr_write_riscv32
 #define pmp_hart_has_privs pmp_hart_has_privs_riscv32
 #define pmp_get_num_rules pmp_get_num_rules_riscv32
 #define pmp_is_range_in_tlb pmp_is_range_in_tlb_riscv32
 #define pmp_priv_to_page_prot pmp_priv_to_page_prot_riscv32
+#define pmp_update_rule_addr pmp_update_rule_addr_riscv32
 #define pmp_update_rule_nums pmp_update_rule_nums_riscv32
 #define pmpaddr_csr_read pmpaddr_csr_read_riscv32
 #define pmpaddr_csr_write pmpaddr_csr_write_riscv32
@@ -4773,6 +4780,7 @@
 #define riscv_cpu_fp_enabled riscv_cpu_fp_enabled_riscv32
 #define riscv_cpu_get_fflags riscv_cpu_get_fflags_riscv32
 #define riscv_cpu_get_phys_page_debug riscv_cpu_get_phys_page_debug_riscv32
+#define riscv_cpu_get_trap_name riscv_cpu_get_trap_name_riscv32
 #define riscv_cpu_is_32bit riscv_cpu_is_32bit_riscv32
 #define riscv_cpu_list riscv_cpu_list_riscv32
 #define riscv_cpu_mmu_index riscv_cpu_mmu_index_riscv32
