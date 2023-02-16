@@ -47,6 +47,8 @@ CPUState *cpu_create(struct uc_struct *uc, const char *typename)
     CPUState *cpu = CPU(object_new(uc, typename));
     object_property_set_bool(uc, OBJECT(cpu), true, "realized", &err);
     if (err != NULL) {
+        fprintf(stderr, "Unexpected error: %s\n", error_get_pretty(err));
+        error_free(err);
         object_unref(uc, OBJECT(cpu));
         return NULL;
     }

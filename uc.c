@@ -488,7 +488,7 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
         }
 
         if (machine_initialize(uc)) {
-            return UC_ERR_RESOURCE;
+            return UC_ERR_INTERNAL;
         }
 
         *result = uc;
