@@ -161,8 +161,15 @@ static void riscv_any_cpu_init(struct uc_struct *uc, Object *obj, void *opaque)
 #if defined(TARGET_RISCV64)
 static void rv64_base_cpu_init(struct uc_struct *uc, Object *obj, void *opaque)
 {
-    CPURISCVState *env = &RISCV_CPU(uc, obj)->env;
-    /* We set this in the realise function */
+    RISCVCPU *cpu = RISCV_CPU(uc, obj);
+    CPURISCVState *env = &cpu->env;
+    cpu->cfg.ext_i = true;
+    cpu->cfg.ext_m = true;
+    cpu->cfg.ext_a = true;
+    cpu->cfg.ext_f = true;
+    cpu->cfg.ext_d = true;
+    cpu->cfg.ext_c = true;
+    cpu->cfg.ext_u = true;
     set_misa(env, RV64);
 }
 
@@ -184,8 +191,15 @@ static void rv64_sifive_e_cpu_init(struct uc_struct *uc, Object *obj, void *opaq
 #else
 static void rv32_base_cpu_init(struct uc_struct *uc, Object *obj, void *opaque)
 {
-    CPURISCVState *env = &RISCV_CPU(uc, obj)->env;
-    /* We set this in the realise function */
+    RISCVCPU *cpu = RISCV_CPU(uc, obj);
+    CPURISCVState *env = &cpu->env;
+    cpu->cfg.ext_i = true;
+    cpu->cfg.ext_m = true;
+    cpu->cfg.ext_a = true;
+    cpu->cfg.ext_f = true;
+    cpu->cfg.ext_d = true;
+    cpu->cfg.ext_c = true;
+    cpu->cfg.ext_u = true;
     set_misa(env, RV32);
 }
 

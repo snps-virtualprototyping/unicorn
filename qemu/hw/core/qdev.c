@@ -187,7 +187,7 @@ static int device_set_realized(struct uc_struct *uc, Object *obj, bool value, Er
 
         if (dc->realize) {
             if (dc->realize(uc, dev, &local_err))
-                return -1;
+                goto fail; // Unicorn: propagate error
         }
 
         if (local_err != NULL) {

@@ -164,7 +164,7 @@ typedef enum uc_err {
     UC_ERR_WRITE_PROT, // Quit emulation due to UC_MEM_WRITE_PROT violation: uc_emu_start()
     UC_ERR_READ_PROT, // Quit emulation due to UC_MEM_READ_PROT violation: uc_emu_start()
     UC_ERR_FETCH_PROT, // Quit emulation due to UC_MEM_FETCH_PROT violation: uc_emu_start()
-    UC_ERR_ARG,     // Inavalid argument provided to uc_xxx function (See specific function API)
+    UC_ERR_ARG,     // Invalid argument provided to uc_xxx function (See specific function API)
     UC_ERR_READ_UNALIGNED,  // Unaligned read
     UC_ERR_WRITE_UNALIGNED,  // Unaligned write
     UC_ERR_FETCH_UNALIGNED,  // Unaligned fetch
@@ -286,7 +286,7 @@ typedef enum uc_hook_type {
 #define UC_HOOK_MEM_INVALID (UC_HOOK_MEM_UNMAPPED + UC_HOOK_MEM_PROT)
 // Hook type for all events of valid memory access
 // NOTE: UC_HOOK_MEM_READ is triggered before UC_HOOK_MEM_READ_PROT and UC_HOOK_MEM_READ_UNMAPPED, so
-//       this hook may technically trigger on some invalid reads. 
+//       this hook may technically trigger on some invalid reads.
 #define UC_HOOK_MEM_VALID (UC_HOOK_MEM_READ + UC_HOOK_MEM_WRITE + UC_HOOK_MEM_FETCH)
 
 /*
@@ -314,11 +314,11 @@ typedef void (*uc_cb_hookmem_t)(uc_engine *uc, uc_mem_type type,
   @return: return true to continue, or false to stop program (due to invalid memory).
            NOTE: returning true to continue execution will only work if if the accessed
            memory is made accessible with the correct permissions during the hook.
-           
+
            In the event of a UC_MEM_READ_UNMAPPED or UC_MEM_WRITE_UNMAPPED callback,
            the memory should be uc_mem_map()-ed with the correct permissions, and the
            instruction will then read or write to the address as it was supposed to.
-           
+
            In the event of a UC_MEM_FETCH_UNMAPPED callback, the memory can be mapped
            in as executable, in which case execution will resume from the fetched address.
            The instruction pointer may be written to in order to change where execution resumes,

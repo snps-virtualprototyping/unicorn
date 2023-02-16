@@ -33,15 +33,14 @@ static void error_handle_fatal(Error **errp, Error *err)
     if (errp == &error_abort) {
         fprintf(stderr, "Unexpected error in %s() at %s:%d:\n",
                 err->func, err->src, err->line);
-
-        // Unicorn: commented out
-        //error_report_err(err);
-        //abort();
+        error_free(err);
+        abort();
     }
     if (errp == &error_fatal) {
-        // Unicorn: commented out
-        //error_report_err(err);
-        //exit(1);
+        fprintf(stderr, "Unexpected error in %s() at %s:%d:\n",
+                err->func, err->src, err->line);
+        error_free(err);
+        exit(1);
     }
 }
 
