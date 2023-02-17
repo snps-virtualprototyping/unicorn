@@ -116,6 +116,18 @@ int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
             case UC_ARM_REG_C13_C0_3:
                 *value = state->cp15.tpidrro_el[0];
                 break;
+            case UC_ARM_REG_MVFR0:
+                *value = state->vfp.xregs[ARM_VFP_MVFR0];
+                break;
+            case UC_ARM_REG_MVFR1:
+                *value = state->vfp.xregs[ARM_VFP_MVFR1];
+                break;
+            case UC_ARM_REG_MVFR2:
+                *value = state->vfp.xregs[ARM_VFP_MVFR2];
+                break;
+            case UC_ARM_REG_FPSID:
+                *value = state->vfp.xregs[ARM_VFP_FPSID];
+                break;
             case UC_ARM_REG_FPEXC:
                 *value = state->vfp.xregs[ARM_VFP_FPEXC];
                 break;

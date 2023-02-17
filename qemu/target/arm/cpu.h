@@ -565,16 +565,6 @@ typedef struct CPUARMState {
 
     /* VFP coprocessor state.  */
     struct {
-        ARMVectorReg zregs[32];
-
-#ifdef TARGET_AARCH64
-        /* Store FFR as pregs[16] to make it easier to treat as any other.  */
-#define FFR_PRED_NUM 16
-        ARMPredicateReg pregs[17];
-        /* Scratch space for aa64 sve predicate temporary.  */
-        ARMPredicateReg preg_tmp;
-#endif
-
         /* We store these fpcsr fields separately for convenience.  */
         uint32_t QEMU_ALIGNED(16, qc[4]);
         int vec_len;
@@ -619,6 +609,20 @@ typedef struct CPUARMState {
 
         /* ZCR_EL[1-3] */
         uint64_t zcr_el[4];
+
+// begin SNPS moved to ensure identical placement of the previous VFP registers
+// for arm and aarch64
+        ARMVectorReg zregs[32];
+
+#ifdef TARGET_AARCH64
+        /* Store FFR as pregs[16] to make it easier to treat as any other.  */
+#define FFR_PRED_NUM 16
+        ARMPredicateReg pregs[17];
+        /* Scratch space for aa64 sve predicate temporary.  */
+        ARMPredicateReg preg_tmp;
+#endif
+// end SNPS moved
+
     } vfp;
     uint64_t exclusive_addr;
     uint64_t exclusive_val;
