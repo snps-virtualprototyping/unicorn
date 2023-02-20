@@ -217,6 +217,13 @@ static void rv32_sifive_e_cpu_init(struct uc_struct *uc, Object *obj, void *opaq
     set_misa(env, RV32 | RVI | RVM | RVA | RVC | RVU);
     set_priv_version(env, PRIV_VERSION_1_10_0);
     cpu->cfg.mmu = false;
+
+    // JHW added
+    set_priv_version(env, PRIV_VERSION_1_10_0);
+    set_resetvec(env, DEFAULT_RSTVEC);
+    set_feature(env, RISCV_FEATURE_MMU);
+    set_feature(env, RISCV_FEATURE_PMP);
+    //set_misa(env, RV64 | RVI | RVM | RVA | RVF | RVD | RVC | RVS | RVU);
 }
 
 static void rv32_ibex_cpu_init(struct uc_struct *uc, Object *obj, void *opaque)
@@ -345,6 +352,12 @@ static void riscv_cpu_set_pc(CPUState *cs, vaddr value)
     env->pc = value;
 }
 
+static void riscv_cpu_set_irq(CPUState *cs, int irq, int level)
+{
+    RISCVCPU *cpu = RISCV_CPU(cs->uc, cs);
+    riscv_cpu_update_mip(cpu, 1u << irq, BOOL_TO_MASK(level));
+}
+
 static void riscv_cpu_synchronize_from_tb(CPUState *cs,
                                           const TranslationBlock *tb)
 {
@@ -396,6 +409,10 @@ static void riscv_cpu_reset(CPUState *cs)
     cpu->cfg.ext_v = true;
     cpu->cfg.elen = 64;
     cpu->cfg.vlen = 128;
+
+    // JHW: allow CSRs and instruction fences
+    cpu->cfg.ext_icsr = true;
+    cpu->cfg.ext_ifencei = true;
 }
 
 // Unicorn: if'd out
@@ -623,6 +640,9 @@ static void riscv_cpu_class_init(struct uc_struct *uc, ObjectClass *oc, void *da
     cc->tcg_ops.tlb_fill = riscv_cpu_tlb_fill;
     /* For now, mark unmigratable: */
     //cc->vmsd = &vmstate_riscv_cpu;
+
+    // JHW: added set_irq callback
+    cc->set_irq = riscv_cpu_set_irq;
 }
 
 #define DEFINE_CPU(type_name, initfn)      \
