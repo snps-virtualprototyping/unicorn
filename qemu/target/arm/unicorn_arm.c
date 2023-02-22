@@ -391,6 +391,10 @@ int arm_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int coun
                 *value = cpu->mp_affinity & 0xfff;
                 break;
 
+            case UC_ARM_REG_CPACR:
+                *value = (uint32_t)state->cp15.cpacr_el1;
+                break;
+
             case UC_ARM_REG_VECTADDR:
                 *value = A32_BANKED_CURRENT_REG_GET(state, vbar);
                 break;

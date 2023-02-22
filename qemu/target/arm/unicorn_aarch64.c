@@ -122,6 +122,12 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
             case UC_ARM64_REG_ESR:
                 *(uint32_t *)value = state->exception.syndrome;
                 break;
+            case UC_ARM64_REG_CPTR_EL2:
+                *(uint64_t *)value = state->cp15.cptr_el[2];
+                break;
+            case UC_ARM64_REG_CPTR_EL3:
+                *(uint64_t *)value = state->cp15.cptr_el[3];
+                break;
             case UC_ARM64_REG_X29:
                 *(int64_t *)value = state->xregs[29];
                 break;
