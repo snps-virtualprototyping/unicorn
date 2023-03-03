@@ -213,6 +213,7 @@ typedef enum uc_arm_reg {
 
     UC_ARM_REG_MPIDR,
     UC_ARM_REG_CPACR, // SNPS added
+    UC_ARM_REG_RVBAR, // SNPS added
 
     UC_ARM_REG_VECTADDR,
 
