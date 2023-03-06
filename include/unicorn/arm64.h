@@ -336,6 +336,8 @@ typedef enum uc_arm64_reg {
 
     UC_ARM64_REG_CPACR_EL1,
     UC_ARM64_REG_ESR,
+    UC_ARM64_REG_CPTR_EL2,
+    UC_ARM64_REG_CPTR_EL3,
 
     //> thread registers
     UC_ARM64_REG_TPIDRRO_EL0, // SNPS added

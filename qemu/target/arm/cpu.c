@@ -232,6 +232,7 @@ static void arm_cpu_reset(CPUState *s)
 //#if defined(CONFIG_USER_ONLY)
         /* Userspace expects access to cp10 and cp11 for FP/Neon */
         env->cp15.cpacr_el1 = deposit64(env->cp15.cpacr_el1, 20, 4, 0xf);
+        env->regs[15] = cpu->rvbar; // SNPS added
 //#endif
     }
 
