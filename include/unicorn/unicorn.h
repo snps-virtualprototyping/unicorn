@@ -902,6 +902,16 @@ uc_err uc_cbwatchpoint_remove(uc_engine *uc, uint64_t addr, size_t sz, int flags
 #define UC_IRQID_AARCH64_VIRQ 2 // SNPS added
 #define UC_IRQID_AARCH64_VFIQ 3 // SNPS added
 
+#define UC_IRQID_RISCV_USW    0  // SNPS added
+#define UC_IRQID_RISCV_SSW    1  // SNPS added
+#define UC_IRQID_RISCV_MSW    3  // SNPS added
+#define UC_IRQID_RISCV_UTIMER 4  // SNPS added
+#define UC_IRQID_RISCV_STIMER 5  // SNPS added
+#define UC_IRQID_RISCV_MTIMER 7  // SNPS added
+#define UC_IRQID_RISCV_UEXT   8  // SNPS added
+#define UC_IRQID_RISCV_SEXT   9  // SNPS added
+#define UC_IRQID_RISCV_MEXT   11 // SNPS added
+
 UNICORN_EXPORT // SNPS added
 uc_err uc_interrupt(uc_engine *uc, int irq_id, int set);
 
