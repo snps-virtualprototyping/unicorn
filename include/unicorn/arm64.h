@@ -413,6 +413,8 @@ typedef enum uc_arm64_reg {
     UC_ARM64_REG_HCR_EL2, // SNPS added
     UC_ARM64_REG_SCR_EL3, // SNPS added
     UC_ARM64_REG_RVBAR, // SNPS added
+    UC_ARM64_REG_CBAR, // SNPS added
+    UC_ARM64_REG_CBAR_EL1, // SNPS added
 
     UC_ARM64_VREG_AA64, // SNPS added
     UC_ARM64_VREG_THUMB, // SNPS added

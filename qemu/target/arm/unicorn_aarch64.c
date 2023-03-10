@@ -170,6 +170,14 @@ int arm64_reg_read(struct uc_struct *uc, unsigned int *regs, void **vals, int co
             case UC_ARM64_REG_RVBAR:
                 *(uint64_t *)value = mycpu->rvbar;
                 break;
+            case UC_ARM64_REG_CBAR:
+                *(uint32_t *)value =
+                    (extract64(mycpu->reset_cbar, 18, 14) << 18)
+                   | extract64(mycpu->reset_cbar, 32, 12);
+                break;
+            case UC_ARM64_REG_CBAR_EL1:
+                *(uint64_t *)value = mycpu->reset_cbar;
+                break;
             case UC_ARM64_VREG_AA64:
                 *(uint32_t *)value = state->aarch64;
                 break;
@@ -505,6 +513,10 @@ int arm64_reg_write(struct uc_struct *uc, unsigned int *regs, void* const* vals,
 
             case UC_ARM64_REG_MDSCR_EL1:
                 state->cp15.mdscr_el1 = *(uint32_t*)value;
+                break;
+
+            case UC_ARM64_REG_CBAR_EL1:
+                mycpu->reset_cbar = *(uint64_t *)value;
                 break;
 
             case UC_ARM64_REG_NOIMP:
