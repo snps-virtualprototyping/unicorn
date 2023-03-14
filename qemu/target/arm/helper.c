@@ -9896,6 +9896,7 @@ void arm_cpu_do_interrupt(CPUState *cs)
     // Unicorn: commented out
     //if (!kvm_enabled()) {
     cs->interrupt_request |= CPU_INTERRUPT_EXITTB;
+    cs->insn_count++; // SNPS added
     //}
 }
 #endif /* !CONFIG_USER_ONLY */
