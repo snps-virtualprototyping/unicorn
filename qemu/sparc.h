@@ -3072,6 +3072,8 @@
 #define tcg_gen_divu_i64 tcg_gen_divu_i64_sparc
 #define tcg_gen_dupi_vec tcg_gen_dupi_vec_sparc
 #define tcg_gen_dupm_vec tcg_gen_dupm_vec_sparc
+#define tcg_gen_dup_i32 tcg_gen_dup_i32_sparc
+#define tcg_gen_dup_i64 tcg_gen_dup_i64_sparc
 #define tcg_gen_dup_i32_vec tcg_gen_dup_i32_vec_sparc
 #define tcg_gen_dup_i64_vec tcg_gen_dup_i64_vec_sparc
 #define tcg_gen_dup_mem_vec tcg_gen_dup_mem_vec_sparc
@@ -3347,6 +3349,8 @@
 #define tcg_gen_vec_add8_i64 tcg_gen_vec_add8_i64_sparc
 #define tcg_gen_vec_add16_i64 tcg_gen_vec_add16_i64_sparc
 #define tcg_gen_vec_add32_i64 tcg_gen_vec_add32_i64_sparc
+#define tcg_gen_vec_add8_i32 tcg_gen_vec_add8_i32_sparc
+#define tcg_gen_vec_add16_i32 tcg_gen_vec_add16_i32_sparc
 #define tcg_gen_vec_neg8_i64 tcg_gen_vec_neg8_i64_sparc
 #define tcg_gen_vec_neg16_i64 tcg_gen_vec_neg16_i64_sparc
 #define tcg_gen_vec_neg32_i64 tcg_gen_vec_neg32_i64_sparc
@@ -3358,9 +3362,17 @@
 #define tcg_gen_vec_shl16i_i64 tcg_gen_vec_shl16i_i64_sparc
 #define tcg_gen_vec_shr8i_i64 tcg_gen_vec_shr8i_i64_sparc
 #define tcg_gen_vec_shr16i_i64 tcg_gen_vec_shr16i_i64_sparc
+#define tcg_gen_vec_sar8i_i32 tcg_gen_vec_sar8i_i32_sparc
+#define tcg_gen_vec_sar16i_i32 tcg_gen_vec_sar16i_i32_sparc
+#define tcg_gen_vec_shl8i_i32 tcg_gen_vec_shl8i_i32_sparc
+#define tcg_gen_vec_shl16i_i32 tcg_gen_vec_shl16i_i32_sparc
+#define tcg_gen_vec_shr8i_i32 tcg_gen_vec_shr8i_i32_sparc
+#define tcg_gen_vec_shr16i_i32 tcg_gen_vec_shr16i_i32_sparc
 #define tcg_gen_vec_sub8_i64 tcg_gen_vec_sub8_i64_sparc
 #define tcg_gen_vec_sub16_i64 tcg_gen_vec_sub16_i64_sparc
 #define tcg_gen_vec_sub32_i64 tcg_gen_vec_sub32_i64_sparc
+#define tcg_gen_vec_sub8_i32 tcg_gen_vec_sub8_i32_sparc
+#define tcg_gen_vec_sub16_i32 tcg_gen_vec_sub16_i32_sparc
 #define tcg_gen_xor_i32 tcg_gen_xor_i32_sparc
 #define tcg_gen_xor_i64 tcg_gen_xor_i64_sparc
 #define tcg_gen_xor_vec tcg_gen_xor_vec_sparc

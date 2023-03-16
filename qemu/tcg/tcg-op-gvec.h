@@ -17,6 +17,9 @@
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef TCG_TCG_OP_GVEC_H
+#define TCG_TCG_OP_GVEC_H
+
 /*
  * "Generic" vectors.  All operands are given as offsets from ENV,
  * and therefore cannot also be allocated via tcg_global_mem_new_*.
@@ -27,9 +30,6 @@
  * When OPRSZ is 8, the alignment may be 8, otherwise must be 16.
  * Operands may completely, but not partially, overlap.
  */
-
-#ifndef TCG_TCG_OP_GVEC_H
-#define TCG_TCG_OP_GVEC_H
 
 /* Expand a call to a gvec-style helper, with pointers to two vector
    operands, and a descriptor (see tcg-gvec-desc.h).  */
@@ -400,5 +400,48 @@ void tcg_gen_vec_sar8i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t);
 void tcg_gen_vec_sar16i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t);
 void tcg_gen_vec_rotl8i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t c);
 void tcg_gen_vec_rotl16i_i64(TCGContext *, TCGv_i64 d, TCGv_i64 a, int64_t c);
+
+/* 32-bit vector operations. */
+void tcg_gen_vec_add8_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, TCGv_i32 b);
+void tcg_gen_vec_add16_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, TCGv_i32 b);
+
+void tcg_gen_vec_sub8_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, TCGv_i32 b);
+void tcg_gen_vec_sub16_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, TCGv_i32 b);
+
+void tcg_gen_vec_shl8i_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, int32_t);
+void tcg_gen_vec_shl16i_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, int32_t);
+void tcg_gen_vec_shr8i_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, int32_t);
+void tcg_gen_vec_shr16i_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, int32_t);
+void tcg_gen_vec_sar8i_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, int32_t);
+void tcg_gen_vec_sar16i_i32(TCGContext *, TCGv_i32 d, TCGv_i32 a, int32_t);
+
+#if TARGET_LONG_BITS == 64
+#define tcg_gen_vec_add8_tl  tcg_gen_vec_add8_i64
+#define tcg_gen_vec_sub8_tl  tcg_gen_vec_sub8_i64
+#define tcg_gen_vec_add16_tl tcg_gen_vec_add16_i64
+#define tcg_gen_vec_sub16_tl tcg_gen_vec_sub16_i64
+#define tcg_gen_vec_add32_tl tcg_gen_vec_add32_i64
+#define tcg_gen_vec_sub32_tl tcg_gen_vec_sub32_i64
+#define tcg_gen_vec_shl8i_tl tcg_gen_vec_shl8i_i64
+#define tcg_gen_vec_shr8i_tl tcg_gen_vec_shr8i_i64
+#define tcg_gen_vec_sar8i_tl tcg_gen_vec_sar8i_i64
+#define tcg_gen_vec_shl16i_tl tcg_gen_vec_shl16i_i64
+#define tcg_gen_vec_shr16i_tl tcg_gen_vec_shr16i_i64
+#define tcg_gen_vec_sar16i_tl tcg_gen_vec_sar16i_i64
+
+#else
+#define tcg_gen_vec_add8_tl  tcg_gen_vec_add8_i32
+#define tcg_gen_vec_sub8_tl  tcg_gen_vec_sub8_i32
+#define tcg_gen_vec_add16_tl tcg_gen_vec_add16_i32
+#define tcg_gen_vec_sub16_tl tcg_gen_vec_sub16_i32
+#define tcg_gen_vec_add32_tl tcg_gen_add_i32
+#define tcg_gen_vec_sub32_tl tcg_gen_sub_i32
+#define tcg_gen_vec_shl8i_tl tcg_gen_vec_shl8i_i32
+#define tcg_gen_vec_shr8i_tl tcg_gen_vec_shr8i_i32
+#define tcg_gen_vec_sar8i_tl tcg_gen_vec_sar8i_i32
+#define tcg_gen_vec_shl16i_tl tcg_gen_vec_shl16i_i32
+#define tcg_gen_vec_shr16i_tl tcg_gen_vec_shr16i_i32
+#define tcg_gen_vec_sar16i_tl tcg_gen_vec_sar16i_i32
+#endif
 
 #endif

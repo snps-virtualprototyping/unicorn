@@ -410,9 +410,7 @@ static void gen_rev16(TCGContext *tcg_ctx, TCGv_i32 dest, TCGv_i32 var)
 /* Byteswap low halfword and sign extend.  */
 static void gen_revsh(TCGContext *tcg_ctx, TCGv_i32 dest, TCGv_i32 var)
 {
-    tcg_gen_ext16u_i32(tcg_ctx, var, var);
-    tcg_gen_bswap16_i32(tcg_ctx, var, var);
-    tcg_gen_ext16s_i32(tcg_ctx, dest, var);
+    tcg_gen_bswap16_i32(tcg_ctx, var, var, TCG_BSWAP_OS);
 }
 
 /* Swap low and high halfwords.  */
