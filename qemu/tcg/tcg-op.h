@@ -34,10 +34,8 @@ void tcg_gen_op1(TCGContext *, TCGOpcode, TCGArg);
 void tcg_gen_op2(TCGContext *, TCGOpcode, TCGArg, TCGArg);
 void tcg_gen_op3(TCGContext *, TCGOpcode, TCGArg, TCGArg, TCGArg);
 void tcg_gen_op4(TCGContext *, TCGOpcode, TCGArg, TCGArg, TCGArg, TCGArg);
-void tcg_gen_op5(TCGContext *, TCGOpcode, TCGArg, TCGArg, TCGArg,
-                 TCGArg, TCGArg);
-void tcg_gen_op6(TCGContext *, TCGOpcode, TCGArg, TCGArg, TCGArg,
-                 TCGArg, TCGArg, TCGArg);
+void tcg_gen_op5(TCGContext *, TCGOpcode, TCGArg, TCGArg, TCGArg, TCGArg, TCGArg);
+void tcg_gen_op6(TCGContext *, TCGOpcode, TCGArg, TCGArg, TCGArg, TCGArg, TCGArg, TCGArg);
 
 void vec_gen_2(TCGContext *, TCGOpcode, TCGType, unsigned, TCGArg, TCGArg);
 void vec_gen_3(TCGContext *, TCGOpcode, TCGType, unsigned, TCGArg, TCGArg, TCGArg);
@@ -96,18 +94,16 @@ static inline void tcg_gen_op2ii(TCGContext *s, TCGOpcode opc, TCGArg a1, TCGArg
     tcg_gen_op2(s, opc, a1, a2);
 }
 
-static inline void tcg_gen_op3_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 a1, TCGv_i32 a2,
-                                   TCGv_i32 a3)
+static inline void tcg_gen_op3_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 a1,
+                                   TCGv_i32 a2, TCGv_i32 a3)
 {
-    tcg_gen_op3(s, opc, tcgv_i32_arg(s, a1),
-                tcgv_i32_arg(s, a2), tcgv_i32_arg(s, a3));
+    tcg_gen_op3(s, opc, tcgv_i32_arg(s, a1), tcgv_i32_arg(s, a2), tcgv_i32_arg(s, a3));
 }
 
-static inline void tcg_gen_op3_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 a1, TCGv_i64 a2,
-                                   TCGv_i64 a3)
+static inline void tcg_gen_op3_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 a1,
+                                   TCGv_i64 a2, TCGv_i64 a3)
 {
-    tcg_gen_op3(s, opc, tcgv_i64_arg(s, a1),
-                tcgv_i64_arg(s, a2), tcgv_i64_arg(s, a3));
+    tcg_gen_op3(s, opc, tcgv_i64_arg(s, a1), tcgv_i64_arg(s, a2), tcgv_i64_arg(s, a3));
 }
 
 static inline void tcg_gen_op3i_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 a1,
@@ -202,25 +198,23 @@ static inline void tcg_gen_op5i_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 a1, T
                 tcgv_i64_arg(s, a3), tcgv_i64_arg(s, a4), a5);
 }
 
-static inline void tcg_gen_op5ii_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 a1,
-                                     TCGv_i32 a2, TCGv_i32 a3,
-                                     TCGArg a4, TCGArg a5)
+static inline void tcg_gen_op5ii_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 a1, TCGv_i32 a2,
+                                     TCGv_i32 a3, TCGArg a4, TCGArg a5)
 {
     tcg_gen_op5(s, opc, tcgv_i32_arg(s, a1), tcgv_i32_arg(s, a2),
                 tcgv_i32_arg(s, a3), a4, a5);
 }
 
-static inline void tcg_gen_op5ii_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 a1,
-                                     TCGv_i64 a2, TCGv_i64 a3,
-                                     TCGArg a4, TCGArg a5)
+static inline void tcg_gen_op5ii_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 a1, TCGv_i64 a2,
+                                     TCGv_i64 a3, TCGArg a4, TCGArg a5)
 {
     tcg_gen_op5(s, opc, tcgv_i64_arg(s, a1), tcgv_i64_arg(s, a2),
                 tcgv_i64_arg(s, a3), a4, a5);
 }
 
 static inline void tcg_gen_op6_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 a1, TCGv_i32 a2,
-                                   TCGv_i32 a3, TCGv_i32 a4, TCGv_i32 a5,
-                                   TCGv_i32 a6)
+                                   TCGv_i32 a3, TCGv_i32 a4,
+                                   TCGv_i32 a5, TCGv_i32 a6)
 {
     tcg_gen_op6(s, opc, tcgv_i32_arg(s, a1), tcgv_i32_arg(s, a2),
                 tcgv_i32_arg(s, a3), tcgv_i32_arg(s, a4), tcgv_i32_arg(s, a5),
@@ -228,8 +222,8 @@ static inline void tcg_gen_op6_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 a1, TC
 }
 
 static inline void tcg_gen_op6_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 a1, TCGv_i64 a2,
-                                   TCGv_i64 a3, TCGv_i64 a4, TCGv_i64 a5,
-                                   TCGv_i64 a6)
+                                   TCGv_i64 a3, TCGv_i64 a4,
+                                   TCGv_i64 a5, TCGv_i64 a6)
 {
     tcg_gen_op6(s, opc, tcgv_i64_arg(s, a1), tcgv_i64_arg(s, a2),
                 tcgv_i64_arg(s, a3), tcgv_i64_arg(s, a4), tcgv_i64_arg(s, a5),
@@ -252,17 +246,17 @@ static inline void tcg_gen_op6i_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 a1, T
                 tcgv_i64_arg(s, a3), tcgv_i64_arg(s, a4), tcgv_i64_arg(s, a5), a6);
 }
 
-static inline void tcg_gen_op6ii_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 a1,
-                                     TCGv_i32 a2, TCGv_i32 a3,
-                                     TCGv_i32 a4, TCGArg a5, TCGArg a6)
+static inline void tcg_gen_op6ii_i32(TCGContext *s, TCGOpcode opc, TCGv_i32 a1, TCGv_i32 a2,
+                                     TCGv_i32 a3, TCGv_i32 a4,
+                                     TCGArg a5, TCGArg a6)
 {
     tcg_gen_op6(s, opc, tcgv_i32_arg(s, a1), tcgv_i32_arg(s, a2),
                 tcgv_i32_arg(s, a3), tcgv_i32_arg(s, a4), a5, a6);
 }
 
-static inline void tcg_gen_op6ii_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 a1,
-                                     TCGv_i64 a2, TCGv_i64 a3,
-                                     TCGv_i64 a4, TCGArg a5, TCGArg a6)
+static inline void tcg_gen_op6ii_i64(TCGContext *s, TCGOpcode opc, TCGv_i64 a1, TCGv_i64 a2,
+                                     TCGv_i64 a3, TCGv_i64 a4,
+                                     TCGArg a5, TCGArg a6)
 {
     tcg_gen_op6(s, opc, tcgv_i64_arg(s, a1), tcgv_i64_arg(s, a2),
                 tcgv_i64_arg(s, a3), tcgv_i64_arg(s, a4), a5, a6);
@@ -329,8 +323,8 @@ void tcg_gen_sextract_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg,
                           unsigned int ofs, unsigned int len);
 void tcg_gen_extract2_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 al, TCGv_i32 ah,
                           unsigned int ofs);
-void tcg_gen_brcond_i32(TCGContext *s, TCGCond cond, TCGv_i32 arg1, TCGv_i32 arg2, TCGLabel *l);
-void tcg_gen_brcondi_i32(TCGContext *s, TCGCond cond, TCGv_i32 arg1, int32_t arg2, TCGLabel *l);
+void tcg_gen_brcond_i32(TCGContext *s, TCGCond cond, TCGv_i32 arg1, TCGv_i32 arg2, TCGLabel *);
+void tcg_gen_brcondi_i32(TCGContext *s, TCGCond cond, TCGv_i32 arg1, int32_t arg2, TCGLabel *);
 void tcg_gen_setcond_i32(TCGContext *s, TCGCond cond, TCGv_i32 ret,
                          TCGv_i32 arg1, TCGv_i32 arg2);
 void tcg_gen_setcondi_i32(TCGContext *s, TCGCond cond, TCGv_i32 ret,
@@ -348,13 +342,16 @@ void tcg_gen_ext8s_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg);
 void tcg_gen_ext16s_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg);
 void tcg_gen_ext8u_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg);
 void tcg_gen_ext16u_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg);
-void tcg_gen_bswap16_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg);
+void tcg_gen_bswap16_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg, int flags);
 void tcg_gen_bswap32_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg);
 void tcg_gen_smin_i32(TCGContext *s, TCGv_i32, TCGv_i32 arg1, TCGv_i32 arg2);
 void tcg_gen_smax_i32(TCGContext *s, TCGv_i32, TCGv_i32 arg1, TCGv_i32 arg2);
 void tcg_gen_umin_i32(TCGContext *s, TCGv_i32, TCGv_i32 arg1, TCGv_i32 arg2);
 void tcg_gen_umax_i32(TCGContext *s, TCGv_i32, TCGv_i32 arg1, TCGv_i32 arg2);
 void tcg_gen_abs_i32(TCGContext *s, TCGv_i32, TCGv_i32);
+
+/* Replicate a value of size @vece from @in to all the lanes in @out */
+void tcg_gen_dup_i32(TCGContext *s, unsigned vece, TCGv_i32 out, TCGv_i32 in);
 
 static inline void tcg_gen_discard_i32(TCGContext *s, TCGv_i32 arg)
 {
@@ -368,42 +365,50 @@ static inline void tcg_gen_mov_i32(TCGContext *s, TCGv_i32 ret, TCGv_i32 arg)
     }
 }
 
-static inline void tcg_gen_ld8u_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2, tcg_target_long offset)
+static inline void tcg_gen_ld8u_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2,
+                                    tcg_target_long offset)
 {
     tcg_gen_ldst_op_i32(s, INDEX_op_ld8u_i32, ret, arg2, offset);
 }
 
-static inline void tcg_gen_ld8s_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2, tcg_target_long offset)
+static inline void tcg_gen_ld8s_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2,
+                                    tcg_target_long offset)
 {
     tcg_gen_ldst_op_i32(s, INDEX_op_ld8s_i32, ret, arg2, offset);
 }
 
-static inline void tcg_gen_ld16u_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2, tcg_target_long offset)
+static inline void tcg_gen_ld16u_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2,
+                                     tcg_target_long offset)
 {
     tcg_gen_ldst_op_i32(s, INDEX_op_ld16u_i32, ret, arg2, offset);
 }
 
-static inline void tcg_gen_ld16s_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2, tcg_target_long offset)
+static inline void tcg_gen_ld16s_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2,
+                                     tcg_target_long offset)
 {
     tcg_gen_ldst_op_i32(s, INDEX_op_ld16s_i32, ret, arg2, offset);
 }
 
-static inline void tcg_gen_ld_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2, tcg_target_long offset)
+static inline void tcg_gen_ld_i32(TCGContext *s, TCGv_i32 ret, TCGv_ptr arg2,
+                                  tcg_target_long offset)
 {
     tcg_gen_ldst_op_i32(s, INDEX_op_ld_i32, ret, arg2, offset);
 }
 
-static inline void tcg_gen_st8_i32(TCGContext *s, TCGv_i32 arg1, TCGv_ptr arg2, tcg_target_long offset)
+static inline void tcg_gen_st8_i32(TCGContext *s, TCGv_i32 arg1, TCGv_ptr arg2,
+                                   tcg_target_long offset)
 {
     tcg_gen_ldst_op_i32(s, INDEX_op_st8_i32, arg1, arg2, offset);
 }
 
-static inline void tcg_gen_st16_i32(TCGContext *s, TCGv_i32 arg1, TCGv_ptr arg2, tcg_target_long offset)
+static inline void tcg_gen_st16_i32(TCGContext *s, TCGv_i32 arg1, TCGv_ptr arg2,
+                                    tcg_target_long offset)
 {
     tcg_gen_ldst_op_i32(s, INDEX_op_st16_i32, arg1, arg2, offset);
 }
 
-static inline void tcg_gen_st_i32(TCGContext *s, TCGv_i32 arg1, TCGv_ptr arg2, tcg_target_long offset)
+static inline void tcg_gen_st_i32(TCGContext *s, TCGv_i32 arg1, TCGv_ptr arg2,
+                                  tcg_target_long offset)
 {
     tcg_gen_ldst_op_i32(s, INDEX_op_st_i32, arg1, arg2, offset);
 }
@@ -513,8 +518,8 @@ void tcg_gen_sextract_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg,
                           unsigned int ofs, unsigned int len);
 void tcg_gen_extract2_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 al, TCGv_i64 ah,
                           unsigned int ofs);
-void tcg_gen_brcond_i64(TCGContext *s, TCGCond cond, TCGv_i64 arg1, TCGv_i64 arg2, TCGLabel *l);
-void tcg_gen_brcondi_i64(TCGContext *s, TCGCond cond, TCGv_i64 arg1, int64_t arg2, TCGLabel *l);
+void tcg_gen_brcond_i64(TCGContext *s, TCGCond cond, TCGv_i64 arg1, TCGv_i64 arg2, TCGLabel *);
+void tcg_gen_brcondi_i64(TCGContext *s, TCGCond cond, TCGv_i64 arg1, int64_t arg2, TCGLabel *);
 void tcg_gen_setcond_i64(TCGContext *s, TCGCond cond, TCGv_i64 ret,
                          TCGv_i64 arg1, TCGv_i64 arg2);
 void tcg_gen_setcondi_i64(TCGContext *s, TCGCond cond, TCGv_i64 ret,
@@ -535,14 +540,17 @@ void tcg_gen_ext32s_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg);
 void tcg_gen_ext8u_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg);
 void tcg_gen_ext16u_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg);
 void tcg_gen_ext32u_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg);
-void tcg_gen_bswap16_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg);
-void tcg_gen_bswap32_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg);
+void tcg_gen_bswap16_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg, int flags);
+void tcg_gen_bswap32_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg, int flags);
 void tcg_gen_bswap64_i64(TCGContext *s, TCGv_i64 ret, TCGv_i64 arg);
 void tcg_gen_smin_i64(TCGContext *s, TCGv_i64, TCGv_i64 arg1, TCGv_i64 arg2);
 void tcg_gen_smax_i64(TCGContext *s, TCGv_i64, TCGv_i64 arg1, TCGv_i64 arg2);
 void tcg_gen_umin_i64(TCGContext *s, TCGv_i64, TCGv_i64 arg1, TCGv_i64 arg2);
 void tcg_gen_umax_i64(TCGContext *s, TCGv_i64, TCGv_i64 arg1, TCGv_i64 arg2);
 void tcg_gen_abs_i64(TCGContext *s, TCGv_i64, TCGv_i64);
+
+/* Replicate a value of size @vece from @in to all the lanes in @out */
+void tcg_gen_dup_i64(TCGContext *s, unsigned vece, TCGv_i64 out, TCGv_i64 in);
 
 #if TCG_TARGET_REG_BITS == 64
 static inline void tcg_gen_discard_i64(TCGContext *s, TCGv_i64 arg)
@@ -806,7 +814,7 @@ static inline void tcg_gen_insn_start(TCGContext *tcg_ctx, target_ulong pc, targ
  * be NULL and @idx should be 0.  Otherwise, @tb should be valid and
  * @idx should be one of the TB_EXIT_ values.
  */
-void tcg_gen_exit_tb(TCGContext *s, TranslationBlock *tb, unsigned idx);
+void tcg_gen_exit_tb(TCGContext *s, const TranslationBlock *tb, unsigned idx);
 
 /**
  * tcg_gen_goto_tb() - output goto_tb TCG operation
@@ -984,7 +992,6 @@ void tcg_gen_umin_vec(TCGContext *, unsigned vece, TCGv_vec r, TCGv_vec a, TCGv_
 void tcg_gen_smax_vec(TCGContext *, unsigned vece, TCGv_vec r, TCGv_vec a, TCGv_vec b);
 void tcg_gen_umax_vec(TCGContext *, unsigned vece, TCGv_vec r, TCGv_vec a, TCGv_vec b);
 
-
 void tcg_gen_shli_vec(TCGContext *, unsigned vece, TCGv_vec r, TCGv_vec a, int64_t i);
 void tcg_gen_shri_vec(TCGContext *, unsigned vece, TCGv_vec r, TCGv_vec a, int64_t i);
 void tcg_gen_sari_vec(TCGContext *, unsigned vece, TCGv_vec r, TCGv_vec a, int64_t i);
@@ -1098,6 +1105,7 @@ void tcg_gen_stl_vec(TCGContext *, TCGv_vec r, TCGv_ptr base, TCGArg offset, TCG
 #define tcg_gen_sextract_tl tcg_gen_sextract_i64
 #define tcg_gen_extract2_tl tcg_gen_extract2_i64
 #define tcg_const_tl tcg_const_i64
+#define tcg_constant_tl tcg_constant_i64
 #define tcg_const_local_tl tcg_const_local_i64
 #define tcg_gen_movcond_tl tcg_gen_movcond_i64
 #define tcg_gen_add2_tl tcg_gen_add2_i64
@@ -1128,6 +1136,7 @@ void tcg_gen_stl_vec(TCGContext *, TCGv_vec r, TCGv_ptr base, TCGArg offset, TCG
 #define tcg_gen_atomic_smax_fetch_tl tcg_gen_atomic_smax_fetch_i64
 #define tcg_gen_atomic_umax_fetch_tl tcg_gen_atomic_umax_fetch_i64
 #define tcg_gen_dup_tl_vec  tcg_gen_dup_i64_vec
+#define tcg_gen_dup_tl tcg_gen_dup_i64
 #else
 #define tcg_gen_movi_tl tcg_gen_movi_i32
 #define tcg_gen_mov_tl tcg_gen_mov_i32
@@ -1186,7 +1195,7 @@ void tcg_gen_stl_vec(TCGContext *, TCGv_vec r, TCGv_ptr base, TCGArg offset, TCG
 #define tcg_gen_ext32u_tl tcg_gen_mov_i32
 #define tcg_gen_ext32s_tl tcg_gen_mov_i32
 #define tcg_gen_bswap16_tl tcg_gen_bswap16_i32
-#define tcg_gen_bswap32_tl tcg_gen_bswap32_i32
+#define tcg_gen_bswap32_tl(CTX, D, S, F) tcg_gen_bswap32_i32(CTX, D, S)
 #define tcg_gen_bswap_tl tcg_gen_bswap32_i32
 #define tcg_gen_concat_tl_i64 tcg_gen_concat_i32_i64
 #define tcg_gen_extr_i64_tl tcg_gen_extr_i64_i32
@@ -1211,6 +1220,7 @@ void tcg_gen_stl_vec(TCGContext *, TCGv_vec r, TCGv_ptr base, TCGArg offset, TCG
 #define tcg_gen_sextract_tl tcg_gen_sextract_i32
 #define tcg_gen_extract2_tl tcg_gen_extract2_i32
 #define tcg_const_tl tcg_const_i32
+#define tcg_constant_tl tcg_constant_i32
 #define tcg_const_local_tl tcg_const_local_i32
 #define tcg_gen_movcond_tl tcg_gen_movcond_i32
 #define tcg_gen_add2_tl tcg_gen_add2_i32
@@ -1241,6 +1251,7 @@ void tcg_gen_stl_vec(TCGContext *, TCGv_vec r, TCGv_ptr base, TCGArg offset, TCG
 #define tcg_gen_atomic_smax_fetch_tl tcg_gen_atomic_smax_fetch_i32
 #define tcg_gen_atomic_umax_fetch_tl tcg_gen_atomic_umax_fetch_i32
 #define tcg_gen_dup_tl_vec  tcg_gen_dup_i32_vec
+#define tcg_gen_dup_tl tcg_gen_dup_i32
 #endif
 
 #if UINTPTR_MAX == UINT32_MAX
@@ -1254,6 +1265,11 @@ void tcg_gen_stl_vec(TCGContext *, TCGv_vec r, TCGv_ptr base, TCGArg offset, TCG
 static inline void tcg_gen_ld_ptr(TCGContext *s, TCGv_ptr r, TCGv_ptr a, intptr_t o)
 {
     glue(tcg_gen_ld_,PTR)(s, (NAT)r, a, o);
+}
+
+static inline void tcg_gen_st_ptr(TCGContext *s, TCGv_ptr r, TCGv_ptr a, intptr_t o)
+{
+    glue(tcg_gen_st_, PTR)(s, (NAT)r, a, o);
 }
 
 static inline void tcg_gen_discard_ptr(TCGContext *s, TCGv_ptr a)
