@@ -192,6 +192,35 @@ static void rv64_sifive_e_cpu_init(struct uc_struct *uc, Object *obj, void *opaq
     set_priv_version(env, PRIV_VERSION_1_10_0);
     cpu->cfg.mmu = false;
 }
+
+static void rv64_thead_c908_cpu_init(struct uc_struct *uc, Object *obj, void *opaque)
+{
+    RISCVCPU *cpu = RISCV_CPU(uc, obj);
+    CPURISCVState *env = &cpu->env;
+    cpu->cfg.ext_i = true;
+    cpu->cfg.ext_m = true;
+    cpu->cfg.ext_a = true;
+    cpu->cfg.ext_f = true;
+    cpu->cfg.ext_d = true;
+    cpu->cfg.ext_c = true;
+    cpu->cfg.ext_u = true;
+    cpu->cfg.ext_v = true;
+
+    cpu->cfg.elen = 64;
+    cpu->cfg.vlen = 128;
+
+
+    const char* vlen_str = uc_get_config(uc, "vlen");
+    if  (vlen_str) {
+        int vlen = atoi(vlen_str);
+        if (vlen)
+            cpu->cfg.vlen = vlen;
+    }
+
+    set_misa(env, RV64);
+}
+
+
 #else
 static void rv32_base_cpu_init(struct uc_struct *uc, Object *obj, void *opaque)
 {
@@ -664,6 +693,7 @@ static const TypeInfo riscv_cpu_type_infos[] = {
     DEFINE_CPU(TYPE_RISCV_CPU_SIFIVE_E51,       rv64_sifive_e_cpu_init),
     DEFINE_CPU(TYPE_RISCV_CPU_SIFIVE_U54,       rv64_sifive_u_cpu_init),
     DEFINE_CPU(TYPE_RISCV_CPU_SHAKTI_C,         rv64_sifive_u_cpu_init),
+    DEFINE_CPU(TYPE_RISCV_CPU_THEAD_C908,       rv64_thead_c908_cpu_init),
 #endif
     { .name = NULL }
 };

@@ -265,7 +265,8 @@ uc_err uc_open(const char* model, void *cfg_opaque, uc_get_config_t cfg_func,
         mode = UC_MODE_RISCV32;
     }
 
-    if (strcmp(model, "rv64") == 0) {
+    if (strcmp(model, "rv64") == 0 ||
+        strcmp(model, "thead-c908") == 0) {
         arch = UC_ARCH_RISCV;
         mode = UC_MODE_RISCV64;
     }
