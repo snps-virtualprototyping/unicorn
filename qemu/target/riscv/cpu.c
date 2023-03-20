@@ -170,6 +170,10 @@ static void rv64_base_cpu_init(struct uc_struct *uc, Object *obj, void *opaque)
     cpu->cfg.ext_d = true;
     cpu->cfg.ext_c = true;
     cpu->cfg.ext_u = true;
+    cpu->cfg.ext_v = true;
+    cpu->cfg.elen = 64;
+    cpu->cfg.vlen = 128;
+
     set_misa(env, RV64);
 }
 
@@ -404,11 +408,6 @@ static void riscv_cpu_reset(CPUState *cs)
     cs->exception_index = RISCV_EXCP_NONE;
     env->load_res = -1;
     set_default_nan_mode(1, &env->fp_status);
-
-    // Unicorn: Allow vector operations.
-    cpu->cfg.ext_v = true;
-    cpu->cfg.elen = 64;
-    cpu->cfg.vlen = 128;
 
     // JHW: allow CSRs and instruction fences
     cpu->cfg.ext_icsr = true;
