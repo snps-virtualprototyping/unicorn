@@ -3540,6 +3540,7 @@
 #define tosa_machine_init_register_types tosa_machine_init_register_types_m68k
 #define translator_loop translator_loop_m68k
 #define translator_loop_temp_check translator_loop_temp_check_m68k
+#define translator_use_goto_tb translator_use_goto_tb_m68k
 #define tswap32 tswap32_m68k
 #define tswap64 tswap64_m68k
 #define type_class_get_size type_class_get_size_m68k

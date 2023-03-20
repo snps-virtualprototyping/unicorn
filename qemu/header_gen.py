@@ -3546,6 +3546,7 @@ symbols = (
     'tosa_machine_init_register_types',
     'translator_loop',
     'translator_loop_temp_check',
+    'translator_use_goto_tb',
     'tswap32',
     'tswap64',
     'type_class_get_size',

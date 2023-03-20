@@ -3540,6 +3540,7 @@
 #define tosa_machine_init_register_types tosa_machine_init_register_types_aarch64
 #define translator_loop translator_loop_aarch64
 #define translator_loop_temp_check translator_loop_temp_check_aarch64
+#define translator_use_goto_tb translator_use_goto_tb_aarch64
 #define tswap32 tswap32_aarch64
 #define tswap64 tswap64_aarch64
 #define type_class_get_size type_class_get_size_aarch64

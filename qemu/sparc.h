@@ -3540,6 +3540,7 @@
 #define tosa_machine_init_register_types tosa_machine_init_register_types_sparc
 #define translator_loop translator_loop_sparc
 #define translator_loop_temp_check translator_loop_temp_check_sparc
+#define translator_use_goto_tb translator_use_goto_tb_sparc
 #define tswap32 tswap32_sparc
 #define tswap64 tswap64_sparc
 #define type_class_get_size type_class_get_size_sparc

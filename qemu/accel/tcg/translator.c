@@ -29,19 +29,17 @@ void translator_loop_temp_check(DisasContextBase *db)
     }
 }
 
-#if 0
-// TODO61
 bool translator_use_goto_tb(DisasContextBase *db, target_ulong dest)
 {
+#ifdef CF_NO_GOTO_TB // SNSP added conditional compilation
     /* Suppress goto_tb if requested. */
     if (tb_cflags(db->tb) & CF_NO_GOTO_TB) {
         return false;
     }
-
+#endif
     /* Check for the dest on the same page as the start of the TB.  */
     return ((db->pc_first ^ dest) & TARGET_PAGE_MASK) == 0;
 }
-#endif
 
 void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
                      CPUState *cpu, TranslationBlock *tb, int max_insns)

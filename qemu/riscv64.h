@@ -3540,6 +3540,7 @@
 #define tosa_machine_init_register_types tosa_machine_init_register_types_riscv64
 #define translator_loop translator_loop_riscv64
 #define translator_loop_temp_check translator_loop_temp_check_riscv64
+#define translator_use_goto_tb translator_use_goto_tb_riscv64
 #define tswap32 tswap32_riscv64
 #define tswap64 tswap64_riscv64
 #define type_class_get_size type_class_get_size_riscv64

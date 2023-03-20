@@ -3540,6 +3540,7 @@
 #define tosa_machine_init_register_types tosa_machine_init_register_types_mipsel
 #define translator_loop translator_loop_mipsel
 #define translator_loop_temp_check translator_loop_temp_check_mipsel
+#define translator_use_goto_tb translator_use_goto_tb_mipsel
 #define tswap32 tswap32_mipsel
 #define tswap64 tswap64_mipsel
 #define type_class_get_size type_class_get_size_mipsel

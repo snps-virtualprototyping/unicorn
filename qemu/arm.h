@@ -3540,6 +3540,7 @@
 #define tosa_machine_init_register_types tosa_machine_init_register_types_arm
 #define translator_loop translator_loop_arm
 #define translator_loop_temp_check translator_loop_temp_check_arm
+#define translator_use_goto_tb translator_use_goto_tb_arm
 #define tswap32 tswap32_arm
 #define tswap64 tswap64_arm
 #define type_class_get_size type_class_get_size_arm
