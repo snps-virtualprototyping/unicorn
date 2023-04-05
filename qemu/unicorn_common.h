@@ -60,14 +60,14 @@ static inline void free_tcg_temp_names(TCGContext *s)
 }
 
 // SNPS added
-void tb_invalidate_phys_page_range(struct uc_struct *uc, tb_page_addr_t start,
-                                   tb_page_addr_t end, int is_cpu_write_access);
+void tb_invalidate_phys_range(struct uc_struct *uc, tb_page_addr_t start,
+                              tb_page_addr_t end);
 
 static inline void tb_flush_page(CPUState* cpu,  uint64_t start,
-                                 uint64_t end) 
+                                 uint64_t end)
 {
     uc_engine *uc = cpu->uc;
-    tb_invalidate_phys_page_range(uc, start, end, 0);
+    tb_invalidate_phys_range(uc, start, end);
 }
 
 /** Freeing common resources */
