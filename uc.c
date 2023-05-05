@@ -1643,6 +1643,13 @@ UNICORN_EXPORT
 uc_err uc_tb_flush_page(uc_engine *uc, uint64_t start, uint64_t end) {
     if (!uc || !uc->tb_flush_page)
         return UC_ERR_ARG;
+
+    if (uc->tb_flush && end - start > 0x400 * uc->target_page_size) {
+        // precise flushing of larger ranges is slow, so we flush all instead
+        uc->tb_flush(uc->cpu);
+        return UC_ERR_OK;
+    }
+
     uc->tb_flush_page(uc->cpu, start, end);
     return UC_ERR_OK;
 }
