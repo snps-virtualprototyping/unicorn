@@ -3801,4 +3801,10 @@
 #define helper_sev helper_sev_armeb
 #define helper_sevl helper_sevl_armeb
 #define helper_call_breakpoints helper_call_breakpoints_armeb
+#define arm_rebuild_hflags arm_rebuild_hflags_armeb
+#define helper_rebuild_hflags_a64 helper_rebuild_hflags_a64_armeb
+#define helper_rebuild_hflags_m32_newel helper_rebuild_hflags_m32_newel_armeb
+#define helper_rebuild_hflags_m32 helper_rebuild_hflags_m32_armeb
+#define helper_rebuild_hflags_a32_newel helper_rebuild_hflags_a32_newel_armeb
+#define helper_rebuild_hflags_a32 helper_rebuild_hflags_a32_armeb
 #endif

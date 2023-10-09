@@ -3814,6 +3814,13 @@ arm_symbols = (
     'helper_sev',
     'helper_sevl',
     'helper_call_breakpoints',
+
+    'arm_rebuild_hflags',
+    'helper_rebuild_hflags_a64',
+    'helper_rebuild_hflags_m32_newel',
+    'helper_rebuild_hflags_m32',
+    'helper_rebuild_hflags_a32_newel',
+    'helper_rebuild_hflags_a32',
 )
 
 aarch64_symbols = (
@@ -5244,6 +5251,13 @@ aarch64_symbols = (
     'helper_sev',
     'helper_sevl',
     'helper_call_breakpoints',
+
+    'arm_rebuild_hflags',
+    'helper_rebuild_hflags_a64',
+    'helper_rebuild_hflags_m32_newel',
+    'helper_rebuild_hflags_m32',
+    'helper_rebuild_hflags_a32_newel',
+    'helper_rebuild_hflags_a32',
 )
 
 m68k_symbols = (
