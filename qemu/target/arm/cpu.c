@@ -438,6 +438,8 @@ static void arm_cpu_reset(CPUState *s)
 
     if (arm_feature(env, ARM_FEATURE_EL3) && arm_feature(env, ARM_FEATURE_EL2))
         env->cp15.scr_el3 |= SCR_HCE; // hypervisor call available
+
+    arm_rebuild_hflags(env);
 }
 
 static inline bool arm_excp_unmasked(CPUState *cs, unsigned int excp_idx,

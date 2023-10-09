@@ -12945,7 +12945,7 @@ void HELPER(rebuild_hflags_a64)(CPUARMState *env, int el)
 
 static inline void assert_hflags_rebuild_correctly(CPUARMState *env)
 {
-//#ifdef CONFIG_DEBUG_TCG
+#ifdef CONFIG_DEBUG_TCG
     uint32_t env_flags_current = env->hflags;
     uint32_t env_flags_rebuilt = rebuild_hflags_internal(env);
 
@@ -12954,158 +12954,70 @@ static inline void assert_hflags_rebuild_correctly(CPUARMState *env)
                 env_flags_current, env_flags_rebuilt);
         abort();
     }
-//#endif
+#endif
 }
 
 void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
                           target_ulong *cs_base, uint32_t *pflags)
 {
+    uint32_t flags = env->hflags;
+
+    *cs_base = 0;
     assert_hflags_rebuild_correctly(env);
 
-    ARMMMUIdx mmu_idx = arm_mmu_idx(env);
-    int current_el = arm_current_el(env);
-    int fp_el = fp_exception_el(env, current_el);
-    uint32_t flags = 0;
-
-    if (is_a64(env)) {
-        ARMCPU *cpu = env_archcpu(env);
-        uint64_t sctlr;
-
+    if (FIELD_EX32(flags, TBFLAG_ANY, AARCH64_STATE)) {
         *pc = env->pc;
-        flags = FIELD_DP32(flags, TBFLAG_ANY, AARCH64_STATE, 1);
-        ARMMMUIdx stage1 = stage_1_mmu_idx(mmu_idx);
-
-        uint64_t tcr = regime_tcr(env, mmu_idx)->raw_tcr;
-        int tbii, tbid;
-
-        /* Get control bits for tagged addresses.  */
-        tbid = aa64_va_parameter_tbi(tcr, mmu_idx);
-        tbii = tbid & ~aa64_va_parameter_tbid(tcr, mmu_idx);
-
-        flags = FIELD_DP32(flags, TBFLAG_A64, TBII, tbii);
-        flags = FIELD_DP32(flags, TBFLAG_A64, TBID, tbid);
-
-        if (cpu_isar_feature(aa64_sve, cpu)) {
-            int sve_el = sve_exception_el(env, current_el);
-            uint32_t zcr_len;
-
-            /*
-             * If SVE is disabled, but FP is enabled,
-             * then the effective len is 0.
-             */
-            if (sve_el != 0 && fp_el == 0) {
-                zcr_len = 0;
-            } else {
-                zcr_len = sve_zcr_len_for_el(env, current_el);
-            }
-            flags = FIELD_DP32(flags, TBFLAG_A64, SVEEXC_EL, sve_el);
-            flags = FIELD_DP32(flags, TBFLAG_A64, ZCR_LEN, zcr_len);
-        }
-
-        sctlr = regime_sctlr(env, stage1);
-
-        if (cpu_isar_feature(aa64_pauth, cpu)) {
-            /*
-             * In order to save space in flags, we record only whether
-             * pauth is "inactive", meaning all insns are implemented as
-             * a nop, or "active" when some action must be performed.
-             * The decision of which action to take is left to a helper.
-             */
-            if (sctlr & (SCTLR_EnIA | SCTLR_EnIB | SCTLR_EnDA | SCTLR_EnDB)) {
-                flags = FIELD_DP32(flags, TBFLAG_A64, PAUTH_ACTIVE, 1);
-            }
-        }
-
-        if (cpu_isar_feature(aa64_bti, cpu)) {
-            /* Note that SCTLR_EL[23].BT == SCTLR_BT1.  */
-            if (sctlr & (current_el == 0 ? SCTLR_BT0 : SCTLR_BT1)) {
-                flags = FIELD_DP32(flags, TBFLAG_A64, BT, 1);
-            }
+        if (cpu_isar_feature(aa64_bti, env_archcpu(env))) {
             flags = FIELD_DP32(flags, TBFLAG_A64, BTYPE, env->btype);
-        }
-
-        /* Compute the condition for using AccType_UNPRIV for LDTR et al. */
-        if (!(env->pstate & PSTATE_UAO)) {
-            switch (mmu_idx) {
-            case ARMMMUIdx_E10_1:
-            case ARMMMUIdx_E10_1_PAN:
-            case ARMMMUIdx_SE10_1:
-            case ARMMMUIdx_SE10_1_PAN:
-                /* TODO: ARMv8.3-NV */
-                flags = FIELD_DP32(flags, TBFLAG_A64, UNPRIV, 1);
-                break;
-            case ARMMMUIdx_E20_2:
-            case ARMMMUIdx_E20_2_PAN:
-            case ARMMMUIdx_SE20_2:
-            case ARMMMUIdx_SE20_2_PAN:
-                /*
-                 * Note that EL20_2 is gated by HCR_EL2.E2H == 1, but EL20_0 is
-                 * gated by HCR_EL2.<E2H,TGE> == '11', and so is LDTR.
-                 */
-                if (env->cp15.hcr_el2 & HCR_TGE) {
-                    flags = FIELD_DP32(flags, TBFLAG_A64, UNPRIV, 1);
-                }
-                break;
-            default:
-                break;
-            }
-        }
-
-        if (cpu_isar_feature(aa64_mte, env_archcpu(env))) {
-            /*
-             * Set MTE_ACTIVE if any access may be Checked, and leave clear
-             * if all accesses must be Unchecked:
-             * 1) If no TBI, then there are no tags in the address to check,
-             * 2) If Tag Check Override, then all accesses are Unchecked,
-             * 3) If Tag Check Fail == 0, then Checked access have no effect,
-             * 4) If no Allocation Tag Access, then all accesses are Unchecked.
-             */
-            if (allocation_tag_access_enabled(env, current_el, sctlr)) {
-                flags = FIELD_DP32(flags, TBFLAG_A64, ATA, 1);
-                if (tbid
-                    && !(env->pstate & PSTATE_TCO)
-                    && (sctlr & (current_el == 0 ? SCTLR_TCF0 : SCTLR_TCF))) {
-                    flags = FIELD_DP32(flags, TBFLAG_A64, MTE_ACTIVE, 1);
-                }
-            }
-            /* And again for unprivileged accesses, if required.  */
-            if (FIELD_EX32(flags, TBFLAG_A64, UNPRIV)
-                && tbid
-                && !(env->pstate & PSTATE_TCO)
-                && (sctlr & SCTLR_TCF0)
-                && allocation_tag_access_enabled(env, 0, sctlr)) {
-                flags = FIELD_DP32(flags, TBFLAG_A64, MTE0_ACTIVE, 1);
-            }
-            /* Cache TCMA as well as TBI. */
-            flags = FIELD_DP32(flags, TBFLAG_A64, TCMA,
-                               aa64_va_parameter_tcma(tcr, mmu_idx));
         }
     } else {
         *pc = env->regs[15];
+
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            if (arm_feature(env, ARM_FEATURE_M_SECURITY) &&
+                FIELD_EX32(env->v7m.fpccr[M_REG_S], V7M_FPCCR, S)
+                != env->v7m.secure) {
+                flags = FIELD_DP32(flags, TBFLAG_M32, FPCCR_S_WRONG, 1);
+            }
+
+            if ((env->v7m.fpccr[env->v7m.secure] & R_V7M_FPCCR_ASPEN_MASK) &&
+                (!(env->v7m.control[M_REG_S] & R_V7M_CONTROL_FPCA_MASK) ||
+                 (env->v7m.secure &&
+                  !(env->v7m.control[M_REG_S] & R_V7M_CONTROL_SFPA_MASK)))) {
+                /*
+                 * ASPEN is set, but FPCA/SFPA indicate that there is no
+                 * active FP context; we must create a new FP context before
+                 * executing any FP insn.
+                 */
+                flags = FIELD_DP32(flags, TBFLAG_M32, NEW_FP_CTXT_NEEDED, 1);
+            }
+
+            bool is_secure = env->v7m.fpccr[M_REG_S] & R_V7M_FPCCR_S_MASK;
+            if (env->v7m.fpccr[is_secure] & R_V7M_FPCCR_LSPACT_MASK) {
+                flags = FIELD_DP32(flags, TBFLAG_M32, LSPACT, 1);
+            }
+        } else {
+            /*
+             * Note that XSCALE_CPAR shares bits with VECSTRIDE.
+             * Note that VECLEN+VECSTRIDE are RES0 for M-profile.
+             */
+            if (arm_feature(env, ARM_FEATURE_XSCALE)) {
+                flags = FIELD_DP32(flags, TBFLAG_A32,
+                                   XSCALE_CPAR, env->cp15.c15_cpar);
+            } else {
+                flags = FIELD_DP32(flags, TBFLAG_A32, VECLEN,
+                                   env->vfp.vec_len);
+                flags = FIELD_DP32(flags, TBFLAG_A32, VECSTRIDE,
+                                   env->vfp.vec_stride);
+            }
+            if (env->vfp.xregs[ARM_VFP_FPEXC] & (1 << 30)) {
+                flags = FIELD_DP32(flags, TBFLAG_A32, VFPEN, 1);
+            }
+        }
+
         flags = FIELD_DP32(flags, TBFLAG_AM32, THUMB, env->thumb);
-        flags = FIELD_DP32(flags, TBFLAG_A32, VECLEN, env->vfp.vec_len);
-        flags = FIELD_DP32(flags, TBFLAG_A32, VECSTRIDE, env->vfp.vec_stride);
         flags = FIELD_DP32(flags, TBFLAG_AM32, CONDEXEC, env->condexec_bits);
-        flags = FIELD_DP32(flags, TBFLAG_A32, SCTLR_B, arm_sctlr_b(env));
-        flags = FIELD_DP32(flags, TBFLAG_A32, NS, !access_secure_reg(env));
-        if (env->vfp.xregs[ARM_VFP_FPEXC] & (1 << 30)
-            || arm_el_is_aa64(env, 1) || arm_feature(env, ARM_FEATURE_M)) {
-            flags = FIELD_DP32(flags, TBFLAG_A32, VFPEN, 1);
-        }
-
-        if (arm_current_el(env) < 2 && env->cp15.hstr_el2 &&
-            (arm_hcr_el2_eff(env) & (HCR_E2H | HCR_TGE)) != (HCR_E2H | HCR_TGE)) {
-            flags = FIELD_DP32(flags, TBFLAG_A32, HSTR_ACTIVE, 1);
-        }
-
-        /* Note that XSCALE_CPAR shares bits with VECSTRIDE */
-        if (arm_feature(env, ARM_FEATURE_XSCALE)) {
-            flags = FIELD_DP32(flags, TBFLAG_A32,
-                               XSCALE_CPAR, env->cp15.c15_cpar);
-        }
     }
-
-    flags = FIELD_DP32(flags, TBFLAG_ANY, MMUIDX, arm_to_core_mmu_idx(mmu_idx));
 
     /*
      * The SS_ACTIVE and PSTATE_SS bits correspond to the state machine
@@ -13114,74 +13026,241 @@ void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
      *     0            x       Inactive (the TB flag for SS is always 0)
      *     1            0       Active-pending
      *     1            1       Active-not-pending
+     * SS_ACTIVE is set in hflags; PSTATE_SS is computed every TB.
      */
-    if (arm_singlestep_active(env)) {
-        flags = FIELD_DP32(flags, TBFLAG_ANY, SS_ACTIVE, 1);
-        if (is_a64(env)) {
-            if (env->pstate & PSTATE_SS) {
-                flags = FIELD_DP32(flags, TBFLAG_ANY, PSTATE_SS, 1);
-            }
-        } else {
-            if (env->uncached_cpsr & PSTATE_SS) {
-                flags = FIELD_DP32(flags, TBFLAG_ANY, PSTATE_SS, 1);
-            }
-        }
-    }
-    if (arm_cpu_data_is_big_endian(env)) {
-        flags = FIELD_DP32(flags, TBFLAG_ANY, BE_DATA, 1);
-    }
-    flags = FIELD_DP32(flags, TBFLAG_ANY, FPEXC_EL, fp_el);
-
-    if (arm_v7m_is_handler_mode(env)) {
-        flags = FIELD_DP32(flags, TBFLAG_M32, HANDLER, 1);
-    }
-
-    /*
-     * v8M always applies stack limit checks unless CCR.STKOFHFNMIGN is
-     * suppressing them because the requested execution priority is less than 0.
-     */
-    if (arm_feature(env, ARM_FEATURE_V8) &&
-        arm_feature(env, ARM_FEATURE_M) &&
-        !((mmu_idx  & ARM_MMU_IDX_M_NEGPRI) &&
-          (env->v7m.ccr[env->v7m.secure] & R_V7M_CCR_STKOFHFNMIGN_MASK))) {
-        flags = FIELD_DP32(flags, TBFLAG_M32, STACKCHECK, 1);
-    }
-
-    if (arm_feature(env, ARM_FEATURE_M_SECURITY) &&
-        FIELD_EX32(env->v7m.fpccr[M_REG_S], V7M_FPCCR, S) != env->v7m.secure) {
-        flags = FIELD_DP32(flags, TBFLAG_M32, FPCCR_S_WRONG, 1);
-    }
-
-    if (arm_feature(env, ARM_FEATURE_M) &&
-        (env->v7m.fpccr[env->v7m.secure] & R_V7M_FPCCR_ASPEN_MASK) &&
-        (!(env->v7m.control[M_REG_S] & R_V7M_CONTROL_FPCA_MASK) ||
-         (env->v7m.secure &&
-          !(env->v7m.control[M_REG_S] & R_V7M_CONTROL_SFPA_MASK)))) {
-        /*
-         * ASPEN is set, but FPCA/SFPA indicate that there is no active
-         * FP context; we must create a new FP context before executing
-         * any FP insn.
-         */
-        flags = FIELD_DP32(flags, TBFLAG_M32, NEW_FP_CTXT_NEEDED, 1);
-    }
-
-    if (arm_feature(env, ARM_FEATURE_M)) {
-        bool is_secure = env->v7m.fpccr[M_REG_S] & R_V7M_FPCCR_S_MASK;
-
-        if (env->v7m.fpccr[is_secure] & R_V7M_FPCCR_LSPACT_MASK) {
-            flags = FIELD_DP32(flags, TBFLAG_M32, LSPACT, 1);
-        }
-    }
-
-    if (!arm_feature(env, ARM_FEATURE_M)) {
-        int target_el = arm_debug_target_el(env);
-
-        flags = FIELD_DP32(flags, TBFLAG_ANY, DEBUG_TARGET_EL, target_el);
+    if (FIELD_EX32(flags, TBFLAG_ANY, SS_ACTIVE) &&
+        (env->pstate & PSTATE_SS)) {
+        flags = FIELD_DP32(flags, TBFLAG_ANY, PSTATE_SS, 1);
     }
 
     *pflags = flags;
-    *cs_base = 0;
 }
+
+// void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
+//                           target_ulong *cs_base, uint32_t *pflags)
+// {
+//     assert_hflags_rebuild_correctly(env);
+
+//     ARMMMUIdx mmu_idx = arm_mmu_idx(env);
+//     int current_el = arm_current_el(env);
+//     int fp_el = fp_exception_el(env, current_el);
+//     uint32_t flags = 0;
+
+//     if (is_a64(env)) {
+//         ARMCPU *cpu = env_archcpu(env);
+//         uint64_t sctlr;
+
+//         *pc = env->pc;
+//         flags = FIELD_DP32(flags, TBFLAG_ANY, AARCH64_STATE, 1);
+//         ARMMMUIdx stage1 = stage_1_mmu_idx(mmu_idx);
+
+//         uint64_t tcr = regime_tcr(env, mmu_idx)->raw_tcr;
+//         int tbii, tbid;
+
+//         /* Get control bits for tagged addresses.  */
+//         tbid = aa64_va_parameter_tbi(tcr, mmu_idx);
+//         tbii = tbid & ~aa64_va_parameter_tbid(tcr, mmu_idx);
+
+//         flags = FIELD_DP32(flags, TBFLAG_A64, TBII, tbii);
+//         flags = FIELD_DP32(flags, TBFLAG_A64, TBID, tbid);
+
+//         if (cpu_isar_feature(aa64_sve, cpu)) {
+//             int sve_el = sve_exception_el(env, current_el);
+//             uint32_t zcr_len;
+
+//             /*
+//              * If SVE is disabled, but FP is enabled,
+//              * then the effective len is 0.
+//              */
+//             if (sve_el != 0 && fp_el == 0) {
+//                 zcr_len = 0;
+//             } else {
+//                 zcr_len = sve_zcr_len_for_el(env, current_el);
+//             }
+//             flags = FIELD_DP32(flags, TBFLAG_A64, SVEEXC_EL, sve_el);
+//             flags = FIELD_DP32(flags, TBFLAG_A64, ZCR_LEN, zcr_len);
+//         }
+
+//         sctlr = regime_sctlr(env, stage1);
+
+//         if (cpu_isar_feature(aa64_pauth, cpu)) {
+//             /*
+//              * In order to save space in flags, we record only whether
+//              * pauth is "inactive", meaning all insns are implemented as
+//              * a nop, or "active" when some action must be performed.
+//              * The decision of which action to take is left to a helper.
+//              */
+//             if (sctlr & (SCTLR_EnIA | SCTLR_EnIB | SCTLR_EnDA | SCTLR_EnDB)) {
+//                 flags = FIELD_DP32(flags, TBFLAG_A64, PAUTH_ACTIVE, 1);
+//             }
+//         }
+
+//         if (cpu_isar_feature(aa64_bti, cpu)) {
+//             /* Note that SCTLR_EL[23].BT == SCTLR_BT1.  */
+//             if (sctlr & (current_el == 0 ? SCTLR_BT0 : SCTLR_BT1)) {
+//                 flags = FIELD_DP32(flags, TBFLAG_A64, BT, 1);
+//             }
+//             flags = FIELD_DP32(flags, TBFLAG_A64, BTYPE, env->btype);
+//         }
+
+//         /* Compute the condition for using AccType_UNPRIV for LDTR et al. */
+//         if (!(env->pstate & PSTATE_UAO)) {
+//             switch (mmu_idx) {
+//             case ARMMMUIdx_E10_1:
+//             case ARMMMUIdx_E10_1_PAN:
+//             case ARMMMUIdx_SE10_1:
+//             case ARMMMUIdx_SE10_1_PAN:
+//                 /* TODO: ARMv8.3-NV */
+//                 flags = FIELD_DP32(flags, TBFLAG_A64, UNPRIV, 1);
+//                 break;
+//             case ARMMMUIdx_E20_2:
+//             case ARMMMUIdx_E20_2_PAN:
+//             case ARMMMUIdx_SE20_2:
+//             case ARMMMUIdx_SE20_2_PAN:
+//                 /*
+//                  * Note that EL20_2 is gated by HCR_EL2.E2H == 1, but EL20_0 is
+//                  * gated by HCR_EL2.<E2H,TGE> == '11', and so is LDTR.
+//                  */
+//                 if (env->cp15.hcr_el2 & HCR_TGE) {
+//                     flags = FIELD_DP32(flags, TBFLAG_A64, UNPRIV, 1);
+//                 }
+//                 break;
+//             default:
+//                 break;
+//             }
+//         }
+
+//         if (cpu_isar_feature(aa64_mte, env_archcpu(env))) {
+//             /*
+//              * Set MTE_ACTIVE if any access may be Checked, and leave clear
+//              * if all accesses must be Unchecked:
+//              * 1) If no TBI, then there are no tags in the address to check,
+//              * 2) If Tag Check Override, then all accesses are Unchecked,
+//              * 3) If Tag Check Fail == 0, then Checked access have no effect,
+//              * 4) If no Allocation Tag Access, then all accesses are Unchecked.
+//              */
+//             if (allocation_tag_access_enabled(env, current_el, sctlr)) {
+//                 flags = FIELD_DP32(flags, TBFLAG_A64, ATA, 1);
+//                 if (tbid
+//                     && !(env->pstate & PSTATE_TCO)
+//                     && (sctlr & (current_el == 0 ? SCTLR_TCF0 : SCTLR_TCF))) {
+//                     flags = FIELD_DP32(flags, TBFLAG_A64, MTE_ACTIVE, 1);
+//                 }
+//             }
+//             /* And again for unprivileged accesses, if required.  */
+//             if (FIELD_EX32(flags, TBFLAG_A64, UNPRIV)
+//                 && tbid
+//                 && !(env->pstate & PSTATE_TCO)
+//                 && (sctlr & SCTLR_TCF0)
+//                 && allocation_tag_access_enabled(env, 0, sctlr)) {
+//                 flags = FIELD_DP32(flags, TBFLAG_A64, MTE0_ACTIVE, 1);
+//             }
+//             /* Cache TCMA as well as TBI. */
+//             flags = FIELD_DP32(flags, TBFLAG_A64, TCMA,
+//                                aa64_va_parameter_tcma(tcr, mmu_idx));
+//         }
+//     } else {
+//         *pc = env->regs[15];
+//         flags = FIELD_DP32(flags, TBFLAG_AM32, THUMB, env->thumb);
+//         flags = FIELD_DP32(flags, TBFLAG_A32, VECLEN, env->vfp.vec_len);
+//         flags = FIELD_DP32(flags, TBFLAG_A32, VECSTRIDE, env->vfp.vec_stride);
+//         flags = FIELD_DP32(flags, TBFLAG_AM32, CONDEXEC, env->condexec_bits);
+//         flags = FIELD_DP32(flags, TBFLAG_A32, SCTLR_B, arm_sctlr_b(env));
+//         flags = FIELD_DP32(flags, TBFLAG_A32, NS, !access_secure_reg(env));
+//         if (env->vfp.xregs[ARM_VFP_FPEXC] & (1 << 30)
+//             || arm_el_is_aa64(env, 1) || arm_feature(env, ARM_FEATURE_M)) {
+//             flags = FIELD_DP32(flags, TBFLAG_A32, VFPEN, 1);
+//         }
+
+//         if (arm_current_el(env) < 2 && env->cp15.hstr_el2 &&
+//             (arm_hcr_el2_eff(env) & (HCR_E2H | HCR_TGE)) != (HCR_E2H | HCR_TGE)) {
+//             flags = FIELD_DP32(flags, TBFLAG_A32, HSTR_ACTIVE, 1);
+//         }
+
+//         /* Note that XSCALE_CPAR shares bits with VECSTRIDE */
+//         if (arm_feature(env, ARM_FEATURE_XSCALE)) {
+//             flags = FIELD_DP32(flags, TBFLAG_A32,
+//                                XSCALE_CPAR, env->cp15.c15_cpar);
+//         }
+//     }
+
+//     flags = FIELD_DP32(flags, TBFLAG_ANY, MMUIDX, arm_to_core_mmu_idx(mmu_idx));
+
+//     /*
+//      * The SS_ACTIVE and PSTATE_SS bits correspond to the state machine
+//      * states defined in the ARM ARM for software singlestep:
+//      *  SS_ACTIVE   PSTATE.SS   State
+//      *     0            x       Inactive (the TB flag for SS is always 0)
+//      *     1            0       Active-pending
+//      *     1            1       Active-not-pending
+//      */
+//     if (arm_singlestep_active(env)) {
+//         flags = FIELD_DP32(flags, TBFLAG_ANY, SS_ACTIVE, 1);
+//         if (is_a64(env)) {
+//             if (env->pstate & PSTATE_SS) {
+//                 flags = FIELD_DP32(flags, TBFLAG_ANY, PSTATE_SS, 1);
+//             }
+//         } else {
+//             if (env->uncached_cpsr & PSTATE_SS) {
+//                 flags = FIELD_DP32(flags, TBFLAG_ANY, PSTATE_SS, 1);
+//             }
+//         }
+//     }
+//     if (arm_cpu_data_is_big_endian(env)) {
+//         flags = FIELD_DP32(flags, TBFLAG_ANY, BE_DATA, 1);
+//     }
+//     flags = FIELD_DP32(flags, TBFLAG_ANY, FPEXC_EL, fp_el);
+
+//     if (arm_v7m_is_handler_mode(env)) {
+//         flags = FIELD_DP32(flags, TBFLAG_M32, HANDLER, 1);
+//     }
+
+//     /*
+//      * v8M always applies stack limit checks unless CCR.STKOFHFNMIGN is
+//      * suppressing them because the requested execution priority is less than 0.
+//      */
+//     if (arm_feature(env, ARM_FEATURE_V8) &&
+//         arm_feature(env, ARM_FEATURE_M) &&
+//         !((mmu_idx  & ARM_MMU_IDX_M_NEGPRI) &&
+//           (env->v7m.ccr[env->v7m.secure] & R_V7M_CCR_STKOFHFNMIGN_MASK))) {
+//         flags = FIELD_DP32(flags, TBFLAG_M32, STACKCHECK, 1);
+//     }
+
+//     if (arm_feature(env, ARM_FEATURE_M_SECURITY) &&
+//         FIELD_EX32(env->v7m.fpccr[M_REG_S], V7M_FPCCR, S) != env->v7m.secure) {
+//         flags = FIELD_DP32(flags, TBFLAG_M32, FPCCR_S_WRONG, 1);
+//     }
+
+//     if (arm_feature(env, ARM_FEATURE_M) &&
+//         (env->v7m.fpccr[env->v7m.secure] & R_V7M_FPCCR_ASPEN_MASK) &&
+//         (!(env->v7m.control[M_REG_S] & R_V7M_CONTROL_FPCA_MASK) ||
+//          (env->v7m.secure &&
+//           !(env->v7m.control[M_REG_S] & R_V7M_CONTROL_SFPA_MASK)))) {
+//         /*
+//          * ASPEN is set, but FPCA/SFPA indicate that there is no active
+//          * FP context; we must create a new FP context before executing
+//          * any FP insn.
+//          */
+//         flags = FIELD_DP32(flags, TBFLAG_M32, NEW_FP_CTXT_NEEDED, 1);
+//     }
+
+//     if (arm_feature(env, ARM_FEATURE_M)) {
+//         bool is_secure = env->v7m.fpccr[M_REG_S] & R_V7M_FPCCR_S_MASK;
+
+//         if (env->v7m.fpccr[is_secure] & R_V7M_FPCCR_LSPACT_MASK) {
+//             flags = FIELD_DP32(flags, TBFLAG_M32, LSPACT, 1);
+//         }
+//     }
+
+//     if (!arm_feature(env, ARM_FEATURE_M)) {
+//         int target_el = arm_debug_target_el(env);
+
+//         flags = FIELD_DP32(flags, TBFLAG_ANY, DEBUG_TARGET_EL, target_el);
+//     }
+
+//     *pflags = flags;
+//     *cs_base = 0;
+// }
 
 #ifdef TARGET_AARCH64
 /*
