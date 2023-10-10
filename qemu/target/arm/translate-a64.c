@@ -1872,6 +1872,9 @@ static void handle_msr_i(DisasContext *s, uint32_t insn,
         } else {
             clear_pstate_bits(s, PSTATE_UAO);
         }
+        t1 = tcg_const_i32(tcg_ctx, s->current_el);
+        gen_helper_rebuild_hflags_a64(tcg_ctx, tcg_ctx->cpu_env, t1);
+        tcg_temp_free_i32(tcg_ctx, t1);
         break;
 
     case 0x04: /* PAN */
@@ -1883,6 +1886,9 @@ static void handle_msr_i(DisasContext *s, uint32_t insn,
         } else {
             clear_pstate_bits(s, PSTATE_PAN);
         }
+        t1 = tcg_const_i32(tcg_ctx, s->current_el);
+        gen_helper_rebuild_hflags_a64(tcg_ctx, tcg_ctx->cpu_env, t1);
+        tcg_temp_free_i32(tcg_ctx, t1);
         break;
 
     case 0x05: /* SPSel */
@@ -1941,7 +1947,7 @@ static void handle_msr_i(DisasContext *s, uint32_t insn,
                 clear_pstate_bits(s, PSTATE_TCO);
             }
             t1 = tcg_const_i32(tcg_ctx, s->current_el);
-            //gen_helper_rebuild_hflags_a64(tcg_ctx, tcg_ctx->cpu_env, t1);
+            gen_helper_rebuild_hflags_a64(tcg_ctx, tcg_ctx->cpu_env, t1);
             tcg_temp_free_i32(tcg_ctx, t1);
             /* Many factors, including TCO, go into MTE_ACTIVE. */
             s->base.is_jmp = DISAS_UPDATE_NOCHAIN;
@@ -2193,10 +2199,15 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
 
     if ((tb_cflags(s->base.tb) & CF_USE_ICOUNT) && (ri->type & ARM_CP_IO)) {
         /* I/O operations must end the TB here (whether read or write) */
-        // Unicorn: commented out
-        //gen_io_end();
         s->base.is_jmp = DISAS_UPDATE_EXIT;
     } else if (!isread && !(ri->type & ARM_CP_SUPPRESS_TB_END)) {
+        /*
+         * A write to any coprocessor regiser that ends a TB
+         * must rebuild the hflags for the next TB.
+         */
+        TCGv_i32 tcg_el = tcg_const_i32(tcg_ctx, s->current_el);
+        gen_helper_rebuild_hflags_a64(tcg_ctx, tcg_ctx->cpu_env, tcg_el);
+        tcg_temp_free_i32(tcg_ctx, tcg_el);
         /* We default to ending the TB on a coprocessor register write,
          * but allow this to be suppressed by the register definition
          * (usually only necessary to work around guest bugs).
